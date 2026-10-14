@@ -635,6 +635,55 @@ function addHair(g: GeoBuilder, def: FighterDef, cy: number, R: THREE.Vector3, t
     add(geo, color);
   };
 
+  /**
+   * Thick curtain of hair around the sides and back (front opening = 2 x (180 - halfDeg) deg),
+   * hugging the jaw / neck down to `yuBottom`, with curly relief and a jagged bottom edge.
+   */
+  const curtain = (halfDeg: number, yuBottom: number, curlAmt: number, jagAmt: number, flare0: number, NI: number, NJ: number) => {
+    const psi0 = THREE.MathUtils.degToRad(halfDeg); // measured from the back
+    const outer: THREE.Vector3[][] = [];
+    const inner: THREE.Vector3[][] = [];
+    for (let i = 0; i <= NI; i++) {
+      const s = i / NI;
+      const yu = lerp(0.3, yuBottom, s);
+      const below = Math.max(0, -yu);
+      // head cross-section at this height (jaw taper), never narrower than the neck
+      const head = Math.max(0.64, Math.sqrt(Math.max(0, 1 - yu * yu)) * (1 - 0.22 * below * below));
+      const ro: THREE.Vector3[] = [];
+      const ri: THREE.Vector3[] = [];
+      for (let j = 0; j <= NJ; j++) {
+        const psi = -psi0 + (2 * psi0 * j) / NJ;
+        const curl = curlAmt * (hashNoise(i * 13.3 + j * 5.1) - 0.5) * Math.min(1, s * 3);
+        const flare = head * (flare0 + 0.1 * s) + curl;
+        const jag = i === NI ? (j % 2 ? jagAmt : -0.004) * k : 0;
+        const at = (f: number) => {
+          let z = -Math.cos(psi) * R.z * f;
+          if (z > 0) z *= 0.9;
+          return new THREE.Vector3(Math.sin(psi) * R.x * f, cy + yu * R.y + jag, z + 0.012);
+        };
+        ro.push(at(flare));
+        ri.push(at(flare - 0.13));
+      }
+      outer.push(ro);
+      inner.push(ri);
+    }
+    const axis = (p: THREE.Vector3) => new THREE.Vector3(p.x, 0, p.z - 0.012);
+    add(gridGeometry(outer, axis), vary);
+    add(gridGeometry(inner, (p) => axis(p).negate()), (p, i) => vary(p, i).multiplyScalar(0.62));
+    add(gridGeometry([outer[NI], inner[NI]], () => new THREE.Vector3(0, -1, 0)), (p, i) => vary(p, i).multiplyScalar(0.8));
+    const mid = Math.floor(NI / 2);
+    for (const j of [0, NJ]) {
+      const e = outer[mid][j].clone().sub(outer[mid][j === 0 ? 1 : NJ - 1]);
+      add(
+        gridGeometry(
+          [outer.map((r) => r[j]), inner.map((r) => r[j])],
+          () => e,
+        ),
+        (p, i) => vary(p, i).multiplyScalar(0.85),
+      );
+    }
+  };
+
   switch (style) {
     case 'buzz':
       dome(1.03, -0.5, 1.3);
@@ -711,51 +760,62 @@ function addHair(g: GeoBuilder, def: FighterDef, cy: number, R: THREE.Vector3, t
       break;
     }
     case 'midlong': {
-      // curly cap + a thick curtain of hair around the sides and back that follows the jaw
+      // straight cap + a thick curtain of hair around the sides and back that follows the jaw
       // down to the neck; the front stays open (+-64 deg) so the face is never covered
       dome(1.08, -0.46, 1.42, vary, 0.06);
-      const psi0 = THREE.MathUtils.degToRad(116); // measured from the back
-      const NI = 6;
-      const NJ = 14;
-      const outer: THREE.Vector3[][] = [];
-      const inner: THREE.Vector3[][] = [];
-      for (let i = 0; i <= NI; i++) {
-        const s = i / NI;
-        const yu = lerp(0.3, -1.08, s);
+      curtain(116, -1.08, 0.07, 0.04, 1.13, 6, 14);
+      break;
+    }
+    case 'curlymid': {
+      // voluminous curly cut: bumpy base + many curl clumps on top, over the ears and down to the jaw
+      dome(1.1, -0.42, 1.45, vary, 0.1);
+      curtain(112, -0.92, 0.12, 0.05, 1.22, 5, 12);
+      const headC = new THREE.Vector3(0, cy, 0.012);
+      const curl = (pos: THREE.Vector3, r: number, seed: number) => {
+        // rounded clump lying on the hair surface: squashed along the outward direction, random twist
+        const geo = new THREE.IcosahedronGeometry(1, 0);
+        geo.scale(r * (1.05 + 0.2 * hashNoise(seed * 1.3)), r * 0.78, r * (0.95 + 0.2 * hashNoise(seed * 3.7)));
+        geo.rotateY(hashNoise(seed * 5.9) * Math.PI * 2);
+        const out = pos.clone().sub(headC).normalize();
+        geo.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), out));
+        geo.translate(pos.x, pos.y, pos.z);
+        // lighter tops, darker undersides: each clump reads as a curl
+        add(geo, (p, i) => col.clone().multiplyScalar(0.74 + 0.16 * hashNoise(seed * 11 + i) + 0.22 * clamp01((p.y - pos.y) / r + 0.5)));
+      };
+      /** point on the hair envelope: longitude phi (0 = front), unit height yu */
+      const envelope = (phi: number, yu: number, f: number) => {
         const below = Math.max(0, -yu);
-        // head cross-section at this height (jaw taper), never narrower than the neck
         const head = Math.max(0.64, Math.sqrt(Math.max(0, 1 - yu * yu)) * (1 - 0.22 * below * below));
-        const ro: THREE.Vector3[] = [];
-        const ri: THREE.Vector3[] = [];
-        for (let j = 0; j <= NJ; j++) {
-          const psi = -psi0 + (2 * psi0 * j) / NJ;
-          const curl = 0.07 * (hashNoise(i * 13.3 + j * 5.1) - 0.5) * Math.min(1, s * 3);
-          const flare = head * (1.13 + 0.1 * s) + curl;
-          const jag = i === NI ? (j % 2 ? 0.04 : -0.004) * k : 0;
-          const at = (f: number) => {
-            let z = -Math.cos(psi) * R.z * f;
-            if (z > 0) z *= 0.9;
-            return new THREE.Vector3(Math.sin(psi) * R.x * f, cy + yu * R.y + jag, z + 0.012);
-          };
-          ro.push(at(flare));
-          ri.push(at(flare - 0.13));
-        }
-        outer.push(ro);
-        inner.push(ri);
+        const rr = yu > 0.2 ? f : head * f;
+        let z = Math.cos(phi) * R.z * rr;
+        if (z > 0) z *= 0.9;
+        return new THREE.Vector3(Math.sin(phi) * R.x * rr, cy + yu * R.y, z + 0.012);
+      };
+      // messy curls over the crown (golden spiral), none below the hairline in front
+      const NT = 30;
+      for (let i = 0; i < NT; i++) {
+        const t = (i + 0.5) / NT;
+        const yu = 1 - t * 0.85;
+        const phi = i * 2.39996;
+        if (Math.cos(phi) > 0.3 && yu < 0.66) continue;
+        const dir = new THREE.Vector3(Math.sqrt(1 - yu * yu) * Math.sin(phi), yu, Math.sqrt(1 - yu * yu) * Math.cos(phi)).applyAxisAngle(AXIS_X, -0.25);
+        curl(onSkull(dir, 1.11 + 0.04 * hashNoise(i * 3.3)), k * (0.036 + 0.01 * hashNoise(i)), i);
       }
-      const axis = (p: THREE.Vector3) => new THREE.Vector3(p.x, 0, p.z - 0.012);
-      add(gridGeometry(outer, axis), vary);
-      add(gridGeometry(inner, (p) => axis(p).negate()), (p, i) => vary(p, i).multiplyScalar(0.62));
-      add(gridGeometry([outer[NI], inner[NI]], () => new THREE.Vector3(0, -1, 0)), (p, i) => vary(p, i).multiplyScalar(0.8));
-      for (const j of [0, NJ]) {
-        const e = outer[3][j].clone().sub(outer[3][j === 0 ? 1 : NJ - 1]);
-        add(
-          gridGeometry(
-            [outer.map((r) => r[j]), inner.map((r) => r[j])],
-            () => e,
-          ),
-          (p, i) => vary(p, i).multiplyScalar(0.85),
-        );
+      // curls falling over the ears and down the sides / back to the jaw
+      const rows = [0.15, -0.2, -0.52, -0.82];
+      rows.forEach((yu, ri) => {
+        const n = 9;
+        for (let j = 0; j < n; j++) {
+          const phi = THREE.MathUtils.degToRad(88 + (184 * (j + 0.5 * (ri % 2))) / (n - 0.5));
+          const p = envelope(phi, yu + 0.05 * (hashNoise(ri * 17 + j) - 0.5), 1.2 + 0.06 * ri);
+          curl(p, k * (0.032 + 0.008 * hashNoise(ri * 7 + j * 3)), 100 + ri * 20 + j);
+        }
+      });
+      // a few small curly locks on the forehead edge (above the brows)
+      for (let i = 0; i < 5; i++) {
+        const phi = THREE.MathUtils.degToRad(-44 + 22 * i);
+        const p = skullPoint(new THREE.Vector3(Math.sin(phi) * 0.76, 0.66, Math.cos(phi) * 0.76), 1.1);
+        curl(p, k * (0.022 + 0.006 * hashNoise(i * 9.1)), 200 + i);
       }
       break;
     }

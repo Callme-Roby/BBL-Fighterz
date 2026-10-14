@@ -231,6 +231,7 @@ export class LabScreen implements Screen {
             ['afro', 'AFRO'],
             ['bigafro', 'AFRO XXL'],
             ['midlong', 'MI-LONGS'],
+            ['curlymid', 'BOUCLÉS'],
             ['long', 'LONGS'],
             ['dreads', 'DREADS'],
             ['mohawk', 'IROQUOIS'],

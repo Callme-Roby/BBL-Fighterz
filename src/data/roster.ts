@@ -23,8 +23,10 @@ export type HairStyle =
   | 'cap'
   /** bandana tied on the head, knot at the back (colour: `accessories.cap`, else hair colour) */
   | 'bandana'
-  /** hair down to the chin / neck, covering the sides and back, open in front of the face */
+  /** straight hair down to the chin / neck, covering the sides and back, open in front of the face */
   | 'midlong'
+  /** voluminous curly / wavy mid-length cut: curls on top, over the ears, down to the jaw */
+  | 'curlymid'
   /** huge, tall, spiky palm-tree mass of hair */
   | 'tahiti'
   /** long locks down to the belly (lower part drapes with the chest / spine) */
@@ -40,6 +42,7 @@ export const HAIR_STYLES: readonly HairStyle[] = [
   'afro',
   'bigafro',
   'midlong',
+  'curlymid',
   'long',
   'dreads',
   'mohawk',
@@ -143,6 +146,10 @@ export interface FighterDef {
   winLines: string[];
   /** big line shouted during the BBL MAX (ultimate) close-up */
   superLines?: string[];
+  /** BBL MAX cinematic script id (src/sim/ultimates.ts) — built-in fighters use src/data/ultimates.ts */
+  ultimate?: string;
+  /** title shown when the BBL MAX starts (custom fighters) */
+  ultimateName?: string;
   voice?: {
     lang?: string;
     pitch?: number;
@@ -207,7 +214,9 @@ export const ROSTER: FighterDef[] = [
     name: 'ALEX',
     title: 'Boucles et uppercuts',
     face: 'faces/alex.jpg',
-    hair: { style: 'midlong', color: '#1a120c' },
+    // the sampled tone comes out greyer than the photo: explicit body tone
+    skin: '#a87a60',
+    hair: { style: 'curlymid', color: '#9a7448' },
     outfit: {
       top: 'hoodie',
       topColor: '#e0742a',
@@ -228,8 +237,7 @@ export const ROSTER: FighterDef[] = [
     name: 'BENJI',
     title: 'Brushing tropical',
     face: 'faces/benji.jpg',
-    skin: '#a87a60',
-    hair: { style: 'tahiti', color: '#a07a48' },
+    hair: { style: 'tahiti', color: '#1c140e' },
     outfit: {
       top: 'tshirt',
       topColor: '#2c64c8',

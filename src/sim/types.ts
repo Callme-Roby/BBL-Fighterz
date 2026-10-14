@@ -126,6 +126,12 @@ export interface FighterState {
   /** last move of the current string and how many times in a row */
   lastMove: MoveId | null;
   repeat: number;
+  /** id of this fighter's BBL MAX cinematic script (see sim/ultimates.ts) */
+  ult: string;
+  /** attacker x when the cinematic started */
+  ultOrigin: number;
+  /** script id of the cinematic this fighter is the victim of */
+  ultBy: string;
 }
 
 export type Phase = 'intro' | 'roundIntro' | 'fight' | 'ko' | 'roundOver' | 'matchOver';

@@ -27,7 +27,7 @@ export interface Clip {
   length: number;
 }
 
-const merge = (...poses: Pose[]): Pose => Object.assign({}, ...poses);
+export const merge = (...poses: Pose[]): Pose => Object.assign({}, ...poses);
 
 // ---------------------------------------------------------------------------
 // base poses
@@ -56,7 +56,7 @@ export const STANCE: Pose = merge(GUARD_ARMS, {
   footR: [-31, 0, 0],
 });
 
-const CROUCH: Pose = merge(GUARD_ARMS, {
+export const CROUCH: Pose = merge(GUARD_ARMS, {
   root: [0, -0.4, 0.04],
   hips: [0, -30, 0],
   spine: [16, -4, 0],
@@ -73,7 +73,7 @@ const CROUCH: Pose = merge(GUARD_ARMS, {
   upperArmR: [-50, 0, -18],
 });
 
-const AIR: Pose = merge(GUARD_ARMS, {
+export const AIR: Pose = merge(GUARD_ARMS, {
   root: [0, 0.05, 0],
   hips: [0, -25, 0],
   spine: [10, 0, 0],
@@ -85,7 +85,7 @@ const AIR: Pose = merge(GUARD_ARMS, {
   footR: [-20, 0, 0],
 });
 
-const LYING: Pose = {
+export const LYING: Pose = {
   root: [0, -0.86, -0.05],
   hips: [-90, -10, 0],
   spine: [-4, 0, 0],
@@ -177,7 +177,7 @@ const single = (p: Pose, length = 1): Clip => ({ length, keys: [{ f: 0, p }] });
 // ---------------------------------------------------------------------------
 // attacks
 // ---------------------------------------------------------------------------
-interface AttackPoses {
+export interface AttackPoses {
   windup: Pose;
   strike: Pose;
   /** optional pose between strike and recovery */
@@ -187,7 +187,7 @@ interface AttackPoses {
   end?: Pose;
 }
 
-const ATTACKS: Record<MoveId, AttackPoses> = {
+export const ATTACKS: Record<MoveId, AttackPoses> = {
   jab: {
     windup: merge(STANCE, { hips: [0, -22, 0], upperArmL: [-70, 0, 10], foreArmL: [-80, 0, 0] }),
     strike: merge(STANCE, {
@@ -470,7 +470,7 @@ function moveClip(id: MoveId): Clip {
 // ---------------------------------------------------------------------------
 // reactions
 // ---------------------------------------------------------------------------
-const HIT_HIGH = merge(STANCE, {
+export const HIT_HIGH = merge(STANCE, {
   root: [0, -0.06, -0.08],
   hips: [-6, -40, 0],
   spine: [-10, 0, 0],
@@ -482,7 +482,7 @@ const HIT_HIGH = merge(STANCE, {
   upperArmR: [-10, 0, -40],
   foreArmR: [-50, 0, 0],
 });
-const HIT_MID = merge(STANCE, {
+export const HIT_MID = merge(STANCE, {
   root: [0, -0.1, -0.1],
   hips: [6, -30, 0],
   spine: [26, 0, 0],
@@ -493,7 +493,7 @@ const HIT_MID = merge(STANCE, {
   upperArmR: [-30, 0, -10],
   foreArmR: [-100, 0, 0],
 });
-const HIT_LOW = merge(STANCE, {
+export const HIT_LOW = merge(STANCE, {
   root: [0, -0.14, -0.04],
   thighL: [-10, 0, 6],
   shinL: [55, 0, 0],
@@ -504,7 +504,7 @@ const HIT_LOW = merge(STANCE, {
   foreArmL: [-60, 0, 0],
 });
 const CROUCH_HIT = merge(CROUCH, { spine: [0, 0, 0], chest: [-10, 0, 0], head: [-25, 0, 0], upperArmL: [-20, 0, 40], foreArmL: [-60, 0, 0] });
-const BLOCK = merge(STANCE, {
+export const BLOCK = merge(STANCE, {
   root: [0, -0.08, -0.03],
   hips: [0, -26, 0],
   spine: [10, 0, 0],
@@ -709,7 +709,7 @@ function win(variant: number): Clip {
   return { length: 90, loop: false, keys: [{ f: 0, p: STANCE }, { f: 14, p: bounce, ease: 'out' }, { f: 24, p }, { f: 90, p }] };
 }
 
-const LOSE = merge(STANCE, {
+export const LOSE = merge(STANCE, {
   root: [0, -0.12, 0],
   hips: [10, -40, 0],
   spine: [28, 0, 0],
@@ -766,7 +766,7 @@ function superFlash(): Clip {
   return { length: 96, keys };
 }
 
-function superCombo(): Clip {
+export function superCombo(): Clip {
   const A = ATTACKS;
   const hammerUp = merge(AIR, {
     root: [0, 0, 0],
@@ -836,7 +836,7 @@ function superCombo(): Clip {
   };
 }
 
-function superVictim(): Clip {
+export function superVictim(): Clip {
   const hitHigh2 = merge(HIT_HIGH, { head: [-34, -20, 0], neck: [-24, -10, 0], chest: [-16, -10, 0] });
   const elbowHit = merge(HIT_HIGH, { head: [-14, 45, 0], neck: [-10, 25, 0], chest: [-8, 15, 0] });
   const kneeHit = merge(HIT_MID, { root: [0, 0.02, -0.06], spine: [34, 0, 0], chest: [24, 0, 0], head: [20, 0, 0] });
@@ -859,7 +859,7 @@ function superVictim(): Clip {
   };
 }
 
-function CLIP_JUGGLE_POSES() {
+export function CLIP_JUGGLE_POSES() {
   const a = merge(HIT_HIGH, { root: [0, 0, 0], hips: [-30, -20, 0], thighL: [-30, 0, 15], thighR: [-10, 0, -15], shinL: [40, 0, 0], shinR: [60, 0, 0] });
   const b = merge(a, {
     hips: [-75, -20, 0],

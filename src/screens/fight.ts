@@ -1,6 +1,7 @@
 import { audio } from '../audio/audio';
 import type { App, Screen } from '../app';
 import type { FighterDef } from '../data/roster';
+import { ultimateOf } from '../data/ultimates';
 import { FightWorld } from '../game/world';
 import { input } from '../input/input';
 import type { NetLink, NetMsg } from '../net/peer';
@@ -73,7 +74,11 @@ export class FightScreen implements Screen {
     private app: App,
     private setup: FightSetup,
   ) {
-    this.state = createGame({ roundsToWin: setup.rounds, skipIntro: setup.skipIntro });
+    this.state = createGame({
+      roundsToWin: setup.rounds,
+      skipIntro: setup.skipIntro,
+      ultimates: [ultimateOf(setup.p1).script, ultimateOf(setup.p2).script],
+    });
     // deterministic variant choices for intro animations (same on both peers)
     this.state.fighters[0].variant = setup.seed % 2;
     this.state.fighters[1].variant = (setup.seed >> 1) % 2;
@@ -455,7 +460,7 @@ export class FightScreen implements Screen {
         const def = ev.p === 0 ? this.setup.p1 : this.setup.p2;
         const lines = def.superLines?.length ? def.superLines : ['Prends ça… BBL MAX !'];
         const line = lines[(this.setup.seed + this.state.frame) % lines.length];
-        this.hud.announce('BBL MAX', 'small super', 70);
+        this.hud.announce(ultimateOf(def).name, 'small super', 80);
         this.hud.subtitle(def.name, this.world!.faces[ev.p].portraitUrl, line);
         audio.duck(true);
         void audio.say(line, { lang: def.voice?.lang, pitch: def.voice?.pitch, rate: (def.voice?.rate ?? 1) * 1.05 });

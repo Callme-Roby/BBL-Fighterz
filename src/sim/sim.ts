@@ -1,4 +1,5 @@
 import { MOVES, moveTotal, type MoveDef } from './moves';
+import { curve, getUltimate } from './ultimates';
 import {
   ARENA_HALF_WIDTH,
   BODY_RADIUS,
@@ -28,7 +29,6 @@ import {
   ROUND_OVER_FRAMES,
   ROUND_TIME,
   START_X,
-  SUPER_COMBO_FRAMES,
   SUPER_FLASH_FRAMES,
   type Action,
   type FighterState,
@@ -111,12 +111,17 @@ export function createFighter(side: 0 | 1): FighterState {
     chain: 0,
     lastMove: null,
     repeat: 0,
+    ult: 'rush',
+    ultOrigin: 0,
+    ultBy: 'rush',
   };
 }
 
 export interface MatchOptions {
   roundsToWin?: number;
   skipIntro?: boolean;
+  /** BBL MAX script id of each side (sim/ultimates.ts) */
+  ultimates?: [string, string];
 }
 
 export function createGame(opts: MatchOptions = {}): GameState {
@@ -136,6 +141,10 @@ export function createGame(opts: MatchOptions = {}): GameState {
     timeUp: false,
   };
   for (const f of s.fighters) setAction(f, s.phase === 'intro' ? 'intro' : 'idle');
+  if (opts.ultimates) {
+    s.fighters[0].ult = getUltimate(opts.ultimates[0]).id;
+    s.fighters[1].ult = getUltimate(opts.ultimates[1]).id;
+  }
   return s;
 }
 
@@ -600,50 +609,13 @@ function tryStartSuper(s: GameState, f: FighterState, o: FighterState, idx: numb
   return true;
 }
 
-/** [frame, damage, strength, impact height (-1 = victim's body)] of the cinematic combo */
-const SUPER_HITS: [number, number, 'light' | 'medium' | 'heavy', number][] = [
-  [8, 6, 'light', 1.55],
-  [18, 7, 'medium', 1.6],
-  [30, 8, 'medium', 1.15],
-  [44, 8, 'medium', 1.5],
-  [58, 12, 'heavy', 1.4],
-  [92, 19, 'heavy', -1],
-];
-const SUPER_FINAL_HIT = 92;
-
-function superVictimY(k: number): number {
-  if (k < 58) return 0;
-  if (k < 80) {
-    const t = (k - 58) / 22;
-    return 1.5 * t * (2 - t);
-  }
-  if (k < 92) return 1.5 + (k - 80) * 0.01;
-  if (k < 102) return Math.max(0, 1.62 * (1 - (k - 92) / 10));
-  return 0;
-}
-
-function superAttackerY(k: number): number {
-  if (k < 66) return 0;
-  if (k < 84) {
-    const t = (k - 66) / 18;
-    return 1.8 * t * (2 - t);
-  }
-  if (k < 92) return 1.8;
-  if (k < 106) return Math.max(0, 1.8 * (1 - (k - 92) / 14));
-  return 0;
-}
-
-function superDist(k: number): number {
-  if (k < 58) return 0.7;
-  if (k < 92) return 0.7 + (k - 58) * 0.006;
-  return 0.9;
-}
-
 function startSuperCombo(s: GameState, a: FighterState, v: FighterState, idx: number) {
   setAction(a, 'superCombo');
   setAction(v, 'superVictim');
   a.actionFrame = 1;
   v.actionFrame = 1;
+  a.ultOrigin = a.x;
+  v.ultBy = a.ult;
   v.facing = (a.facing * -1) as 1 | -1;
   v.crouching = false;
   v.frozen = 0;
@@ -652,38 +624,51 @@ function startSuperCombo(s: GameState, a: FighterState, v: FighterState, idx: nu
 
 /** Scripted cinematic combo: positions and hits are a pure function of the frame. */
 function runSuperCombo(s: GameState, a: FighterState, v: FighterState, idx: number) {
+  const u = getUltimate(a.ult);
   const k = a.actionFrame;
   v.actionFrame = k;
   a.vx = a.vy = v.vx = v.vy = 0;
-  a.y = superAttackerY(k);
-  v.y = superVictimY(k);
-  const d = superDist(k);
+  a.x = a.ultOrigin + a.facing * curve(u.ax, k);
+  a.y = curve(u.ay, k);
+  v.y = curve(u.vy, k);
+  const d = curve(u.dist, k);
   let vx = a.x + a.facing * d;
-  if (vx > ARENA_HALF_WIDTH || vx < -ARENA_HALF_WIDTH) {
-    vx = vx > 0 ? ARENA_HALF_WIDTH : -ARENA_HALF_WIDTH;
-    a.x = vx - a.facing * d;
+  // keep both fighters inside the arena: slide the whole scene back from the wall
+  const lim = ARENA_HALF_WIDTH;
+  const over = vx > lim ? vx - lim : vx < -lim ? vx + lim : 0;
+  if (over !== 0) {
+    vx -= over;
+    a.x -= over;
+    a.ultOrigin -= over;
+  }
+  if (a.x > lim || a.x < -lim) {
+    const o2 = a.x > lim ? a.x - lim : a.x + lim;
+    a.x -= o2;
+    vx -= o2;
+    a.ultOrigin -= o2;
   }
   v.x = vx;
-  for (const [hf, dmg, strength, hy] of SUPER_HITS) {
-    if (k !== hf) continue;
-    const last = hf === SUPER_FINAL_HIT;
+  const last = u.hits.length - 1;
+  for (let i = 0; i <= last; i++) {
+    const hit = u.hits[i];
+    if (k !== hit.f) continue;
     // the victim can only be finished by the last blow (the cinematic always plays out)
-    v.hp = last ? Math.max(0, v.hp - dmg) : Math.max(1, v.hp - dmg);
+    v.hp = i === last ? Math.max(0, v.hp - hit.dmg) : Math.max(1, v.hp - hit.dmg);
     v.comboCount++;
-    v.comboDamage += dmg;
-    s.hitstop = Math.max(s.hitstop, last ? 16 : strength === 'heavy' ? 10 : 5);
+    v.comboDamage += hit.dmg;
+    s.hitstop = Math.max(s.hitstop, i === last ? 16 : hit.strength === 'heavy' ? 10 : hit.strength === 'medium' ? 6 : 4);
     s.events.push({
       t: 'hit',
       p: idx,
       x: (a.x + v.x) / 2 + a.facing * 0.12,
-      y: hy < 0 ? v.y + 0.9 : hy,
-      strength,
-      counter: last,
-      dmg,
+      y: hit.y < 0 ? v.y + 0.9 : hit.y,
+      strength: hit.strength,
+      counter: i === last,
+      dmg: hit.dmg,
     });
   }
-  if (k === 102) s.events.push({ t: 'fall', p: 1 - idx });
-  if (k >= SUPER_COMBO_FRAMES) {
+  if (k === u.fall) s.events.push({ t: 'fall', p: 1 - idx });
+  if (k >= u.length) {
     toNeutral(a);
     a.y = 0;
     v.y = 0;
@@ -952,9 +937,11 @@ function resetRound(s: GameState) {
     const f = s.fighters[i];
     const wins = f.wins;
     const meter = f.meter;
+    const ult = f.ult;
     Object.assign(f, createFighter(i as 0 | 1));
     f.wins = wins;
     f.meter = meter;
+    f.ult = ult;
   }
   s.timer = ROUND_TIME;
   s.hitstop = 0;

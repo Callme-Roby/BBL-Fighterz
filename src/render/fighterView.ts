@@ -5,6 +5,7 @@ import { Animator } from './animator';
 import { buildCharacter, type CharacterModel } from './characterModel';
 import type { FaceAssets } from './faceTexture';
 import { CLIPS } from './poses';
+import { ultimateClip } from './ultimatePoses';
 import { makeCanvasTexture } from './ps1Material';
 
 let shadowTex: THREE.Texture | null = null;
@@ -146,10 +147,16 @@ export class FighterView {
         blend = 3;
         break;
       case 'superFlash':
+        clip = 'superFlash';
+        blend = 5;
+        break;
       case 'superCombo':
+        clip = ultimateClip(f.ult, 'a');
+        blend = 2;
+        break;
       case 'superVictim':
-        clip = f.action;
-        blend = f.action === 'superFlash' ? 5 : 2;
+        clip = ultimateClip(f.ultBy, 'v');
+        blend = 2;
         break;
       case 'intro':
         clip = 'intro' + (f.variant % 2);

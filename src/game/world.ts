@@ -10,6 +10,7 @@ import { getStage } from '../render/stages';
 import type { StageEnv } from '../render/stages/types';
 import type { RetroPipeline } from '../render/pipeline';
 import { INTRO_SPLIT, type GameState, type SimEvent } from '../sim/types';
+import { getUltimate } from '../sim/ultimates';
 
 export interface WorldEventHooks {
   onEvent?(ev: SimEvent, s: GameState): void;
@@ -214,29 +215,47 @@ export class FightWorld {
       }
       snap = 1 - Math.exp(-dt * 7);
     } else if (sc >= 0) {
-      // BBL MAX cinematic combo: hard camera cuts
+      // BBL MAX cinematic combo: hard camera cuts scripted per ultimate
       const A = s.fighters[sc];
       const V = s.fighters[1 - sc];
       const k = A.actionFrame;
       const fa = A.facing;
       const mid = (A.x + V.x) / 2;
-      let seg: number;
-      if (k < 26) {
-        seg = 0;
-        targetPos.set(A.x - fa * 0.95, 1.55, 1.5);
-        targetLook.set(V.x, 1.35, 0);
-      } else if (k < 56) {
-        seg = 1;
-        targetPos.set(V.x + fa * 1.45, 0.8, 1.8);
-        targetLook.set(A.x, 1.25, 0);
-      } else if (k < 92) {
-        seg = 2;
-        targetPos.set(mid - fa * 0.4, 0.35, 3.3);
-        targetLook.set(mid, 1.4 + V.y * 0.45, 0);
-      } else {
-        seg = 3;
-        targetPos.set(mid + fa * 0.6, 2.9, 4.8);
-        targetLook.set(V.x, 0.45, 0);
+      const cams = getUltimate(A.ult).cams;
+      let seg = 0;
+      for (let i = 0; i < cams.length; i++) if (k >= cams[i][0]) seg = i;
+      switch (cams[seg]?.[1] ?? 'side') {
+        case 'over':
+          targetPos.set(A.x - fa * 0.95, A.y + 1.55, 1.5);
+          targetLook.set(V.x, V.y + 1.35, 0);
+          break;
+        case 'front':
+          targetPos.set(V.x + fa * 1.45, 0.8, 1.8);
+          targetLook.set(A.x, A.y + 1.25, 0);
+          break;
+        case 'low':
+          targetPos.set(mid - fa * 0.4, 0.35, 3.3);
+          targetLook.set(mid, 1.4 + Math.max(A.y, V.y) * 0.45, 0);
+          break;
+        case 'high':
+          targetPos.set(mid + fa * 0.6, 2.9, 4.8);
+          targetLook.set(V.x, V.y * 0.5 + 0.45, 0);
+          break;
+        case 'side':
+          targetPos.set(mid, 1.25 + Math.max(A.y, V.y) * 0.4, 3.4);
+          targetLook.set(mid, 1.05 + Math.max(A.y, V.y) * 0.5, 0);
+          break;
+        case 'close':
+          this.faceShot(sc, targetPos, targetLook, 1.25, 0.95, 0.02);
+          break;
+        case 'victim':
+          targetPos.set(V.x + fa * 0.35, V.y + 1.45, 1.55);
+          targetLook.set(V.x, V.y + 1.2, 0);
+          break;
+        case 'wide':
+          targetPos.set(mid, 2.1, 7.5);
+          targetLook.set(mid, 1.0 + Math.max(A.y, V.y) * 0.4, 0);
+          break;
       }
       if (seg !== this.superSeg) {
         this.superSeg = seg;
