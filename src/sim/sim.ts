@@ -716,8 +716,9 @@ function runSuperCombo(s: GameState, a: FighterState, v: FighterState, idx: numb
     v.hp = i === last ? Math.max(0, v.hp - hit.dmg) : Math.max(1, v.hp - hit.dmg);
     v.comboCount++;
     v.comboDamage += hit.dmg;
-    const word = hit.kind === 'word' || hit.kind === 'none';
-    s.hitstop = Math.max(s.hitstop, i === last ? 16 : word ? 0 : hit.strength === 'heavy' ? 10 : hit.strength === 'medium' ? 6 : 4);
+    // no freeze for verbal / off-screen blows and bullet bursts (keeps the fire rate)
+    const still = hit.kind === 'word' || hit.kind === 'none' || hit.kind === 'shot';
+    s.hitstop = Math.max(s.hitstop, i === last ? 16 : still ? 0 : hit.strength === 'heavy' ? 10 : hit.strength === 'medium' ? 6 : 4);
     s.events.push({
       t: 'hit',
       p: idx,

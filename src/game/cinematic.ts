@@ -210,7 +210,8 @@ export class CineDirector {
       cv.view.model.root.visible = on;
       cv.view.shadow.visible = on;
       if (!on) continue;
-      const x = A.ultOrigin + A.facing * curve(a.x, k);
+      // stay inside the arena walls
+      const x = Math.max(-7.1, Math.min(7.1, A.ultOrigin + A.facing * curve(a.x, k)));
       const y = curve(a.y, k);
       let face = (a.facing ?? 1) * A.facing;
       if (a.turn) for (const [t0, t1] of a.turn) if (k >= t0 && k < t1) face = -face;
@@ -390,6 +391,9 @@ export class CineDirector {
         const to = this.chest(tv, new THREE.Vector3());
         to.z = 0.05;
         if (e.toY !== undefined) to.y = tv.root.position.y + e.toY;
+        // a 'boom' blow landing on arrival already explodes: don't explode twice
+        const arrival = e.f + Math.max(1, e.dur);
+        const hitBoom = (this.script?.hits ?? []).some((hh) => hh.kind === 'boom' && Math.abs(hh.f - arrival) <= 3);
         const obj = buildProjectile(e.kind);
         this.scene.add(obj);
         this.flying.push({
@@ -400,7 +404,7 @@ export class CineDirector {
           start: e.f,
           dur: Math.max(1, e.dur),
           arc: e.arc ?? (e.kind === 'grenade' ? 0.8 : 0),
-          boom: !!e.boom,
+          boom: !!e.boom && !hitBoom,
           linger: e.kind === 'web' ? 8 : 0,
         });
         if (e.kind === 'rocket') h?.sfx('rocket', from.x);

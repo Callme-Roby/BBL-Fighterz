@@ -337,7 +337,8 @@ export class FightWorld {
           targetLook.set(mid, 1.05 + Math.max(A.y, V.y) * 0.5, 0);
           break;
         case 'close':
-          this.faceShot(sc, targetPos, targetLook, 1.25, 0.95, 0.02);
+          // from the side rather than over the victim's head (big hair, props)
+          this.faceShot(sc, targetPos, targetLook, 1.25, 1.18, 0.02);
           break;
         case 'victim':
           targetPos.set(V.x + fa * 0.35, V.y + 1.45, 1.55);
@@ -354,7 +355,7 @@ export class FightWorld {
           targetLook.set(mid, 1.3 + Math.max(A.y, V.y) * 0.4, 0);
           break;
         case 'vface':
-          this.faceShot(1 - sc, targetPos, targetLook, 1.15, 1.0, 0.02);
+          this.faceShot(1 - sc, targetPos, targetLook, 1.15, 1.15, 0.02);
           break;
         case 'actor': {
           const act = this.cine.firstActor();
