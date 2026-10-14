@@ -45,39 +45,202 @@ function ps1Posterize(ctx: CanvasRenderingContext2D, w: number, h: number) {
   ctx.putImageData(img, 0, 0);
 }
 
-function sampleSkin(ctx: CanvasRenderingContext2D, w: number, h: number): THREE.Color {
-  // cheeks + nose bridge + chin-ish areas
-  const regions: [number, number, number, number][] = [
-    [0.16, 0.5, 0.14, 0.12],
-    [0.7, 0.5, 0.14, 0.12],
-    [0.42, 0.25, 0.16, 0.08],
-  ];
-  const samples: [number, number, number][] = [];
-  for (const [rx, ry, rw, rh] of regions) {
-    const data = ctx.getImageData(Math.floor(rx * w), Math.floor(ry * h), Math.max(1, Math.floor(rw * w)), Math.max(1, Math.floor(rh * h))).data;
-    for (let i = 0; i < data.length; i += 4) samples.push([data[i], data[i + 1], data[i + 2]]);
-  }
-  // median per channel (robust to glasses / shadows)
-  const med = (c: number) => {
-    const arr = samples.map((s) => s[c]).sort((a, b) => a - b);
-    return arr[Math.floor(arr.length / 2)] ?? 180;
-  };
-  return new THREE.Color(med(0) / 255, med(1) / 255, med(2) / 255);
+/**
+ * Position of a texture pixel in the face oval, exactly as the face shader computes it
+ * (ps1Material FACE_FRAG): p in [-1, 1] with y up, d = 1 on the oval's edge.
+ */
+function ovalAt(x: number, y: number, w: number, h: number): { px: number; py: number; d: number } {
+  const px = ((x + 0.5) / w) * 2 - 1;
+  const py = 1 - ((y + 0.5) / h) * 2;
+  return { px, py, d: Math.hypot(px * 1.02, py * 0.98) };
 }
 
-/** Photos are often pinkish / over-saturated on the cheeks: pull the body tone toward a natural skin hue. */
-function naturalSkin(c: THREE.Color): THREE.Color {
+const lum = (r: number, g: number, b: number) => 0.299 * r + 0.587 * g + 0.114 * b;
+const smooth01 = (e0: number, e1: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * Body skin tone from the photo: the cheeks and jaw sides just inside the face oval (below the
+ * eyes, beside the nose and mouth), i.e. the skin that meets the body at the oval's edge.
+ * Robust: only mid-tones of skin-like colours are kept (drops beard, shadows, glasses frames,
+ * specular highlights), then a per-channel median. No hue forcing: the body matches the photo.
+ */
+function sampleSkin(data: Uint8ClampedArray, w: number, h: number): THREE.Color {
+  const s: [number, number, number][] = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const { px, py, d } = ovalAt(x, y, w, h);
+      if (d < 0.42 || d > 0.86 || py < -0.62 || py > 0.06 || Math.abs(px) < 0.26) continue;
+      const i = (y * w + x) * 4;
+      s.push([data[i], data[i + 1], data[i + 2]]);
+    }
+  }
+  const median = (arr: number[]) => {
+    arr.sort((a, b) => a - b);
+    return arr[Math.floor(arr.length / 2)] ?? 160;
+  };
+  const mY = median(s.map((c) => lum(c[0], c[1], c[2])));
+  let keep = s.filter((c) => {
+    const Y = lum(c[0], c[1], c[2]);
+    return Y > mY * 0.8 && Y < mY * 1.18 && c[0] >= c[2] * 0.92;
+  });
+  if (keep.length < 20) keep = s;
+  const col = new THREE.Color(median(keep.map((c) => c[0])) / 255, median(keep.map((c) => c[1])) / 255, median(keep.map((c) => c[2])) / 255);
+  // safety net only for wild colour casts: cap the saturation, keep hue and lightness
   const hsl = { h: 0, s: 0, l: 0 };
-  c.getHSL(hsl);
-  // typical skin hue is ~20-30 degrees
-  const targetH = 0.07;
-  let dh = targetH - hsl.h;
-  if (dh > 0.5) dh -= 1;
-  if (dh < -0.5) dh += 1;
-  hsl.h = (hsl.h + dh * 0.6 + 1) % 1;
-  hsl.s = Math.min(hsl.s * 0.75, 0.5);
-  hsl.l = hsl.l * 0.95;
-  return new THREE.Color().setHSL(hsl.h, hsl.s, hsl.l);
+  col.getHSL(hsl);
+  if (hsl.s > 0.55) col.setHSL(hsl.h, 0.55, hsl.l);
+  return col;
+}
+
+/** Separable box blur (edge clamped), applied `passes` times: ~gaussian. */
+function boxBlur(src: Float32Array, w: number, h: number, r: number, passes = 2): Float32Array {
+  const a = Float32Array.from(src);
+  const tmp = new Float32Array(w * h);
+  const n = 2 * r + 1;
+  for (let p = 0; p < passes; p++) {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let acc = 0;
+        for (let k = -r; k <= r; k++) acc += a[y * w + Math.min(w - 1, Math.max(0, x + k))];
+        tmp[y * w + x] = acc / n;
+      }
+    }
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let acc = 0;
+        for (let k = -r; k <= r; k++) acc += tmp[Math.min(h - 1, Math.max(0, y + k)) * w + x];
+        a[y * w + x] = acc / n;
+      }
+    }
+  }
+  return a;
+}
+
+/**
+ * Makes the outer band of the face oval blend into the body skin tone: the local skin colour of
+ * the photo (low-pass of the skin-like pixels only) is scaled toward `skin` near the oval's edge,
+ * so the photo's own details (beard, brows, shadows) are kept but there is no colour step where
+ * the shader fades the photo into the head / neck / ears colour.
+ */
+function matchEdgesToSkin(img: ImageData, skin: THREE.Color) {
+  const { width: w, height: h, data } = img;
+  const N = w * h;
+  const S = [skin.r * 255, skin.g * 255, skin.b * 255];
+  const YS = Math.max(1, lum(S[0], S[1], S[2]));
+  const sumS = Math.max(1, S[0] + S[1] + S[2]);
+  const ws = new Float32Array(N);
+  const chan = [0, 1, 2].map(() => new Float32Array(N));
+  const wchan = [0, 1, 2].map(() => new Float32Array(N));
+  for (let i = 0; i < N; i++) {
+    const r = data[i * 4];
+    const g = data[i * 4 + 1];
+    const b = data[i * 4 + 2];
+    const sum = Math.max(1, r + g + b);
+    const dc = Math.hypot(r / sum - S[0] / sumS, g / sum - S[1] / sumS, b / sum - S[2] / sumS);
+    const dl = Math.log(Math.max(1, lum(r, g, b)) / YS);
+    const wt = Math.exp(-((dc / 0.04) ** 2) - (dl / 0.4) ** 2);
+    ws[i] = wt;
+    [r, g, b].forEach((v, c) => {
+      chan[c][i] = v;
+      wchan[c][i] = v * wt;
+    });
+  }
+  const R = 4;
+  const den = boxBlur(ws, w, h, R);
+  const num = wchan.map((c) => boxBlur(c, w, h, R));
+  const plain = chan.map((c) => boxBlur(c, w, h, R));
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const k = smooth01(0.4, 0.92, ovalAt(x, y, w, h).d);
+      if (k <= 0) continue;
+      const t = Math.min(1, den[i] / 0.15);
+      for (let c = 0; c < 3; c++) {
+        const local = (num[c][i] / Math.max(den[i], 1e-4)) * t + plain[c][i] * (1 - t);
+        const ratio = Math.min(1.6, Math.max(0.6, S[c] / Math.max(local, 1)));
+        data[i * 4 + c] = Math.min(255, chan[c][i] * (1 + (ratio - 1) * k));
+      }
+    }
+  }
+}
+
+/**
+ * Full-head spider-hero mask (parody, no logo): mask colour = skin, a web radiating from the
+ * nose, big white eye lenses outlined in black.
+ */
+function drawSpiderMask(ctx: CanvasRenderingContext2D, w: number, h: number, skin: THREE.Color, line: string) {
+  const sx = w / 72;
+  const sy = h / 96;
+  // base colour with soft volume shading
+  const img = ctx.createImageData(w, h);
+  const d = img.data;
+  for (let py = 0; py < h; py++) {
+    for (let px = 0; px < w; px++) {
+      const x = (px + 0.5) / sx;
+      const y = (py + 0.5) / sy;
+      const dx = (x - 36) / 36;
+      let f = 1 - 0.15 * Math.abs(dx) ** 2.2 + 0.035 * dx;
+      f -= 0.1 * Math.max(0, (y - 76) / 20) ** 2 * (0.3 + Math.abs(dx));
+      f += 0.05 * Math.exp(-(((x - 37) / 4) ** 2) - ((y - 52) / 9) ** 2); // nose ridge
+      const i = (py * w + px) * 4;
+      d[i] = Math.min(255, skin.r * f * 255);
+      d[i + 1] = Math.min(255, skin.g * f * 255);
+      d[i + 2] = Math.min(255, skin.b * f * 255);
+      d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  ctx.save();
+  ctx.scale(sx, sy);
+  ctx.strokeStyle = line;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  // web: spokes from the nose + sagging rings
+  const cx = 36;
+  const cy = 50;
+  const spokes = 16;
+  const ang = (i: number) => (i / spokes) * Math.PI * 2 + 0.1;
+  ctx.lineWidth = 1.05;
+  for (let i = 0; i < spokes; i++) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(ang(i)) * 90, cy + Math.sin(ang(i)) * 90);
+    ctx.stroke();
+  }
+  for (const r of [7, 14, 22, 31, 41, 52, 64]) {
+    ctx.beginPath();
+    for (let i = 0; i < spokes; i++) {
+      const a0 = ang(i);
+      const a1 = ang(i + 1);
+      const am = (a0 + a1) / 2;
+      const x0 = cx + Math.cos(a0) * r;
+      const y0 = cy + Math.sin(a0) * r;
+      if (i === 0) ctx.moveTo(x0, y0);
+      ctx.quadraticCurveTo(cx + Math.cos(am) * r * 0.8, cy + Math.sin(am) * r * 0.8, cx + Math.cos(a1) * r, cy + Math.sin(a1) * r);
+    }
+    ctx.stroke();
+  }
+  // big eye lenses (picture left, then mirrored)
+  for (const m of [1, -1]) {
+    const X = (x: number) => (m === 1 ? x : 72 - x);
+    ctx.beginPath();
+    ctx.moveTo(X(32), 47);
+    ctx.quadraticCurveTo(X(31), 32, X(17), 29);
+    ctx.quadraticCurveTo(X(6), 28, X(7), 38);
+    ctx.quadraticCurveTo(X(10), 48, X(32), 47);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, 29, 0, 48);
+    grad.addColorStop(0, '#ffffff');
+    grad.addColorStop(1, '#c8d0dc');
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.lineWidth = 2.6;
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function hash01(i: number): number {
@@ -100,6 +263,11 @@ function seedOf(s: string): number {
 export function drawProceduralFace(ctx: CanvasRenderingContext2D, w: number, h: number, def: FighterDef) {
   const fg = def.faceGen ?? {};
   const skin = new THREE.Color(def.skin ?? '#c89070');
+  if (fg.mask === 'spider') {
+    drawSpiderMask(ctx, w, h, skin, fg.maskLine ?? '#121216');
+    ps1Posterize(ctx, w, h);
+    return;
+  }
   const seed = seedOf(def.id);
   const sx = w / 72;
   const sy = h / 96;
@@ -416,14 +584,15 @@ export function drawProceduralFace(ctx: CanvasRenderingContext2D, w: number, h: 
   ps1Posterize(ctx, w, h);
 }
 
-function finish(canvas: HTMLCanvasElement, skin: THREE.Color): FaceAssets {
+/** `portraitFrom`: picture used for the menu portrait (defaults to the texture's canvas). */
+function finish(canvas: HTMLCanvasElement, skin: THREE.Color, portraitFrom: HTMLCanvasElement = canvas): FaceAssets {
   const texture = pixelTexture(canvas);
   const portrait = document.createElement('canvas');
   portrait.width = 48;
   portrait.height = 64;
   const pctx = portrait.getContext('2d')!;
   pctx.imageSmoothingEnabled = true;
-  pctx.drawImage(canvas, 0, 0, 48, 64);
+  pctx.drawImage(portraitFrom, 0, 0, 48, 64);
   return { texture, skin, portrait, portraitUrl: portrait.toDataURL() };
 }
 
@@ -463,9 +632,20 @@ async function buildFace(def: FighterDef): Promise<FaceAssets> {
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, sx, sy, sw, sh, 0, 0, FACE_W, FACE_H);
-      const skin = def.skin ? new THREE.Color(def.skin) : naturalSkin(sampleSkin(ctx, FACE_W, FACE_H));
+      const pixels = ctx.getImageData(0, 0, FACE_W, FACE_H);
+      const skin = def.skin ? new THREE.Color(def.skin) : sampleSkin(pixels.data, FACE_W, FACE_H);
+      // menus show the untouched photo
+      const portrait = document.createElement('canvas');
+      portrait.width = FACE_W;
+      portrait.height = FACE_H;
+      const pctx = portrait.getContext('2d', { willReadFrequently: true })!;
+      pctx.drawImage(canvas, 0, 0);
+      ps1Posterize(pctx, FACE_W, FACE_H);
+      // 3D texture: the oval's outer band is matched to the body skin tone
+      matchEdgesToSkin(pixels, skin);
+      ctx.putImageData(pixels, 0, 0);
       ps1Posterize(ctx, FACE_W, FACE_H);
-      return finish(canvas, skin);
+      return finish(canvas, skin, portrait);
     } catch (e) {
       console.warn(e);
     }

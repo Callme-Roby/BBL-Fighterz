@@ -59,8 +59,27 @@ juste après) · **enchaînements
 libres** : tout coup qui touche (ou est bloqué) peut s'annuler dans n'importe quel autre, jusqu'à
 6 coups · launchers (bas + Poing D, avant + Pied G) et **juggles** · coups contre (*counter hit*) ·
 jauge **BBL** qui se remplit en tapant/encaissant : pleine, la touche **BBL MAX** déclenche l'ultime
-(gros plan sur le visage + réplique, puis ruée : si elle touche, combo cinématique en 6 coups),
+(gros plan sur le visage + réplique, puis ruée : si elle touche, cinématique propre à chaque perso),
 utilisable aussi en fin de combo.
+
+### Les BBL MAX
+
+| Perso | BBL MAX | |
+|---|---|---|
+| Elies | RETOUR EN ENFANCE | Baby Elies prend sa place (0 dégât), puis Elies revient et met tout en un coup de poing |
+| Thomas | REGARDE DERRIÈRE TOI ! | la feinte, les coups dans le dos, puis il s'enfuit à l'autre bout de l'arène |
+| Dylan | JAMBES DE FEU | combo de jambes… puis son genou lâche (il se blesse et râle) |
+| Mihaï | SUPER SAYAN BBL | transformation, pose avec lunettes, coups de pied répétés là où ça fait mal |
+| Benji | C'EST QUOI TA CONFIG ? | la question qui déstabilise, puis l'uppercut |
+| Alex | VIENS LÀ MON MIGNON | écran noir, bagarre de dessin animé (BIM ! BAM ! POW !), l'adversaire K.O. avec des étoiles |
+| Isis | MUSCLES XXL | se transforme en bodybuildeuse puis enchaîne |
+| Zia | RAP CONTENDERS | battle de rap, punchlines en gros plan, pas un seul coup |
+| Clément | ARSENAL BARBU | mitraillette, grenades, bazooka |
+| Enola | SPIDER-POTE | son pote masqué débarque et ils enchaînent à deux |
+
+Les cinématiques sont des données (`src/sim/ultimates.ts`, `src/sim/ults/`) : coups, positions,
+caméras et une timeline de présentation (persos invités, accessoires, répliques, textes BD,
+fondus, musique) jouée par `src/game/cinematic.ts`.
 
 ## Ajouter tes potes
 

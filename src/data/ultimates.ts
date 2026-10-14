@@ -6,23 +6,16 @@ import { ULTIMATES } from '../sim/ultimates';
  * `name` = big title shown during the power-up close-up.
  */
 export const FIGHTER_ULTIMATES: Record<string, { script: string; name: string }> = {
-  // the crew
-  dylan: { script: 'tornado', name: 'TORNADE ROUSSE' },
-  clement: { script: 'headbutt', name: 'COUP DE BOULE BARBU' },
-  alex: { script: 'curls', name: 'BOUCLES INFERNALES' },
-  benji: { script: 'palm', name: 'COUP DU PALMIER' },
-  isis: { script: 'afro', name: 'AFRO XXL' },
-  enola: { script: 'cold', name: 'SANG-FROID' },
-  zia: { script: 'dreads', name: 'REINE DES DREADS' },
-  // the neighbourhood
-  jacky: { script: 'bbq', name: 'BARBECUE PARTY' },
-  secu: { script: 'bouncer', name: 'VIDÉ DU CLUB' },
-  papy: { script: 'boxer', name: '40 ANS DE RING' },
-  mcgrove: { script: 'micdrop', name: 'MIC DROP' },
-  kevin: { script: 'express', name: 'LIVRAISON EXPRESS' },
-  bruno: { script: 'burpees', name: 'SÉRIE DE BURPEES' },
-  bigmo: { script: 'grove', name: 'GROVE STREET 4 LIFE' },
-  mamie: { script: 'handbag', name: 'LE COUP DU SAC À MAIN' },
+  elies: { script: 'baby', name: 'RETOUR EN ENFANCE' },
+  thomas: { script: 'feint', name: 'REGARDE DERRIÈRE TOI !' },
+  dylan: { script: 'kneecap', name: 'JAMBES DE FEU' },
+  mihai: { script: 'saiyan', name: 'SUPER SAYAN BBL' },
+  benji: { script: 'config', name: "C'EST QUOI TA CONFIG ?" },
+  alex: { script: 'mignon', name: 'VIENS LÀ MON MIGNON' },
+  isis: { script: 'buff', name: 'MUSCLES XXL' },
+  zia: { script: 'rap', name: 'RAP CONTENDERS' },
+  clement: { script: 'arsenal', name: 'ARSENAL BARBU' },
+  enola: { script: 'spider', name: 'SPIDER-POTE' },
 };
 
 export function ultimateOf(def: FighterDef): { script: string; name: string } {

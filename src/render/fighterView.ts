@@ -6,6 +6,7 @@ import { buildCharacter, type CharacterModel } from './characterModel';
 import type { FaceAssets } from './faceTexture';
 import { CLIPS } from './poses';
 import { ultimateClip } from './ultimatePoses';
+import './ults';
 import { getUltimate } from '../sim/ultimates';
 import { makeCanvasTexture } from './ps1Material';
 

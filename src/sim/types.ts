@@ -1,3 +1,4 @@
+import type { HitKind } from './ultimates';
 /**
  * Deterministic fighting-game simulation types.
  * The simulation only uses plain data + basic arithmetic so that two browsers
@@ -150,7 +151,7 @@ export interface FighterState {
 export type Phase = 'intro' | 'roundIntro' | 'fight' | 'ko' | 'roundOver' | 'matchOver';
 
 export type SimEvent =
-  | { t: 'hit'; p: number; x: number; y: number; strength: Strength; counter: boolean; dmg: number }
+  | { t: 'hit'; p: number; x: number; y: number; strength: Strength; counter: boolean; dmg: number; kind?: HitKind; self?: boolean }
   | { t: 'block'; p: number; x: number; y: number }
   | { t: 'whiff'; p: number; heavy: boolean }
   | { t: 'land'; p: number }

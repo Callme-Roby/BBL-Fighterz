@@ -1,13 +1,15 @@
 // Dev harness: renders roster fighters in a given clip/frame.
 // /dev/model-preview.html?clip=idle&frame=0&cam=front&ids=dylan,clement&lines=270
-//   ids=a,b,c        fighters (default: whole roster)
+//   ids=a,b,c        fighters (default: whole roster; cinematic CAST ids work too, e.g. babyelies,spiderpote)
 //   clip / clips     one clip for all, or one per slot (clip=bind = bind pose, no animation)
 //   frame / frames   frame(s) to sample
 //   cam=front|face|faces|game|back   (faces = row of head close-ups; camy = camera height offset)
-//   hairs=cap,bun,...  one copy of the (first) fighter per hair style; body=fine; belly=0..1
+//   hairs=cap,bun,...  one copy of the (first) fighter per hair style; body=fine; belly=0..1; muscles=0..1; height=0.5..1.2
+//   skins=8c5e4c,-,...  per-slot skin override ('-' = sampled from the photo)
 //   spacing, mirror=1, lines, yaw=deg (extra body rotation), labels=1 (name + triangle count under each fighter)
 import * as THREE from 'three';
 import { ROSTER, type BodyType, type HairStyle } from '../src/data/roster';
+import { CAST } from '../src/data/cast';
 import { loadFace } from '../src/render/faceTexture';
 import { buildCharacter, countTriangles, type CharacterModel } from '../src/render/characterModel';
 import { Animator } from '../src/render/animator';
@@ -38,13 +40,19 @@ scene.add(floor);
 
 const clips = (q.get('clips') ?? '').split(',').filter(Boolean);
 const frames = (q.get('frames') ?? '').split(',').filter(Boolean).map(Number);
-const defs0 = ids.map((id) => ROSTER.find((r) => r.id === id)!).filter(Boolean).map((d) => ({ ...d, face: d.face ? '../' + d.face : '' }));
+const ALL = [...ROSTER, ...Object.values(CAST)];
+const defs0 = ids.map((id) => ALL.find((r) => r.id === id)!).filter(Boolean).map((d) => ({ ...d, face: d.face ? '../' + d.face : '' }));
 let defs = clips.length ? clips.map((_, i) => defs0[i % defs0.length]) : defs0;
 // overrides: hairs=a,b,c (one fighter per hair style) / body=fine / belly=0.8
 const hairs = (q.get('hairs') ?? '').split(',').filter(Boolean) as HairStyle[];
 if (hairs.length) defs = hairs.map((style, i) => ({ ...defs[i % defs.length], hair: { ...defs[i % defs.length].hair, style } }));
 if (q.get('body')) defs = defs.map((d) => ({ ...d, body: q.get('body') as BodyType }));
 if (q.get('belly')) defs = defs.map((d) => ({ ...d, belly: Number(q.get('belly')) }));
+if (q.get('muscles')) defs = defs.map((d) => ({ ...d, muscles: Number(q.get('muscles')) }));
+if (q.get('height')) defs = defs.map((d) => ({ ...d, height: Number(q.get('height')) }));
+// skins=hex,hex,... per-slot skin override ('-' = sampled from the photo, '' = keep)
+const skins = (q.get('skins') ?? '').split(',');
+defs = defs.map((d, i) => (skins[i] === '-' ? { ...d, skin: undefined } : skins[i] ? { ...d, skin: '#' + skins[i] } : d));
 const spacing = Number(q.get('spacing') ?? (cam === 'faces' ? 0.42 : 1.1));
 const stats: { id: string; tris: number; skin: string }[] = [];
 (async () => {

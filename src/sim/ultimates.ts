@@ -1,4 +1,7 @@
+import type { MusicId, SfxId } from '../audio/types';
 import type { Strength } from './types';
+import { crew1Scripts } from './ults/crew1';
+import { crew2Scripts } from './ults/crew2';
 
 /**
  * BBL MAX cinematic combos ("ultimates").
@@ -17,11 +20,29 @@ export type CurveKeys = [number, number][];
 
 export interface UltimateHit {
   f: number;
+  /** damage (0 allowed: a hit that only makes the victim flinch) */
   dmg: number;
   strength: Strength;
   /** impact height in metres; -1 = on the victim's body (follows their height) */
   y: number;
+  /**
+   * impact x as an offset from the victim's centre along the attacker's facing
+   * (negative = the side facing the attacker). Default: between the two fighters.
+   * Use it for blows delivered from behind the victim (by an extra actor, a back attack...).
+   */
+  dx?: number;
+  /**
+   * how the impact is presented (damage is identical):
+   *  hit  – punch/kick spark + impact sound (default)
+   *  shot – bullet impact: small spark, gunshot + muzzle flash at the attacker's right hand
+   *  boom – explosion on the victim (fireball, smoke, big boom, strong shake)
+   *  word – verbal blow (rap punchline): no spark, no punch sound, the victim just flinches
+   *  none – nothing at all (e.g. while the screen is black); the script adds its own sounds
+   */
+  kind?: HitKind;
 }
+
+export type HitKind = 'hit' | 'shot' | 'boom' | 'word' | 'none';
 
 /**
  * Camera shots (see FightWorld):
@@ -34,7 +55,23 @@ export interface UltimateHit {
  *  victim – close-up on the victim
  *  wide   – very wide establishing shot
  */
-export type CamShot = 'over' | 'front' | 'low' | 'high' | 'side' | 'close' | 'victim' | 'wide';
+export type CamShot =
+  | 'over'
+  | 'front'
+  | 'low'
+  | 'high'
+  | 'side'
+  | 'close'
+  | 'victim'
+  | 'wide'
+  /** medium two-shot from the side at chest height (dialogues) */
+  | 'two'
+  /** close-up on the victim's face (reactions) */
+  | 'vface'
+  /** close-up on the first extra actor present (cine.actors) */
+  | 'actor'
+  /** slow dramatic low-angle orbit around the attacker (transformations, poses) */
+  | 'hero';
 
 export interface UltimateScript {
   id: string;
@@ -54,6 +91,178 @@ export interface UltimateScript {
   fall: number;
   /** camera cuts: [first frame, shot] */
   cams: [number, CamShot][];
+  /**
+   * frame ranges [from, to) during which the victim turns its back to the attacker
+   * (e.g. tricked into looking behind). Outside these ranges the victim faces the attacker.
+   */
+  victimTurn?: [number, number][];
+  /** blows the attacker inflicts on themself (never below 1 HP), e.g. a knee giving way */
+  selfHits?: { f: number; dmg: number; y: number }[];
+  /** presentation-only timeline: extra characters, props, dialogue, effects (ignored by the simulation) */
+  cine?: Cinematic;
+}
+
+// ---------------------------------------------------------------------------
+// cinematic presentation (render side only, see src/game/cinematic.ts)
+// ---------------------------------------------------------------------------
+
+/**
+ * Who something refers to: 'a' = attacker, 'v' = victim, any other string = the id
+ * of an extra actor declared in `cine.actors`.
+ */
+export type CineRef = 'a' | 'v' | (string & {});
+
+/** Bones a prop can be attached to (see src/render/characterModel.ts BONE_NAMES). */
+export type PropBone = 'handR' | 'handL' | 'head' | 'chest' | 'shoulderR' | 'shoulderL' | 'hips' | 'spine' | 'foreArmR' | 'foreArmL';
+
+/**
+ * Props (low-poly meshes, see src/render/props.ts), built in the space of the bone they
+ * are attached to. Bind pose: character faces +Z, +X = their left, arms hang down.
+ * Guns / launchers (smg, bazooka): grip at the hand bone origin, barrel along the bone's -Y
+ * (= along the arm, so an arm swung forward with upperArm X = -90 aims it forward), the
+ * top of the object toward the bone's +Z (= up when the arm points forward).
+ * Mic, rose, phone, grenade: held in the fist, sticking out on the thumb side (bone +Z,
+ * i.e. forward when the arm hangs, up toward the mouth when the elbow is bent ~110°).
+ * Shades: attach to 'head', they sit on the eyes by default.
+ * Fine-tune with `pos`/`rot` when needed.
+ *  smg      – compact sub-machine gun, held in one hand
+ *  grenade  – hand grenade (fits in the palm)
+ *  bazooka  – long tube launcher, rests on the shoulder (attach to handR, use rot)
+ *  mic      – hand-held microphone (rap battle)
+ *  shades   – sunglasses (attach to head; default offset sits on the eyes)
+ *  phone    – smartphone
+ *  rose     – a red rose
+ */
+export type PropId = 'smg' | 'grenade' | 'bazooka' | 'mic' | 'shades' | 'phone' | 'rose';
+
+/**
+ * One-shot visual effects (src/render/effects.ts):
+ *  explosion  – fireball + smoke + debris
+ *  muzzle     – muzzle flash (place it at a hand)
+ *  poof       – cartoon smoke cloud (appear/disappear/transform)
+ *  powerAura  – golden flames burst around the target (super-saiyan style)
+ *  stars      – dizzy stars circling above the target's head
+ *  sweat      – sweat drops flying off the head (panic / embarrassment)
+ *  question   – big "?" popping above the head
+ *  exclaim    – big "!" popping above the head
+ *  shine      – sparkle glint
+ *  smoke      – lingering grey smoke
+ *  confetti   – colourful confetti burst (crowd hype)
+ *  pain       – red "pain" lines burst (e.g. on a knee), use y to place it
+ *  veins      – anger/effort veins + steam puffs (muscle contraction)
+ *  web        – white web splat (on the victim)
+ *  speed      – speed lines / dust trail behind a running character
+ */
+export type CineFx =
+  | 'explosion'
+  | 'muzzle'
+  | 'poof'
+  | 'powerAura'
+  | 'stars'
+  | 'sweat'
+  | 'question'
+  | 'exclaim'
+  | 'shine'
+  | 'smoke'
+  | 'confetti'
+  | 'pain'
+  | 'veins'
+  | 'web'
+  | 'speed';
+
+/** Projectiles flying from one place to another (pure presentation). */
+export type ProjectileKind = 'grenade' | 'rocket' | 'web' | 'bullet';
+
+export interface CineActor {
+  /** id used by events/props (`on`/`who`/`at`) and the clip name `ult:<script id>:<id>` */
+  id: string;
+  /** look of the actor: key of CAST in src/data/cast.ts */
+  cast: string;
+  /** present during [from, to) */
+  from: number;
+  to: number;
+  /** forward position on the attacker's axis, same origin as `ax` (the attacker's start point) */
+  x: CurveKeys;
+  /** height above the ground (default 0) */
+  y?: CurveKeys;
+  /** +1 = faces the same way as the attacker, -1 = faces back toward the attacker's side (default +1) */
+  facing?: 1 | -1;
+  /** frames [from, to) during which `facing` is reversed (turning around) */
+  turn?: [number, number][];
+  /** smoke puff + sound when appearing / disappearing (default false) */
+  poof?: boolean;
+}
+
+export interface CineSwap {
+  /** whose model is replaced: the attacker or the victim */
+  who: 'a' | 'v';
+  /** CAST id of the replacement look (it plays the same animation) */
+  cast: string;
+  /** active during [from, to) */
+  from: number;
+  to: number;
+  /** effect at both switches: smoke puff, or a golden power burst (default 'poof') */
+  fx?: 'poof' | 'power' | 'none';
+}
+
+export interface CineProp {
+  prop: PropId;
+  /** holder: attacker, victim or actor id */
+  on: CineRef;
+  bone: PropBone;
+  /** visible during [from, to) */
+  from: number;
+  to: number;
+  /** extra offset in the bone's space (metres) */
+  pos?: [number, number, number];
+  /** extra rotation in the bone's space (degrees, XYZ) */
+  rot?: [number, number, number];
+  scale?: number;
+}
+
+export type CineEvent =
+  /** dialogue line: subtitle with the speaker's portrait + text-to-speech in their voice */
+  | { f: number; t: 'say'; who: CineRef; text: string; pitch?: number; rate?: number; dur?: number }
+  /** big comic-book text over the picture ("BIM !", a punchline...). dur in frames (default 50) */
+  | { f: number; t: 'text'; text: string; dur?: number; style?: 'boom' | 'punch' | 'caption'; color?: string }
+  | { f: number; t: 'sfx'; id: SfxId; vol?: number; pitch?: number }
+  /** switch the music (null = back to the stage music; it is restored automatically at the end anyway) */
+  | { f: number; t: 'music'; id: MusicId | null }
+  /**
+   * effect anchored on a character: dx = offset along the attacker's facing (metres),
+   * y = height (default: chest/head depending on the effect), bone = follow that bone instead
+   */
+  | { f: number; t: 'fx'; fx: CineFx; at: CineRef; dx?: number; y?: number; bone?: PropBone; scale?: number }
+  /** projectile from one character to another, `dur` frames of flight, `arc` = apex height above the straight line */
+  | {
+      f: number;
+      t: 'projectile';
+      kind: ProjectileKind;
+      from: CineRef;
+      to: CineRef;
+      dur: number;
+      arc?: number;
+      /** launch point: a bone of `from` (default handR) */
+      fromBone?: PropBone;
+      /** target height (default chest of `to`) */
+      toY?: number;
+      /** explode on arrival (explosion fx + sound + shake) */
+      boom?: boolean;
+    }
+  | { f: number; t: 'shake'; amt: number }
+  /** full-screen colour flash (amt 0..1) */
+  | { f: number; t: 'flash'; color?: string; amt?: number };
+
+export interface Cinematic {
+  swaps?: CineSwap[];
+  actors?: CineActor[];
+  props?: CineProp[];
+  /** screen fade: 0 = picture, 1 = black (e.g. [[40,0],[46,1],[120,1],[126,0]]) */
+  fade?: CurveKeys;
+  /** stage lighting multiplier (default: 0.4 dimmed during the whole cinematic, 1 = normal) */
+  light?: CurveKeys;
+  /** one-shot events (any order) */
+  events?: CineEvent[];
 }
 
 export function curve(keys: CurveKeys | undefined, f: number): number {
@@ -119,7 +328,7 @@ const rush: UltimateScript = {
  * attacker jumps on them) instead of the relative distance. Computed once at load
  * (plain arithmetic on constants: identical on every machine).
  */
-function relDist(vx: CurveKeys, ax: CurveKeys): CurveKeys {
+export function relDist(vx: CurveKeys, ax: CurveKeys): CurveKeys {
   const frames = [...new Set([...vx.map((k) => k[0]), ...ax.map((k) => k[0])])].sort((a, b) => a - b);
   return frames.map((f) => [f, Math.round((curve(vx, f) - curve(ax, f)) * 1000) / 1000]);
 }
@@ -1110,6 +1319,8 @@ export const ULTIMATES: Record<string, UltimateScript> = {
   grove,
   handbag,
 };
+
+for (const u of [...crew1Scripts(), ...crew2Scripts()]) ULTIMATES[u.id] = u;
 
 export function getUltimate(id: string | undefined): UltimateScript {
   return (id && ULTIMATES[id]) || rush;

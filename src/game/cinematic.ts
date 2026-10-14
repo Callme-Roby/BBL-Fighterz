@@ -1,0 +1,501 @@
+import * as THREE from 'three';
+import type { MusicId, SfxId } from '../audio/types';
+import { CAST } from '../data/cast';
+import type { FighterDef } from '../data/roster';
+import type { Effects } from '../render/effects';
+import { loadFace, type FaceAssets } from '../render/faceTexture';
+import { FighterView } from '../render/fighterView';
+import { CLIPS } from '../render/poses';
+import { buildProjectile, buildProp, disposeProp } from '../render/props';
+import type { FighterState, GameState } from '../sim/types';
+import { curve, getUltimate, type CineEvent, type CineRef, type PropBone, type UltimateScript } from '../sim/ultimates';
+
+/** Somebody who talks in a cinematic (subtitle + voice). */
+export interface CineSpeaker {
+  name: string;
+  portrait: string;
+  voice?: FighterDef['voice'];
+}
+
+/** What the director needs from the screen around it (HUD, audio, post effects). */
+export interface CineHooks {
+  say(speaker: CineSpeaker, text: string, opts: { pitch?: number; rate?: number; dur: number }): void;
+  text(text: string, style: 'boom' | 'punch' | 'caption', dur: number, color?: string): void;
+  music(id: MusicId | null): void;
+  sfx(id: SfxId, x: number, volume?: number, pitch?: number): void;
+  flash(color: string, amount: number): void;
+  shake(amount: number): void;
+}
+
+interface CastView {
+  def: FighterDef;
+  face: FaceAssets;
+  view: FighterView;
+}
+
+interface Flying {
+  obj: THREE.Object3D;
+  kind: string;
+  from: THREE.Vector3;
+  to: THREE.Vector3;
+  start: number;
+  dur: number;
+  arc: number;
+  boom: boolean;
+  /** frames the object stays visible after arrival (web strands) */
+  linger: number;
+}
+
+const tmp = new THREE.Vector3();
+const tmp2 = new THREE.Vector3();
+
+/** Every CAST id used by a script (swaps and extra actors). */
+function castIds(u: UltimateScript): string[] {
+  const c = u.cine;
+  if (!c) return [];
+  return [...(c.swaps ?? []).map((s) => s.cast), ...(c.actors ?? []).map((a) => a.cast)];
+}
+
+/**
+ * Plays the presentation timeline (`cine`) of the BBL MAX cinematics: extra
+ * characters, model swaps, props, projectiles, effects, fades, dialogue, music.
+ *
+ * Everything persistent (who is visible, where, which prop) is a pure function of
+ * the attacker's cinematic frame, so rollbacks and frame skips can't desync it;
+ * one-shot events fire once when their frame is crossed.
+ */
+export class CineDirector {
+  /** swap views keyed "a:<cast>" / "v:<cast>", actor views keyed by actor id */
+  private swapViews = new Map<string, CastView>();
+  private actorViews = new Map<string, CastView>();
+  private props = new Map<number, { obj: THREE.Object3D; holder: string }>();
+  private flying: Flying[] = [];
+  private active = -1;
+  private script: UltimateScript | null = null;
+  private lastK = 0;
+  private musicChanged = false;
+  /** per fighter: the view currently shown (base or swap) */
+  private shownViews: [FighterView, FighterView];
+  fade = 0;
+  /** stage light multiplier requested by the script (null = default) */
+  light: number | null = null;
+  hooks: CineHooks | null = null;
+
+  private constructor(
+    private scene: THREE.Object3D,
+    private effects: Effects,
+    private views: [FighterView, FighterView],
+    private defs: [FighterDef, FighterDef],
+    private faces: [FaceAssets, FaceAssets],
+    private scripts: [UltimateScript, UltimateScript],
+  ) {
+    this.shownViews = [views[0], views[1]];
+  }
+
+  /** Loads the faces and builds the models of every extra character both scripts need. */
+  static async create(
+    scene: THREE.Object3D,
+    effects: Effects,
+    views: [FighterView, FighterView],
+    defs: [FighterDef, FighterDef],
+    faces: [FaceAssets, FaceAssets],
+    scripts: [UltimateScript, UltimateScript],
+  ): Promise<CineDirector> {
+    const d = new CineDirector(scene, effects, views, defs, faces, scripts);
+    const ids = [...new Set(scripts.flatMap(castIds))].filter((id) => CAST[id]);
+    const loaded = new Map<string, FaceAssets>();
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          loaded.set(id, await loadFace(CAST[id]));
+        } catch {
+          // missing photo: the cast member is skipped
+        }
+      }),
+    );
+    const make = (cast: string): CastView | null => {
+      const def = CAST[cast];
+      const face = loaded.get(cast);
+      if (!def || !face) return null;
+      const view = new FighterView(def, face);
+      view.addTo(scene);
+      view.model.root.visible = false;
+      view.shadow.visible = false;
+      return { def, face, view };
+    };
+    for (const u of scripts) {
+      for (const sw of u.cine?.swaps ?? []) {
+        const key = sw.who + ':' + sw.cast;
+        if (!d.swapViews.has(key)) {
+          const cv = make(sw.cast);
+          if (cv) d.swapViews.set(key, cv);
+        }
+      }
+      for (const a of u.cine?.actors ?? []) {
+        if (!d.actorViews.has(a.id)) {
+          const cv = make(a.cast);
+          if (cv) d.actorViews.set(a.id, cv);
+        }
+      }
+    }
+    return d;
+  }
+
+  /** The model currently showing fighter i (a swap look during a cinematic). */
+  shown(i: number): FighterView {
+    return this.shownViews[i];
+  }
+
+  /** first extra actor currently on screen */
+  firstActor(): FighterView | null {
+    for (const cv of this.actorViews.values()) if (cv.view.model.root.visible) return cv.view;
+    return null;
+  }
+
+  /** world position of a bone of the model showing fighter i */
+  bonePos(i: number, bone: PropBone, out: THREE.Vector3): THREE.Vector3 {
+    this.shownViews[i].model.bones[bone].getWorldPosition(out);
+    return out;
+  }
+
+  update(s: GameState, dtFrames: number, time: number) {
+    const sc = s.fighters.findIndex((f) => f.action === 'superCombo');
+    if (sc < 0) {
+      if (this.active >= 0) this.stop();
+      this.updateFlying(this.lastK, true);
+      return;
+    }
+    const A = s.fighters[sc];
+    const u = getUltimate(A.ult);
+    const k = A.actionFrame;
+    if (this.active !== sc || this.script !== u || k < this.lastK - 30) {
+      if (this.active >= 0) this.stop();
+      this.active = sc;
+      this.script = u;
+      this.lastK = 0;
+    }
+    const c = u.cine;
+    this.fade = c?.fade ? Math.min(1, Math.max(0, curve(c.fade, k))) : 0;
+    this.light = c?.light ? curve(c.light, k) : null;
+    if (!c) {
+      this.lastK = k;
+      return;
+    }
+    const V = s.fighters[1 - sc];
+
+    // ---- swaps (pure function of k) ----
+    for (const who of ['a', 'v'] as const) {
+      const i = who === 'a' ? sc : 1 - sc;
+      const f = s.fighters[i];
+      const sw = c.swaps?.find((w) => w.who === who && k >= w.from && k < w.to);
+      const cv = sw ? this.swapViews.get(who + ':' + sw.cast) : undefined;
+      // keep every swap look of this fighter animated so it pops in already posed
+      for (const w of c.swaps ?? []) {
+        if (w.who !== who) continue;
+        const v = this.swapViews.get(who + ':' + w.cast);
+        if (v) {
+          v.view.sync(f, s.frame, dtFrames, time);
+          v.view.model.root.visible = v === cv;
+        }
+      }
+      this.views[i].model.root.visible = !cv;
+      this.shownViews[i] = cv ? cv.view : this.views[i];
+    }
+
+    // ---- extra actors ----
+    for (const a of c.actors ?? []) {
+      const cv = this.actorViews.get(a.id);
+      if (!cv) continue;
+      const on = k >= a.from && k < a.to;
+      cv.view.model.root.visible = on;
+      cv.view.shadow.visible = on;
+      if (!on) continue;
+      const x = A.ultOrigin + A.facing * curve(a.x, k);
+      const y = curve(a.y, k);
+      let face = (a.facing ?? 1) * A.facing;
+      if (a.turn) for (const [t0, t1] of a.turn) if (k >= t0 && k < t1) face = -face;
+      cv.view.root.position.set(x, y, 0);
+      cv.view.setFacing(face >= 0 ? 1 : -1);
+      const clip = `ult:${u.id}:${a.id}`;
+      cv.view.pose(CLIPS[clip] ? clip : 'idle', k, dtFrames, clip);
+      const sh = Math.max(0.35, 1 - y * 0.35);
+      cv.view.shadow.position.set(x, 0.015, 0);
+      cv.view.shadow.scale.set(0.95 * sh, 1, 0.75 * sh);
+    }
+
+    // ---- props ----
+    (c.props ?? []).forEach((p, idx) => {
+      const on = k >= p.from && k < p.to;
+      const holder = this.holderView(p.on, sc);
+      let entry = this.props.get(idx);
+      if (!on || !holder) {
+        if (entry) entry.obj.visible = false;
+        return;
+      }
+      if (!entry) {
+        const obj = buildProp(p.prop, holder.def.headScale ?? 1.15);
+        entry = { obj, holder: '' };
+        this.props.set(idx, entry);
+      }
+      const bone = holder.model.bones[p.bone];
+      if (entry.obj.parent !== bone) {
+        bone.add(entry.obj);
+        const [px, py, pz] = p.pos ?? [0, 0, 0];
+        const [rx, ry, rz] = p.rot ?? [0, 0, 0];
+        entry.obj.position.set(px, py, pz);
+        entry.obj.rotation.set(rx * THREE.MathUtils.DEG2RAD, ry * THREE.MathUtils.DEG2RAD, rz * THREE.MathUtils.DEG2RAD);
+        entry.obj.scale.setScalar(p.scale ?? 1);
+      }
+      entry.obj.visible = true;
+    });
+
+    // ---- one-shot events crossed since the last update ----
+    if (k > this.lastK) {
+      const from = this.lastK;
+      const crossed = (f: number) => f > from && f <= k;
+      for (const sw of c.swaps ?? []) {
+        const fx = sw.fx ?? 'poof';
+        if (fx === 'none') continue;
+        const i = sw.who === 'a' ? sc : 1 - sc;
+        for (const f of [sw.from, sw.to]) {
+          if (!crossed(f) || f >= u.length) continue;
+          this.chest(this.views[i], tmp);
+          if (fx === 'power' && f === sw.from) {
+            this.effects.cine('powerAura', tmp, 1.3, A.facing);
+            this.hooks?.sfx('powerUp', tmp.x);
+            this.hooks?.flash('#fff2a0', 0.6);
+          } else {
+            this.effects.cine('poof', tmp, 1.1, A.facing);
+            this.hooks?.sfx('poof', tmp.x);
+          }
+        }
+      }
+      for (const a of c.actors ?? []) {
+        if (!a.poof) continue;
+        for (const f of [a.from, a.to]) {
+          if (!crossed(f) || f >= u.length) continue;
+          tmp.set(A.ultOrigin + A.facing * curve(a.x, f), curve(a.y, f) + 0.9, 0.1);
+          this.effects.cine('poof', tmp, 1.1, A.facing);
+          this.hooks?.sfx('poof', tmp.x);
+        }
+      }
+      for (const e of c.events ?? []) if (crossed(e.f)) this.fire(e, sc, A, V);
+    }
+    this.lastK = Math.max(this.lastK, k);
+    this.updateFlying(k, false);
+  }
+
+  /** Display names usable in lines: {a} = attacker, {v} = victim. */
+  private sub(text: string, sc: number): string {
+    // "CLÉMENT" -> "Clément" (names are written in capitals in the roster)
+    const nice = (n: string) => n.charAt(0) + n.slice(1).toLocaleLowerCase('fr');
+    return text.replace(/\{a\}/g, nice(this.defs[sc].name)).replace(/\{v\}/g, nice(this.defs[1 - sc].name));
+  }
+
+  private holderView(ref: CineRef, sc: number): { model: FighterView['model']; def: FighterDef } | null {
+    if (ref === 'a' || ref === 'v') {
+      const i = ref === 'a' ? sc : 1 - sc;
+      const v = this.shownViews[i];
+      return { model: v.model, def: v.def };
+    }
+    const cv = this.actorViews.get(ref);
+    return cv ? { model: cv.view.model, def: cv.def } : null;
+  }
+
+  private refView(ref: CineRef, sc: number): FighterView | null {
+    if (ref === 'a') return this.shownViews[sc];
+    if (ref === 'v') return this.shownViews[1 - sc];
+    return this.actorViews.get(ref)?.view ?? null;
+  }
+
+  private speaker(ref: CineRef, sc: number): CineSpeaker | null {
+    if (ref === 'a' || ref === 'v') {
+      const i = ref === 'a' ? sc : 1 - sc;
+      const shown = this.shownViews[i];
+      if (shown !== this.views[i]) {
+        for (const cv of this.swapViews.values()) if (cv.view === shown) return { name: cv.def.name, portrait: cv.face.portraitUrl, voice: cv.def.voice };
+      }
+      return { name: this.defs[i].name, portrait: this.faces[i].portraitUrl, voice: this.defs[i].voice };
+    }
+    const cv = this.actorViews.get(ref);
+    return cv ? { name: cv.def.name, portrait: cv.face.portraitUrl, voice: cv.def.voice } : null;
+  }
+
+  private chest(v: FighterView, out: THREE.Vector3): THREE.Vector3 {
+    v.model.bones.chest.getWorldPosition(out);
+    out.z = Math.max(out.z, 0) + 0.12;
+    return out;
+  }
+
+  private head(v: FighterView, out: THREE.Vector3): THREE.Vector3 {
+    v.headWorld(out);
+    out.z = Math.max(out.z, 0) + 0.1;
+    return out;
+  }
+
+  private fire(e: CineEvent, sc: number, A: FighterState, V: FighterState) {
+    const h = this.hooks;
+    switch (e.t) {
+      case 'say': {
+        const sp = this.speaker(e.who, sc);
+        if (sp) h?.say(sp, this.sub(e.text, sc), { pitch: e.pitch, rate: e.rate, dur: e.dur ?? 100 });
+        break;
+      }
+      case 'text':
+        h?.text(this.sub(e.text, sc), e.style ?? 'boom', e.dur ?? 50, e.color);
+        break;
+      case 'sfx':
+        h?.sfx(e.id, A.x, e.vol, e.pitch);
+        break;
+      case 'music':
+        h?.music(e.id);
+        this.musicChanged = e.id !== null;
+        break;
+      case 'shake':
+        h?.shake(e.amt);
+        break;
+      case 'flash':
+        h?.flash(e.color ?? '#ffffff', e.amt ?? 0.6);
+        break;
+      case 'fx': {
+        const v = this.refView(e.at, sc);
+        if (!v) break;
+        const pos = tmp;
+        const glyph = e.fx === 'question' || e.fx === 'exclaim' || e.fx === 'stars' || e.fx === 'sweat' || e.fx === 'veins';
+        if (e.bone) {
+          v.model.bones[e.bone].getWorldPosition(pos);
+          pos.z = Math.max(pos.z, 0) + 0.1;
+        } else if (e.y !== undefined) {
+          pos.set(v.root.position.x, v.root.position.y + e.y, 0.15);
+        } else if (glyph) {
+          this.head(v, pos);
+          if (e.fx === 'question' || e.fx === 'exclaim') pos.y += 0.38;
+          else if (e.fx === 'stars') pos.y += 0.22;
+        } else if (e.fx === 'speed') {
+          pos.set(v.root.position.x, v.root.position.y + 0.9, 0.1);
+        } else {
+          this.chest(v, pos);
+        }
+        if (e.dx) pos.x += A.facing * e.dx;
+        this.effects.cine(e.fx, pos.clone(), e.scale ?? 1, A.facing);
+        break;
+      }
+      case 'projectile': {
+        const fv = this.refView(e.from, sc);
+        const tv = this.refView(e.to, sc);
+        if (!fv || !tv) break;
+        const from = new THREE.Vector3();
+        fv.model.bones[e.fromBone ?? 'handR'].getWorldPosition(from);
+        from.z = Math.max(0, from.z);
+        const to = this.chest(tv, new THREE.Vector3());
+        to.z = 0.05;
+        if (e.toY !== undefined) to.y = tv.root.position.y + e.toY;
+        const obj = buildProjectile(e.kind);
+        this.scene.add(obj);
+        this.flying.push({
+          obj,
+          kind: e.kind,
+          from,
+          to,
+          start: e.f,
+          dur: Math.max(1, e.dur),
+          arc: e.arc ?? (e.kind === 'grenade' ? 0.8 : 0),
+          boom: !!e.boom,
+          linger: e.kind === 'web' ? 8 : 0,
+        });
+        if (e.kind === 'rocket') h?.sfx('rocket', from.x);
+        else if (e.kind === 'web') h?.sfx('thwip', from.x);
+        break;
+      }
+    }
+    void V;
+  }
+
+  private updateFlying(k: number, ending: boolean) {
+    for (let i = this.flying.length - 1; i >= 0; i--) {
+      const p = this.flying[i];
+      if (ending) {
+        this.removeFlying(i);
+        continue;
+      }
+      const t = (k - p.start) / p.dur;
+      if (t >= 1 && p.boom) {
+        this.explode(p);
+        p.boom = false;
+      }
+      if (k - p.start >= p.dur + p.linger) {
+        this.removeFlying(i);
+        continue;
+      }
+      const tt = Math.min(1, Math.max(0, t));
+      const pos = tmp.lerpVectors(p.from, p.to, tt);
+      pos.y += p.arc * 4 * tt * (1 - tt);
+      if (p.kind === 'web') {
+        // strand from the shooter to the tip
+        p.obj.position.copy(p.from);
+        p.obj.lookAt(pos);
+        p.obj.scale.set(1, 1, Math.max(0.01, pos.distanceTo(p.from)));
+        continue;
+      }
+      p.obj.visible = t < 1;
+      // look along the velocity
+      const t2 = Math.min(1, tt + 0.02);
+      const ahead = tmp2.lerpVectors(p.from, p.to, t2);
+      ahead.y += p.arc * 4 * t2 * (1 - t2);
+      p.obj.position.copy(pos);
+      if (ahead.distanceToSquared(pos) > 1e-8) p.obj.lookAt(ahead);
+      if (p.kind === 'grenade') p.obj.rotateX(k * 0.5);
+      if (p.kind === 'rocket' && k % 2 === 0) this.effects.trail(pos);
+    }
+  }
+
+  private explode(p: Flying) {
+    this.effects.cine('explosion', p.to.clone(), p.kind === 'rocket' ? 1.5 : 1.1);
+    this.hooks?.sfx('explosion', p.to.x, p.kind === 'rocket' ? 1 : 0.8);
+    this.hooks?.shake(p.kind === 'rocket' ? 0.22 : 0.14);
+    this.hooks?.flash('#ffd080', p.kind === 'rocket' ? 0.5 : 0.3);
+  }
+
+  private removeFlying(i: number) {
+    const p = this.flying[i];
+    p.obj.removeFromParent();
+    disposeProp(p.obj);
+    this.flying.splice(i, 1);
+  }
+
+  /** End of a cinematic: everybody back to normal. */
+  private stop() {
+    for (const cv of this.swapViews.values()) cv.view.model.root.visible = false;
+    for (const cv of this.actorViews.values()) {
+      cv.view.model.root.visible = false;
+      cv.view.shadow.visible = false;
+    }
+    for (const p of this.props.values()) {
+      p.obj.removeFromParent();
+      disposeProp(p.obj);
+    }
+    this.props.clear();
+    this.views[0].model.root.visible = true;
+    this.views[1].model.root.visible = true;
+    this.shownViews = [this.views[0], this.views[1]];
+    if (this.musicChanged) this.hooks?.music(null);
+    this.musicChanged = false;
+    this.active = -1;
+    this.script = null;
+    this.fade = 0;
+    this.light = null;
+    void this.scripts;
+  }
+
+  dispose() {
+    this.stop();
+    for (const p of [...this.flying]) {
+      p.obj.removeFromParent();
+      disposeProp(p.obj);
+    }
+    this.flying.length = 0;
+    for (const cv of [...this.swapViews.values(), ...this.actorViews.values()]) cv.view.dispose();
+    this.swapViews.clear();
+    this.actorViews.clear();
+  }
+}

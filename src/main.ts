@@ -2,7 +2,9 @@ import './ui/styles.css';
 import { App } from './app';
 import { initKeyLabels } from './input/input';
 import { roomFromUrl } from './net/peer';
-import { goOnline, goTitle, initFlow } from './screens/flow';
+import { goOnline, goTitle, initFlow, startFight } from './screens/flow';
+import { ROSTER } from './data/roster';
+import { STAGES } from './render/stages';
 
 function boot() {
   const app = new App();
@@ -13,6 +15,23 @@ function boot() {
   else goTitle();
   // handy for debugging from the console
   (window as unknown as { bbl: App }).bbl = app;
+  if (location.search.includes('debug')) {
+    // ?debug: start a CPU fight straight away, e.g. bblStart('zia', 'thomas')
+    (window as unknown as { bblStart: unknown }).bblStart = (a: string, b: string, stage?: string) => {
+      const find = (id: string) => ROSTER.find((f) => f.id === id) ?? ROSTER[0];
+      startFight({
+        mode: 'cpu',
+        p1: find(a),
+        p2: find(b),
+        stageId: stage ?? STAGES[0].id,
+        rounds: 1,
+        difficulty: 'easy',
+        seed: 1,
+        skipIntro: true,
+        cpuSides: [false, true],
+      });
+    };
+  }
 }
 
 try {

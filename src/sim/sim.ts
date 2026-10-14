@@ -692,14 +692,23 @@ function runSuperCombo(s: GameState, a: FighterState, v: FighterState, idx: numb
     a.x -= over;
     a.ultOrigin -= over;
   }
+  const last = u.hits.length - 1;
+  // once every blow has landed the attacker may leave on their own (e.g. running away):
+  // they stop at the wall instead of dragging the victim along
+  const done = last < 0 || k > u.hits[last].f;
   if (a.x > lim || a.x < -lim) {
     const o2 = a.x > lim ? a.x - lim : a.x + lim;
     a.x -= o2;
-    vx -= o2;
-    a.ultOrigin -= o2;
+    if (!done) {
+      vx -= o2;
+      a.ultOrigin -= o2;
+    }
   }
   v.x = vx;
-  const last = u.hits.length - 1;
+  // the victim faces the attacker, unless the script makes them turn around
+  let turned = false;
+  if (u.victimTurn) for (const [t0, t1] of u.victimTurn) if (k >= t0 && k < t1) turned = true;
+  v.facing = (turned ? a.facing : -a.facing) as 1 | -1;
   for (let i = 0; i <= last; i++) {
     const hit = u.hits[i];
     if (k !== hit.f) continue;
@@ -707,16 +716,26 @@ function runSuperCombo(s: GameState, a: FighterState, v: FighterState, idx: numb
     v.hp = i === last ? Math.max(0, v.hp - hit.dmg) : Math.max(1, v.hp - hit.dmg);
     v.comboCount++;
     v.comboDamage += hit.dmg;
-    s.hitstop = Math.max(s.hitstop, i === last ? 16 : hit.strength === 'heavy' ? 10 : hit.strength === 'medium' ? 6 : 4);
+    const word = hit.kind === 'word' || hit.kind === 'none';
+    s.hitstop = Math.max(s.hitstop, i === last ? 16 : word ? 0 : hit.strength === 'heavy' ? 10 : hit.strength === 'medium' ? 6 : 4);
     s.events.push({
       t: 'hit',
       p: idx,
-      x: (a.x + v.x) / 2 + a.facing * 0.12,
+      x: hit.dx !== undefined ? v.x + a.facing * hit.dx : (a.x + v.x) / 2 + a.facing * 0.12,
       y: hit.y < 0 ? v.y + 0.9 : hit.y,
       strength: hit.strength,
       counter: i === last,
       dmg: hit.dmg,
+      kind: hit.kind,
     });
+  }
+  if (u.selfHits) {
+    for (const sh of u.selfHits) {
+      if (k !== sh.f) continue;
+      a.hp = Math.max(1, a.hp - sh.dmg);
+      s.hitstop = Math.max(s.hitstop, 6);
+      s.events.push({ t: 'hit', p: 1 - idx, x: a.x, y: a.y + sh.y, strength: 'medium', counter: false, dmg: sh.dmg, self: true });
+    }
   }
   if (k === u.fall) s.events.push({ t: 'fall', p: 1 - idx });
   if (k >= u.length) {

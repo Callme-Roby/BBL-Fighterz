@@ -232,6 +232,29 @@ const darkLead: TonePreset = {
   glide: 0.05, vib: { rate: 5, depth: 15, delay: 0.3 }, level: 0.6,
 };
 
+/** Dusty sampled-piano feel for boom-bap: muffled, quick decay, a little detuned. */
+const dustyKeys: TonePreset = {
+  osc: [{ type: 'triangle' }, { type: 'square', detune: 6, gain: 0.18 }, { type: 'sine', oct: 1, gain: 0.25 }],
+  a: 0.003, d: 0.9, s: 0.12, r: 0.25,
+  cutoff: 1300, fenv: 1400, fdecay: 0.12, ftrack: 0.3, level: 0.6,
+};
+
+/** Deep round boom-bap bass: sine + a touch of triangle/saw for definition on small speakers. */
+const boomBass: TonePreset = {
+  osc: [{ type: 'sine' }, { type: 'triangle', gain: 0.35 }, { type: 'sawtooth', gain: 0.08 }],
+  a: 0.006, d: 0.5, s: 0.65, r: 0.1,
+  cutoff: 420, fenv: 250, fdecay: 0.1,
+  glide: 0.05, level: 0.9,
+};
+
+/** Fake turntable scratch: a gritty band-passed tone gliding between every note ("wicka"). */
+const scratchy: TonePreset = {
+  osc: [{ type: 'sawtooth' }, { type: 'square', detune: 20, gain: 0.5 }],
+  a: 0.004, d: 0.06, s: 0.7, r: 0.03,
+  cutoff: 900, filterType: 'bandpass', q: 1.6, ftrack: 1,
+  glide: 0.035, glideAlways: true, drive: 0.6, level: 0.5,
+};
+
 /* ------------------------------------------------------------------------ */
 /* TITLE — epic arcade title theme, D minor, 128 bpm                         */
 /* ------------------------------------------------------------------------ */
@@ -930,6 +953,142 @@ function parking(): SongDef {
 }
 
 /* ------------------------------------------------------------------------ */
+/* RAP — 90's boom-bap instrumental for the rap battles, C minor, 90 bpm     */
+/* ------------------------------------------------------------------------ */
+
+function rap(): SongDef {
+  // Rootless, low voicings: the mids stay free for the voices on top.
+  const KEYS = { Cm: 'Eb3+G3+Bb3+D4', Ab: 'Eb3+G3+Ab3+C4', Fm: 'F3+Ab3+C4+Eb4', G: 'F3+Ab3+B3+D4' };
+  const PAD = { Cm: 'C3+G3+Eb4', Ab: 'C3+Ab3+Eb4', Fm: 'C3+F3+Ab3', G: 'B2+F3+D4' };
+  // The "sampled" piano line: same dotted rhythm every bar, dark minor seconds.
+  const LOOP = {
+    Cm: 'C5 . . G4 . . Eb5 - - . D5 - . . . .',
+    Ab: 'C5 . . G4 . . Eb5 - - . C5 - . . . .',
+    Fm: 'C5 . . Ab4 . . Eb5 - - . C5 - . . . .',
+    G: 'B4 . . G4 . . D5 - - . Ab4 - . . G4 .',
+  };
+  // Long bass notes locked with the kick (steps 1, 8, 11), sliding into the next bar.
+  const BASS = {
+    Cm: 'C2 - - - - - - C2 - - G1 - - - Bb1 -',
+    Ab: 'Ab1 - - - - - - Ab1 - - Eb2 - - - C2 -',
+    Fm: 'F1 - - - - - - F1 - - C2 - - - Ab1 -',
+    G: 'G1 - - - - - - G1 - - D2 - - - B1 -',
+  };
+  type C = keyof typeof KEYS;
+  const progA: C[] = ['Cm', 'Ab', 'Fm', 'G', 'Cm', 'Ab', 'Fm', 'G'];
+  const progB: C[] = ['Fm', 'Fm', 'Cm', 'Cm', 'Ab', 'Ab', 'G', 'G'];
+  const progShort: C[] = ['Cm', 'Ab', 'Fm', 'G'];
+
+  const keys = (p: C[]) => prog(p, (c) => rh(KEYS[c], 'x--...........x-'));
+  const stabs = (p: C[]) => prog(p, (c) => rh(KEYS[c], 'x-....x-..x-....'));
+  const pad = (p: C[]) => prog(p, (c) => hold(PAD[c]));
+  const loop = (p: C[]) => prog(p, (c) => bars(LOOP[c]));
+  const bass = (p: C[]) => prog(p, (c) => bars(BASS[c]));
+  const bassHold = (p: C[]) => prog(p, (c) => hold(BASS[c].split(' ')[0]));
+
+  // Turntable "wicka-wicka" on the last two beats of a bar.
+  const scratchBar = bars('. . . . . . . . C5 G5 C5 . G4! C5 G5 .');
+  const scratch4 = rest(3) + ' ' + scratchBar;
+
+  const kick = 'x......x..x.....' + 'x......x..x...x.';
+  const snare = '....x.......x...' + '....x......ox..o';
+  const hats = 'x.xox.x.x.xox.x.';
+  return {
+    bpm: 90,
+    swing: 0.22,
+    loopFrom: 1,
+    gain: 0.72,
+    reverb: 1.6,
+    delayBeats: 0.75,
+    delayFeedback: 0.25,
+    instruments: {
+      kick: { drum: 'kick', tune: 0.8, decay: 1.3, gain: 0.5, drive: 0.4 },
+      snare: { drum: 'snare', tune: 0.8, decay: 1.3, gain: 0.32, rev: 0.18, drive: 0.2 },
+      clap: { drum: 'clap', tune: 0.9, gain: 0.3, rev: 0.2 },
+      hat: { drum: 'hat', tune: 0.85, decay: 0.9, gain: 0.13, pan: 0.2 },
+      ohat: { drum: 'openHat', tune: 0.85, decay: 0.6, gain: 0.08, pan: 0.2 },
+      rim: { drum: 'rim', tune: 0.9, gain: 0.12, pan: -0.25, rev: 0.15 },
+      bass: { synth: boomBass, gain: 0.42, drive: 0.15 },
+      keys: { synth: dustyKeys, gain: 0.2, pan: -0.1, rev: 0.25, drive: 0.25 },
+      loop: { synth: dustyKeys, gain: 0.17, pan: 0.15, rev: 0.25, dly: 0.12, drive: 0.25 },
+      // The intro plays the sample "through a closed filter" before the beat drops.
+      keysLo: { synth: { ...dustyKeys, cutoff: 420, fenv: 250 }, gain: 0.26, pan: -0.1, rev: 0.25 },
+      loopLo: { synth: { ...dustyKeys, cutoff: 420, fenv: 250 }, gain: 0.24, pan: 0.15, rev: 0.25 },
+      pad: { synth: darkPad, gain: 0.1, rev: 0.5 },
+      scratch: { synth: scratchy, gain: 0.12, pan: 0.1, rev: 0.1 },
+    },
+    sections: {
+      intro: {
+        bars: 4,
+        tracks: {
+          keysLo: keys(progShort),
+          loopLo: loop(progShort),
+          hat: D(2) + hats.repeat(2),
+          kick: D(3) + 'x.........x.....',
+          bass: rest(2) + ' ' + bass(['Fm', 'G']),
+          scratch: scratch4,
+        },
+      },
+      A: {
+        bars: 8,
+        tracks: {
+          kick,
+          snare,
+          clap: '....x.......x...',
+          hat: hats,
+          ohat: D(1) + '..............x.',
+          bass: bass(progA),
+          keys: keys(progA),
+          loop: loop(progA),
+        },
+      },
+      B: {
+        bars: 8,
+        tracks: {
+          kick,
+          snare,
+          clap: '....x.......x...',
+          hat: hats,
+          rim: '..o......o....o.',
+          bass: bass(progB),
+          keys: stabs(progB),
+          pad: pad(progB),
+        },
+      },
+      A2: {
+        bars: 8,
+        tracks: {
+          kick,
+          snare,
+          clap: '....x.......x...',
+          hat: hats,
+          ohat: D(1) + '..............x.',
+          rim: '..o......o....o.',
+          bass: bass(progA),
+          keys: keys(progA),
+          loop: loop(progA),
+          pad: pad(progA),
+          scratch: scratch4,
+        },
+      },
+      brk: {
+        bars: 4,
+        tracks: {
+          kick: 'x...............'.repeat(3) + 'x.........x.....',
+          snare: D(3) + '....x.......x.xx',
+          hat: hats,
+          bass: bassHold(progShort),
+          keys: keys(progShort),
+          loop: loop(progShort),
+          scratch: scratch4,
+        },
+      },
+    },
+    arrangement: ['intro', 'A', 'B', 'A2', 'brk'],
+  };
+}
+
+/* ------------------------------------------------------------------------ */
 /* VICTORY — short triumphant jingle (plays once), C major, 140 bpm          */
 /* ------------------------------------------------------------------------ */
 
@@ -975,7 +1134,7 @@ function victory(): SongDef {
 
 /* ------------------------------------------------------------------------ */
 
-const BUILDERS: Record<MusicId, () => SongDef> = { title, select, hood, dojo, parking, victory };
+const BUILDERS: Record<MusicId, () => SongDef> = { title, select, hood, dojo, parking, victory, rap };
 const built = new Map<MusicId, SongDef>();
 
 /** The song definition of a track (built on first use). */

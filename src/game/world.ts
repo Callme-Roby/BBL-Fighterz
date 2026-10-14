@@ -11,9 +11,19 @@ import type { StageEnv } from '../render/stages/types';
 import type { RetroPipeline } from '../render/pipeline';
 import { INTRO_SPLIT, type GameState, type SimEvent } from '../sim/types';
 import { getUltimate } from '../sim/ultimates';
+import { ultimateOf } from '../data/ultimates';
+import { CineDirector, type CineSpeaker } from './cinematic';
+import type { MusicId } from '../audio/types';
 
 export interface WorldEventHooks {
   onEvent?(ev: SimEvent, s: GameState): void;
+}
+
+/** What the BBL MAX cinematics need from the fight screen (HUD + music). */
+export interface WorldCineHooks {
+  say(speaker: CineSpeaker, text: string, opts: { pitch?: number; rate?: number; dur: number }): void;
+  text(text: string, style: 'boom' | 'punch' | 'caption', dur: number, color?: string): void;
+  music(id: MusicId | null): void;
 }
 
 function altCostume(def: FighterDef): FighterDef {
@@ -57,6 +67,10 @@ export class FightWorld {
   sound = true;
   /** cinematic camera wobble for the attract mode */
   attract = false;
+  /** BBL MAX cinematics: extra characters, props, dialogue... */
+  cine!: CineDirector;
+  private pendingFlash: { color: THREE.Color; amount: number } | null = null;
+  private fadeSet = false;
 
   private constructor(
     readonly stage: StageEnv,
@@ -73,7 +87,29 @@ export class FightWorld {
     if (p1.id === p2.id) p2 = altCostume(p2);
     const [f1, f2] = await Promise.all([loadFace(p1), loadFace(p2)]);
     const stage = getStage(stageId).build();
-    return new FightWorld(stage, [f1, f2], [p1, p2]);
+    const w = new FightWorld(stage, [f1, f2], [p1, p2]);
+    w.cine = await CineDirector.create(w.scene, w.effects, w.views, w.defs, w.faces, [
+      getUltimate(ultimateOf(p1).script),
+      getUltimate(ultimateOf(p2).script),
+    ]);
+    w.setCineHooks(null);
+    return w;
+  }
+
+  /** Connects the cinematics' dialogue / big text / music to the screen (null = silent). */
+  setCineHooks(h: WorldCineHooks | null) {
+    this.cine.hooks = {
+      say: (sp, text, o) => h?.say(sp, text, o),
+      text: (t, style, dur, color) => h?.text(t, style, dur, color),
+      music: (id) => h?.music(id),
+      sfx: (id, x, vol, pitch) => this.sfx(id, x, vol ?? 1, pitch ?? 1),
+      flash: (color, amount) => {
+        this.pendingFlash = { color: new THREE.Color(color), amount };
+      },
+      shake: (amt) => {
+        this.shake = Math.max(this.shake, amt);
+      },
+    };
   }
 
   applyLighting() {
@@ -110,10 +146,33 @@ export class FightWorld {
       case 'hit': {
         // close-up cinematic cameras: smaller sparks, centred between the fighters
         const cine = s.fighters.some((f) => f.action === 'superCombo');
-        this.effects.hit(ev.x, ev.y, ev.strength, ev.counter, cine ? 0.45 : 1, cine ? 0.05 : 0.35);
-        this.sfx(ev.strength === 'heavy' ? 'hitHeavy' : ev.strength === 'medium' ? 'hitMedium' : 'hitLight', ev.x);
-        this.views[1 - ev.p].hitFlash(ev.counter ? 0xff3030 : 0xffffff, ev.strength === 'heavy' ? 0.85 : 0.6);
-        this.shake = Math.max(this.shake, ev.strength === 'heavy' ? 0.09 : ev.strength === 'medium' ? 0.04 : 0.015);
+        const target = this.cine.shown(1 - ev.p);
+        const kind = ev.kind ?? 'hit';
+        if (kind === 'shot') {
+          // bullet: muzzle flash at the shooter's hand, small impact
+          const hand = this.cine.bonePos(ev.p, 'handR', tmpV);
+          hand.z = Math.max(0, hand.z) + 0.05;
+          this.effects.cine('muzzle', hand.clone(), 1);
+          this.effects.hit(ev.x, ev.y, 'light', false, 0.3, 0.05);
+          this.sfx('gunshot', ev.x, 0.9);
+          target.hitFlash(0xffffff, 0.45);
+          this.shake = Math.max(this.shake, 0.02);
+        } else if (kind === 'boom') {
+          this.effects.cine('explosion', new THREE.Vector3(ev.x, ev.y, 0.1), ev.counter ? 1.5 : 1.1);
+          this.sfx('explosion', ev.x, ev.counter ? 1 : 0.8);
+          target.hitFlash(0xffa040, 0.9);
+          this.shake = Math.max(this.shake, ev.counter ? 0.22 : 0.14);
+        } else if (kind === 'word') {
+          target.hitFlash(ev.counter ? 0xff3030 : 0xffffff, ev.counter ? 0.7 : 0.4);
+          this.shake = Math.max(this.shake, ev.counter ? 0.08 : 0.025);
+        } else if (kind === 'none') {
+          // off screen (blackout): the script plays its own sounds
+        } else {
+          this.effects.hit(ev.x, ev.y, ev.strength, ev.counter, cine ? 0.45 : 1, cine ? 0.05 : 0.35);
+          this.sfx(ev.strength === 'heavy' ? 'hitHeavy' : ev.strength === 'medium' ? 'hitMedium' : 'hitLight', ev.x);
+          target.hitFlash(ev.counter ? 0xff3030 : 0xffffff, ev.strength === 'heavy' ? 0.85 : 0.6);
+          this.shake = Math.max(this.shake, ev.strength === 'heavy' ? 0.09 : ev.strength === 'medium' ? 0.04 : 0.015);
+        }
         break;
       }
       case 'block':
@@ -174,27 +233,45 @@ export class FightWorld {
     this.stageTime += dt;
     this.stage.update(this.stageTime, dt);
     for (let i = 0; i < 2; i++) this.views[i].sync(s.fighters[i], s.frame, dtFrames, this.time);
+    this.cine.update(s, dtFrames, this.time);
     // BBL MAX: glowing aura on the fighter, darkened stage
     const sup = s.fighters.findIndex(
       (f) => f.action === 'superFlash' || f.action === 'superCombo' || (f.action === 'attack' && f.moveId === 'super'),
     );
-    for (let i = 0; i < 2; i++) this.views[i].setGlow(i === sup ? 0.22 + 0.14 * Math.sin(this.time * 40) : 0);
+    const glowing = sup >= 0 && (s.fighters[sup].action !== 'superCombo' || s.fighters[sup].actionFrame < 16);
+    for (let i = 0; i < 2; i++) this.cine.shown(i).setGlow(i === sup && glowing ? 0.22 + 0.14 * Math.sin(this.time * 40) : 0);
     // aura while powering up / dashing, fading out early in the cinematic so close-ups stay readable
-    if (sup >= 0 && (s.fighters[sup].action !== 'superCombo' || s.fighters[sup].actionFrame < 16)) {
+    if (glowing) {
       this.effects.aura(this.views[sup].root.position);
       if (s.fighters[sup].action === 'superFlash') this.effects.aura(this.views[sup].root.position);
     }
-    const dimTarget = sup >= 0 && !(s.fighters[sup].action === 'superCombo' && s.fighters[sup].actionFrame > 112) ? 0.4 : 1;
+    let dimTarget = sup >= 0 ? 0.4 : 1;
+    if (sup >= 0 && s.fighters[sup].action === 'superCombo') {
+      const u = getUltimate(s.fighters[sup].ult);
+      dimTarget = this.cine.light ?? (s.fighters[sup].actionFrame > u.length - 20 ? 1 : 0.4);
+    }
     this.dim += (dimTarget - this.dim) * (1 - Math.exp(-dt * 8));
     this.effects.update(dtFrames);
     this.updateCamera(s, dt, aspect);
     this.applyLighting();
     pipeline.post.uFlash.value = Math.max(0, pipeline.post.uFlash.value - dt * 3);
+    if (this.pendingFlash) {
+      pipeline.post.uFlash.value = Math.max(pipeline.post.uFlash.value, this.pendingFlash.amount);
+      pipeline.post.uFlashColor.value.copy(this.pendingFlash.color);
+      this.pendingFlash = null;
+    } else if (pipeline.post.uFlash.value <= 0) {
+      pipeline.post.uFlashColor.value.setRGB(1, 1, 1);
+    }
+    // cinematic blackouts
+    if (this.cine.fade > 0 || this.fadeSet) {
+      pipeline.post.uFade.value = this.cine.fade;
+      this.fadeSet = this.cine.fade > 0;
+    }
     pipeline.render(this.scene, this.camera, this.stage.clearColor);
   }
 
-  private faceShot(i: number, out: THREE.Vector3, look: THREE.Vector3, dist: number, sideAngle: number, height = 0) {
-    const v = this.views[i];
+  private faceShot(i: number | FighterView, out: THREE.Vector3, look: THREE.Vector3, dist: number, sideAngle: number, height = 0) {
+    const v = typeof i === 'number' ? this.cine.shown(i) : i;
     v.headWorld(look);
     const facing = v.model.body.scale.x >= 0 ? 1 : -1;
     // the stance turns the chest ~35° toward the camera side (+Z)
@@ -263,10 +340,35 @@ export class FightWorld {
           targetPos.set(V.x + fa * 0.35, V.y + 1.45, 1.55);
           targetLook.set(V.x, V.y + 1.2, 0);
           break;
-        case 'wide':
-          targetPos.set(mid, 2.1, 7.5);
+        case 'wide': {
+          const sep = Math.abs(A.x - V.x);
+          targetPos.set(mid, 2.1, Math.max(7.5, 3 + sep * 0.95));
           targetLook.set(mid, 1.0 + Math.max(A.y, V.y) * 0.4, 0);
           break;
+        }
+        case 'two':
+          targetPos.set(mid - fa * 0.15, 1.45 + Math.max(A.y, V.y) * 0.3, 2.6 + Math.abs(A.x - V.x) * 0.55);
+          targetLook.set(mid, 1.3 + Math.max(A.y, V.y) * 0.4, 0);
+          break;
+        case 'vface':
+          this.faceShot(1 - sc, targetPos, targetLook, 1.15, 1.0, 0.02);
+          break;
+        case 'actor': {
+          const act = this.cine.firstActor();
+          if (act) this.faceShot(act, targetPos, targetLook, 1.35, 0.95, 0.04);
+          else this.faceShot(sc, targetPos, targetLook, 1.25, 0.95, 0.02);
+          break;
+        }
+        case 'hero': {
+          // slow low-angle orbit around the attacker
+          const t = (k - (cams[seg]?.[0] ?? 0)) * 0.006;
+          const hv = this.cine.shown(sc);
+          hv.headWorld(targetLook);
+          const ang = 1.05 + t;
+          targetPos.set(A.x + fa * Math.cos(ang) * 2.1, 0.45, Math.sin(ang) * 2.1);
+          targetLook.y -= 0.35;
+          break;
+        }
       }
       if (seg !== this.superSeg) {
         this.superSeg = seg;
@@ -348,6 +450,7 @@ export class FightWorld {
   }
 
   dispose() {
+    this.cine?.dispose();
     for (const v of this.views) v.dispose();
     this.effects.clear();
     this.stage.dispose();

@@ -16,6 +16,8 @@ export class Hud {
   private comboTimers = [0, 0];
   private lastCombo = [0, 0];
   private subtitleEl: HTMLDivElement | null = null;
+  private comics: { el: HTMLDivElement; t: number }[] = [];
+  private comicSeq = 0;
   private netEl: HTMLDivElement;
   private bars: HTMLDivElement;
   private meterRow: HTMLDivElement;
@@ -97,6 +99,38 @@ export class Hud {
     this.subtitleEl = null;
   }
 
+  /**
+   * Big comic-book text over the picture (BBL MAX cinematics):
+   * 'boom' = onomatopoeia at a random-ish spot, 'punch' = rap punchline, 'caption' = small caption.
+   */
+  comic(text: string, style: 'boom' | 'punch' | 'caption', frames: number, color?: string) {
+    const n = this.comicSeq++;
+    const el = h('div', { class: 'comic ' + style }, text);
+    if (style === 'boom') {
+      // scatter successive onomatopoeias around the centre
+      const spots = [
+        [30, 34, -8],
+        [66, 46, 7],
+        [40, 62, -4],
+        [62, 28, 10],
+        [50, 50, -10],
+      ];
+      const [x, y, r] = spots[n % spots.length];
+      el.style.left = x + '%';
+      el.style.top = y + '%';
+      el.style.setProperty('--rot', r + 'deg');
+    }
+    if (color) el.style.setProperty('--comic', color);
+    if (style !== 'boom') for (const c of this.comics) if (c.el.classList.contains(style)) c.t = Math.min(c.t, 1);
+    this.el.append(el);
+    this.comics.push({ el, t: frames });
+  }
+
+  clearComics() {
+    for (const c of this.comics) c.el.remove();
+    this.comics.length = 0;
+  }
+
   update(s: GameState, dtFrames: number) {
     for (let i = 0; i < 2; i++) {
       const f = s.fighters[i];
@@ -156,6 +190,15 @@ export class Hud {
     const secs = Math.ceil(s.timer / 60);
     this.timer.textContent = String(secs);
     this.timer.classList.toggle('warn', secs <= 10 && s.phase === 'fight');
+
+    for (let i = this.comics.length - 1; i >= 0; i--) {
+      const c = this.comics[i];
+      c.t -= dtFrames;
+      if (c.t <= 0) {
+        c.el.remove();
+        this.comics.splice(i, 1);
+      }
+    }
 
     if (this.announceTimer > 0) {
       this.announceTimer -= dtFrames;

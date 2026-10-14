@@ -1,4 +1,4 @@
-export type MusicId = 'title' | 'select' | 'hood' | 'dojo' | 'parking' | 'victory';
+export type MusicId = 'title' | 'select' | 'hood' | 'dojo' | 'parking' | 'victory' | 'rap';
 
 export type SfxId =
   | 'hitLight'
@@ -16,7 +16,26 @@ export type SfxId =
   | 'cursor'
   | 'confirm'
   | 'cancel'
-  | 'roundBell';
+  | 'roundBell'
+  // BBL MAX cinematics
+  | 'gunshot'
+  | 'explosion'
+  | 'rocket'
+  | 'pin'
+  | 'poof'
+  | 'powerUp'
+  | 'thwip'
+  | 'crowdOoh'
+  | 'crowdLaugh'
+  | 'scratch'
+  | 'recordStop'
+  | 'bonk'
+  | 'boing'
+  | 'crash'
+  | 'crack'
+  | 'dash'
+  | 'flex'
+  | 'shine';
 
 export type AnnouncerLine =
   | 'round1'

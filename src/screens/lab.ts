@@ -165,7 +165,7 @@ export class LabScreen implements Screen {
       () => !!d.faceGen?.[key],
       (on) => (d.faceGen = { ...d.faceGen, [key]: on } as FaceGen),
     ];
-    const capColor = () => d.accessories?.cap ?? (d.hair.style === 'bandana' ? '#2a8a3a' : '#c83030');
+    const capColor = () => d.accessories?.cap ?? (d.hair.style === 'bandana' ? '#2a8a3a' : d.hair.style === 'beanie' ? '#1c1c20' : '#c83030');
     const capInput = color(capColor(), (v) => (d.accessories = { ...d.accessories, cap: v }));
 
     // photo
@@ -226,19 +226,23 @@ export class LabScreen implements Screen {
         chips<HairStyle>(
           [
             ['short', 'COURTS'],
+            ['curlyshort', 'BOUCLES COURTES'],
             ['spiky', 'PIQUES'],
             ['buzz', 'RASÉS'],
             ['afro', 'AFRO'],
             ['bigafro', 'AFRO XXL'],
             ['midlong', 'MI-LONGS'],
+            ['wavy', 'LONGS ONDULÉS'],
             ['curlymid', 'BOUCLÉS'],
             ['long', 'LONGS'],
             ['dreads', 'DREADS'],
             ['mohawk', 'IROQUOIS'],
             ['tahiti', 'PALMIER'],
+            ['ssj', 'SUPER SAYAN'],
             ['ponytail', 'QUEUE'],
             ['bun', 'CHIGNON'],
             ['cap', 'CASQUETTE'],
+            ['beanie', 'BONNET'],
             ['bandana', 'BANDANA'],
             ['bald', 'CHAUVE'],
           ],
@@ -246,7 +250,7 @@ export class LabScreen implements Screen {
           (v) => {
             d.hair.style = v;
             // headwear gets its own colour so the hair still shows under it
-            if ((v === 'cap' || v === 'bandana') && !d.accessories?.cap) {
+            if ((v === 'cap' || v === 'beanie' || v === 'bandana') && !d.accessories?.cap) {
               d.accessories = { ...d.accessories, cap: capColor() };
               capInput.value = capColor();
             }
@@ -259,7 +263,7 @@ export class LabScreen implements Screen {
           }),
         ),
       ),
-      field('COULEUR CASQUETTE / BANDANA', row(capInput)),
+      field('COULEUR CASQUETTE / BONNET / BANDANA', row(capInput)),
       field(
         'HAUT',
         chips<TopStyle>(
@@ -268,12 +272,17 @@ export class LabScreen implements Screen {
             ['tshirt', 'T-SHIRT'],
             ['tracksuit', 'SURVÊT'],
             ['hoodie', 'SWEAT'],
+            ['suit', 'COMBI'],
             ['shirtless', 'TORSE NU'],
           ],
           () => d.outfit.top,
           (v) => (d.outfit.top = v),
         ),
         row(color(d.outfit.topColor, (v) => (d.outfit.topColor = v)), color(d.outfit.trimColor, (v) => (d.outfit.trimColor = v))),
+        toggles([
+          ['shorts', 'SHORT', () => !!d.outfit.shorts, (on) => (d.outfit = { ...d.outfit, shorts: on || undefined })],
+          ['web', 'MOTIF TOILE (COMBI)', () => !!d.outfit.web, (on) => (d.outfit = { ...d.outfit, web: on ? '#141418' : undefined })],
+        ]),
       ),
       field('PANTALON / CHAUSSURES', row(color(d.outfit.pantsColor, (v) => (d.outfit.pantsColor = v)), color(d.outfit.shoesColor, (v) => (d.outfit.shoesColor = v)))),
       field('CARRURE', range(0.85, 1.25, 0.01, d.build ?? 1, (v) => (d.build = v))),
@@ -289,6 +298,7 @@ export class LabScreen implements Screen {
         ),
       ),
       field('BIDON', range(0, 1, 0.05, d.belly ?? 0, (v) => (d.belly = v))),
+      field('MUSCLES', range(0, 1, 0.05, d.muscles ?? 0, (v) => (d.muscles = v || undefined))),
       field(
         'BARBE 3D (couleur des cheveux)',
         chips<'none' | 'short' | 'big'>(
@@ -315,7 +325,14 @@ export class LabScreen implements Screen {
       ),
       field(
         'VISAGE SANS PHOTO',
-        toggles([fgFlag('glasses', 'LUNETTES'), fgFlag('sunglasses', 'LUNETTES NOIRES'), fgFlag('moustache', 'MOUSTACHE'), fgFlag('beard', 'BARBE'), fgFlag('freckles', 'TACHES DE ROUSSEUR')]),
+        toggles([
+          fgFlag('glasses', 'LUNETTES'),
+          fgFlag('sunglasses', 'LUNETTES NOIRES'),
+          fgFlag('moustache', 'MOUSTACHE'),
+          fgFlag('beard', 'BARBE'),
+          fgFlag('freckles', 'TACHES DE ROUSSEUR'),
+          ['mask', 'MASQUE ARAIGNÉE (couleur = peau)', () => d.faceGen?.mask === 'spider', (on) => (d.faceGen = { ...d.faceGen, mask: on ? 'spider' : undefined })],
+        ]),
       ),
       field('TAILLE DE LA TÊTE', range(1, 1.4, 0.01, d.headScale ?? 1.18, (v) => (d.headScale = v))),
       field('PHRASE D’ENTRÉE', text(d.introLines[0] ?? '', 60, (v) => (d.introLines = [v || 'Je vais te tuer.']))),

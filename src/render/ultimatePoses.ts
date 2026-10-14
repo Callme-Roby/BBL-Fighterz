@@ -2623,3 +2623,75 @@ for (const [id, build] of Object.entries(BUILDERS)) {
   const c = build();
   registerUltimate(id, c.a, c.v);
 }
+
+/** Register any extra clip (e.g. an extra actor's clip `ult:<id>:<actorId>`). */
+export function registerClip(name: string, c: Clip) {
+  CLIPS[name] = c;
+}
+
+/**
+ * Toolkit for the cinematic clips written in other files (src/render/ults/*):
+ * the key/clip helpers and the shared poses above.
+ */
+export const kit = {
+  P,
+  K,
+  clip,
+  rot,
+  spin,
+  rewrap,
+  shift,
+  mirror,
+  legDrop,
+  plant,
+  strike,
+  react,
+  boneX,
+  crash,
+  J,
+  OPEN_LEGS,
+  FLEX,
+  CROSSED,
+  SQUAT,
+  LANDING,
+  RISE,
+  BELLY_WIND,
+  BELLY_BUMP,
+  SPLASH,
+  FLAT,
+  FLAT_BOUNCE,
+  PUSH_UP,
+  BACK_CHAMBER,
+  BACK_KICK,
+  DAZED,
+  REEL,
+  TWIST_L,
+  TWIST_L2,
+  TWIST_R,
+  TWIST_R2,
+  CHIN_UP,
+  DOUBLE,
+  FLY_BACK,
+  FLY_BACK2,
+  JACKKNIFE,
+  SQUASHED,
+  SQUASHED2,
+  LYING_BOUNCE,
+  SIT,
+  HAMMER_UP,
+  HAMMER_DOWN,
+  SMASHED,
+  KNEEL,
+  WATCH_L,
+  HAND_ON_HIP_L,
+  HAND_ON_HIP_R,
+  // from ./poses
+  STANCE,
+  CROUCH,
+  AIR,
+  LYING,
+  HIT_HIGH,
+  HIT_MID,
+  HIT_LOW,
+  ATTACKS,
+};

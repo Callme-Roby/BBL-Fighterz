@@ -70,7 +70,7 @@ export function sanitizeDef(d: FighterDef): FighterDef {
   const optCol = (v: unknown) => (isCol(v) ? v : undefined);
   const face = typeof d.face === 'string' && (d.face.startsWith('data:image/') || /^faces\/[\w.-]+$/.test(d.face)) ? d.face.slice(0, 200000) : '';
   const o = d.outfit ?? ({} as FighterDef['outfit']);
-  const tops = ['tank', 'tshirt', 'tracksuit', 'shirtless', 'hoodie'] as const;
+  const tops = ['tank', 'tshirt', 'tracksuit', 'shirtless', 'hoodie', 'suit'] as const;
   const mouths = ['neutral', 'smile', 'smirk', 'frown', 'grin'] as const;
   const num = (v: unknown, lo: number, hi: number, fb: number) => (typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fb);
   const lines = (v: unknown, n: number, max: number) => (Array.isArray(v) ? v : []).slice(0, n).map((l) => str(l, max)).filter(Boolean);
@@ -100,6 +100,8 @@ export function sanitizeDef(d: FighterDef): FighterDef {
       wristColor: optCol(o.wristColor),
       stains: optCol(o.stains),
       baggy: o.baggy === true ? true : undefined,
+      shorts: o.shorts === true ? true : undefined,
+      web: optCol(o.web),
     },
     accessories: acc ? { chain: acc.chain === true, whistle: acc.whistle === true, cap: optCol(acc.cap) } : undefined,
     faceGen: fg
@@ -120,11 +122,14 @@ export function sanitizeDef(d: FighterDef): FighterDef {
           scar: !!fg.scar,
           blush: !!fg.blush,
           mouth: mouths.includes(fg.mouth as (typeof mouths)[number]) ? fg.mouth : undefined,
+          mask: fg.mask === 'spider' ? 'spider' : undefined,
+          maskLine: optCol(fg.maskLine),
         }
       : undefined,
     build: num(d.build, 0.8, 1.3, 1),
     body: d.body === 'fine' ? 'fine' : 'standard',
     belly: num(d.belly, 0, 1, 0),
+    muscles: num(d.muscles, 0, 1, 0) || undefined,
     beard3d: beard ? { color: col(beard.color, '#2a1a10'), size: num(beard.size, 0.5, 1.6, 1) } : undefined,
     headScale: num(d.headScale, 0.9, 1.4, 1.15),
     height: num(d.height, 0.85, 1.15, 1),

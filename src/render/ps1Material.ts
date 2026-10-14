@@ -176,7 +176,10 @@ export function createPS1Material(opts: PS1Options = {}): PS1Material {
 
 /* ------------------------------------------------------------------------ */
 /* Face material: projects a photo onto the front of the head with a soft   */
-/* elliptical mask that blends into the character's skin colour.            */
+/* elliptical mask that blends into the character's skin colour. The face   */
+/* texture's outer band is already colour-matched to that skin tone         */
+/* (faceTexture.ts), and the whole head uses exactly the body's Gouraud     */
+/* lighting, so face, head, ears, neck and arms read as one skin.           */
 /* ------------------------------------------------------------------------ */
 
 const FACE_VERT = /* glsl */ `
@@ -205,15 +208,15 @@ varying vec2 vFaceUv;
 varying float vFront;
 void main() {
   vec2 p = ( vFaceUv - 0.5 ) * 2.0;
+  // same oval as faceTexture.ts (ovalAt): d = 1 on the edge
   float d = length( vec2( p.x * 1.02, p.y * 0.98 ) );
-  float mask = 1.0 - smoothstep( 0.80, 1.0, d );
-  mask *= smoothstep( uFaceFrontMin, uFaceFrontMin + 0.3, vFront );
+  float mask = 1.0 - smoothstep( 0.72, 1.0, d );
+  mask *= smoothstep( uFaceFrontMin, uFaceFrontMin + 0.35, vFront );
   vec2 uv = clamp( vFaceUv, 0.0, 1.0 );
   vec3 photo = texture2D( uFaceMap, uv ).rgb;
   vec3 base = mix( uSkin, photo, mask );
-  // photos already contain their own shading: light them more gently
-  vec3 light = mix( vLight, vec3( 1.0 ), 0.45 * mask );
-  vec3 col = base * light;
+  // exactly the body's lighting (no extra boost on the photo): no brightness step at the oval's edge
+  vec3 col = base * vLight;
   col = mix( col, uFlashColor, uFlash );
   col = mix( col, uFogColor, vFog * uFogOn );
   gl_FragColor = vec4( col, 1.0 );

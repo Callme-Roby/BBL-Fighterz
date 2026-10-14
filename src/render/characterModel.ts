@@ -193,8 +193,8 @@ class GeoBuilder {
     }
   }
 
-  /** Add an arbitrary (non-indexed or indexed) three.js geometry, rigidly bound to one bone. */
-  addGeometry(g: THREE.BufferGeometry, w: Weights, col: THREE.Color | ((p: THREE.Vector3, i: number) => THREE.Color)) {
+  /** Add an arbitrary (non-indexed or indexed) three.js geometry, bound to one bone (or per-vertex weights). */
+  addGeometry(g: THREE.BufferGeometry, w: Weights | ((p: THREE.Vector3) => Weights), col: THREE.Color | ((p: THREE.Vector3, i: number) => THREE.Color)) {
     const geo = g;
     const pos = geo.getAttribute('position');
     const nor = geo.getAttribute('normal');
@@ -204,7 +204,7 @@ class GeoBuilder {
     for (let i = 0; i < pos.count; i++) {
       p.fromBufferAttribute(pos, i);
       n.fromBufferAttribute(nor, i);
-      this.vert(p, n, typeof col === 'function' ? col(p, i) : col, w);
+      this.vert(p, n, typeof col === 'function' ? col(p, i) : col, typeof w === 'function' ? w(p) : w);
     }
     if (geo.index) {
       for (let i = 0; i < geo.index.count; i++) this.idx.push(base + geo.index.getX(i));
@@ -245,6 +245,44 @@ class GeoBuilder {
     const dir = new THREE.Vector3().subVectors(pts[last], pts[last - 1]).normalize();
     const tip = this.vert(pts[last].clone().addScaledVector(dir, radii[last] * 1.6), dir, col(last), weights[last]);
     for (let s = 0; s < segs; s++) this.tri(rings[last][s], rings[last][(s + 1) % segs], tip);
+  }
+
+  /**
+   * Thin flat strip lying on a surface (web lines...): one point + outward normal + skin weights
+   * per vertex, `width` across. Single-sided, facing along the normals.
+   */
+  ribbon(pts: THREE.Vector3[], nrm: THREE.Vector3[], ws: Weights[], width: number, col: THREE.Color, closed = false) {
+    const n = pts.length;
+    if (n < 2) return;
+    const t = new THREE.Vector3();
+    const side = new THREE.Vector3();
+    const a = new THREE.Vector3();
+    const left: number[] = [];
+    const right: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const prev = closed ? pts[(i - 1 + n) % n] : pts[Math.max(0, i - 1)];
+      const next = closed ? pts[(i + 1) % n] : pts[Math.min(n - 1, i + 1)];
+      t.subVectors(next, prev).normalize();
+      side.crossVectors(t, nrm[i]).normalize().multiplyScalar(width / 2);
+      left.push(this.vert(a.copy(pts[i]).sub(side), nrm[i], col, ws[i]));
+      right.push(this.vert(a.copy(pts[i]).add(side), nrm[i], col, ws[i]));
+    }
+    const e1 = new THREE.Vector3();
+    const e2 = new THREE.Vector3();
+    const P = (k: number) => new THREE.Vector3(this.pos[k * 3], this.pos[k * 3 + 1], this.pos[k * 3 + 2]);
+    for (let i = 0; i < (closed ? n : n - 1); i++) {
+      const j = (i + 1) % n;
+      const p0 = P(left[i]);
+      e1.subVectors(P(right[i]), p0);
+      e2.subVectors(P(right[j]), p0);
+      if (e1.cross(e2).dot(nrm[i]) >= 0) {
+        this.tri(left[i], right[i], right[j]);
+        this.tri(left[i], right[j], left[j]);
+      } else {
+        this.tri(left[i], right[j], right[i]);
+        this.tri(left[i], left[j], right[j]);
+      }
+    }
   }
 
   build(): THREE.BufferGeometry {
@@ -307,21 +345,27 @@ export function buildCharacter(def: FighterDef, face: FaceAssets): CharacterMode
   const o = def.outfit;
   const F = def.body === 'fine' ? FINE : STANDARD;
   const belly = clamp01(def.belly ?? 0);
+  /** bodybuilder inflation of arms / shoulders / chest / thighs, on top of `build` */
+  const mus = clamp01(def.muscles ?? 0);
   const baggy = o.baggy ? 1 : 0;
+  const suit = o.top === 'suit';
+  const shorts = !!o.shorts && !suit;
   const C = (h: string) => new THREE.Color(h);
   const skin = face.skin.clone();
-  const skinDark = skin.clone().multiplyScalar(0.85);
+  const skinDark = skin.clone().multiplyScalar(0.9);
   const top = C(o.topColor);
   const trim = C(o.trimColor);
   const pants = C(o.pantsColor);
   const pantsDark = pants.clone().multiplyScalar(0.8);
   const shoes = C(o.shoesColor);
-  const sole = C('#e8e6e0');
-  const belt = C(o.beltColor ?? o.pantsColor).multiplyScalar(o.beltColor ? 1 : 0.7);
+  const sole = suit ? shoes.clone().multiplyScalar(0.62) : C('#e8e6e0');
+  const belt = suit ? top : C(o.beltColor ?? o.pantsColor).multiplyScalar(o.beltColor ? 1 : 0.7);
   const wrist = o.wristColor ? C(o.wristColor) : null;
   const stain = o.stains ? C(o.stains) : null;
+  const socks = C('#f2f0ea');
+  const web = suit && o.web ? C(o.web) : null;
 
-  const shoulderX = 0.235 * Math.sqrt(build) * F.shoulder;
+  const shoulderX = 0.235 * Math.sqrt(build) * F.shoulder * (1 + 0.3 * mus);
   const hipX = 0.1 * Math.sqrt(build) * F.hipX;
   const wb = build; // width factor for radii
 
@@ -332,11 +376,11 @@ export function buildCharacter(def: FighterDef, face: FaceAssets): CharacterMode
     chest: new THREE.Vector3(0, 1.27, 0),
     neck: new THREE.Vector3(0, 1.5, 0),
     head: new THREE.Vector3(0, 1.58, 0),
-    shoulderL: new THREE.Vector3(0.07 * F.shoulder, 1.45, 0),
+    shoulderL: new THREE.Vector3(0.07 * F.shoulder * (1 + 0.3 * mus), 1.45, 0),
     upperArmL: new THREE.Vector3(shoulderX, 1.46, 0),
     foreArmL: new THREE.Vector3(shoulderX, 1.18, 0),
     handL: new THREE.Vector3(shoulderX, 0.94, 0),
-    shoulderR: new THREE.Vector3(-0.07 * F.shoulder, 1.45, 0),
+    shoulderR: new THREE.Vector3(-0.07 * F.shoulder * (1 + 0.3 * mus), 1.45, 0),
     upperArmR: new THREE.Vector3(-shoulderX, 1.46, 0),
     foreArmR: new THREE.Vector3(-shoulderX, 1.18, 0),
     handR: new THREE.Vector3(-shoulderX, 0.94, 0),
@@ -367,8 +411,10 @@ export function buildCharacter(def: FighterDef, face: FaceAssets): CharacterMode
   const SEG = 10;
   const isTank = o.top === 'tank';
   const bare = o.top === 'shirtless';
-  const sleeves = o.top === 'tracksuit' || o.top === 'hoodie';
+  const sleeves = o.top === 'tracksuit' || o.top === 'hoodie' || suit;
   const torsoTop = bare ? skin : top;
+  /** bodysuit: side panels (under the arms, down the flanks) in the trim colour */
+  const suitSide = (th: number) => Math.abs(Math.cos(th)) > 0.62;
 
   // tank top: shoulders and arm holes show skin; tracksuit: front zip stripe
   const upperChestCol: ColorFn = (th) => {
@@ -385,9 +431,13 @@ export function buildCharacter(def: FighterDef, face: FaceAssets): CharacterMode
   };
   const midCol: ColorFn = (th) => {
     if (o.top === 'tracksuit' && Math.abs(th - Math.PI / 2) < 0.2) return trim;
+    if (suit && suitSide(th)) return trim;
     return torsoTop;
   };
-  const hemCol: ColorFn = () => (o.top === 'tank' || o.top === 'tshirt' ? trim : torsoTop);
+  const hemCol: ColorFn = (th) => {
+    if (suit) return suitSide(th) ? trim : top;
+    return o.top === 'tank' || o.top === 'tshirt' ? trim : torsoTop;
+  };
   // a few blotches on the front of the top (vertex colours: free)
   let stainSeed = 0;
   const stained = (fn: ColorFn): ColorFn => {
@@ -402,7 +452,7 @@ export function buildCharacter(def: FighterDef, face: FaceAssets): CharacterMode
     };
   };
 
-  // torso rings, bottom to top (also used to lay the chain on the chest)
+  // torso rings, bottom to top (also used to lay the chain on the chest); muscles: big pecs / lats / traps
   const torso: Ring[] = [
     { y: 0.84, rx: 0.12 * wb * F.hip, rz: 0.1 * wb, w: [['hips', 1]], col: pants },
     { y: 0.93, rx: 0.165 * wb * F.hip, rz: 0.115 * wb, w: [['hips', 1]], col: pants },
@@ -416,23 +466,37 @@ export function buildCharacter(def: FighterDef, face: FaceAssets): CharacterMode
       col: stained(hemCol),
     },
     { y: 1.07, rx: 0.165 * wb * F.waist + 0.022 * belly, rz: 0.113 * wb + 0.07 * belly, cz: 0.058 * belly, w: [['hips', 0.4], ['spine', 0.6]], col: stained(midCol) },
-    { y: 1.16, rx: 0.16 * wb * F.waist + 0.025 * belly, rz: 0.112 * wb + 0.078 * belly, cz: 0.005 + 0.066 * belly, w: [['spine', 1]], col: stained(midCol) },
+    {
+      y: 1.16,
+      rx: 0.16 * wb * F.waist * (1 + 0.08 * mus) + 0.025 * belly,
+      rz: 0.112 * wb * (1 + 0.05 * mus) + 0.078 * belly,
+      cz: 0.005 + 0.066 * belly,
+      w: [['spine', 1]],
+      col: stained(midCol),
+    },
     {
       y: 1.27,
-      rx: 0.185 * wb * lerp(F.waist, F.chest, 0.5) + 0.012 * belly,
-      rz: 0.125 * wb * lerp(1, F.chestZ, 0.5) + 0.04 * belly,
-      cz: 0.01 + 0.032 * belly,
+      rx: 0.185 * wb * lerp(F.waist, F.chest, 0.5) * (1 + 0.24 * mus) + 0.012 * belly,
+      rz: 0.125 * wb * lerp(1, F.chestZ, 0.5) * (1 + 0.18 * mus) + 0.04 * belly,
+      cz: 0.01 + 0.032 * belly + 0.01 * mus,
       w: [['spine', 0.5], ['chest', 0.5]],
       col: stained(midCol),
     },
-    { y: 1.37, rx: 0.205 * wb * F.chest, rz: 0.135 * wb * F.chestZ, cz: 0.015, w: [['chest', 1]], col: stained(upperChestCol) },
-    { y: 1.46, rx: 0.2 * wb * F.chest, rz: 0.115 * wb * F.chestZ, cz: 0.0, w: [['chest', 1]], col: shoulderCol },
-    { y: 1.52, rx: 0.08 * F.neck, rz: 0.07 * F.neck, cz: 0.0, w: [['chest', 0.6], ['neck', 0.4]], col: skin },
+    {
+      y: 1.37,
+      rx: 0.205 * wb * F.chest * (1 + 0.42 * mus),
+      rz: 0.135 * wb * F.chestZ * (1 + 0.36 * mus),
+      cz: 0.015 + 0.024 * mus,
+      w: [['chest', 1]],
+      col: stained(upperChestCol),
+    },
+    { y: 1.46, rx: 0.2 * wb * F.chest * (1 + 0.5 * mus), rz: 0.115 * wb * F.chestZ * (1 + 0.32 * mus), cz: 0.006 * mus, w: [['chest', 1]], col: shoulderCol },
+    { y: 1.52, rx: 0.08 * F.neck * (1 + 0.95 * mus), rz: 0.07 * F.neck * (1 + 0.5 * mus), cz: 0.0, w: [['chest', 0.6], ['neck', 0.4]], col: skin },
   ];
   g.tube(torso, SEG, true, false);
 
   // neck
-  const nk = Math.sqrt(wb) * F.neck;
+  const nk = Math.sqrt(wb) * F.neck * (1 + 0.35 * mus);
   g.tube(
     [
       { y: 1.49, rx: 0.062 * nk, rz: 0.06 * nk, cz: 0.005, w: [['chest', 0.3], ['neck', 0.7]], col: skin },
@@ -443,8 +507,10 @@ export function buildCharacter(def: FighterDef, face: FaceAssets): CharacterMode
     false,
   );
 
-  // arms
+  // arms (muscles: big deltoids, biceps and forearms)
   const aw = wb * F.arm;
+  const M = (k: number) => aw * (1 + k * mus);
+  const armRings: Ring[][] = [];
   for (const s of [1, -1] as const) {
     const L = s === 1 ? 'L' : 'R';
     const ua = `upperArm${L}` as BoneName;
@@ -458,53 +524,89 @@ export function buildCharacter(def: FighterDef, face: FaceAssets): CharacterMode
       return base;
     };
     const lowerCol = sleeves ? top : skin;
-    g.tube(
-      [
-        { y: 1.52, rx: 0.05 * aw, rz: 0.055 * aw, cx: x, w: [[ua, 1]], col: stripe(armTop) },
-        { y: 1.46, rx: 0.072 * aw, rz: 0.078 * aw, cx: x, w: [[ua, 1]], col: stripe(armTop) },
-        { y: 1.32, rx: 0.064 * aw, rz: 0.07 * aw, cx: x, w: [[ua, 1]], col: stripe(o.top === 'tshirt' ? skin : armTop) },
-        { y: 1.18, rx: 0.05 * aw, rz: 0.054 * aw, cx: x, w: [[ua, 0.5], [fa, 0.5]], col: stripe(lowerCol) },
-        { y: 1.09, rx: 0.053 * aw, rz: 0.057 * aw, cx: x, cz: 0.004, w: [[fa, 1]], col: stripe(lowerCol) },
-        { y: 0.98, rx: 0.04 * aw, rz: 0.036 * aw, cx: x, w: [[fa, 1]], col: sleeves ? trim : wrist ?? skin },
-        { y: 0.95, rx: 0.038 * aw, rz: 0.034 * aw, cx: x, w: [[fa, 0.6], [hand, 0.4]], col: skin },
-      ],
-      8,
-      true,
-      true,
-    );
+    const arm: Ring[] = [
+      { y: 1.52, rx: 0.05 * M(0.45), rz: 0.055 * M(0.45), cx: x, w: [[ua, 1]], col: stripe(armTop) },
+      { y: 1.46, rx: 0.072 * M(0.75), rz: 0.078 * M(0.75), cx: x, w: [[ua, 1]], col: stripe(armTop) },
+      { y: 1.32, rx: 0.064 * M(0.6), rz: 0.07 * M(0.95), cx: x, cz: 0.016 * mus, w: [[ua, 1]], col: stripe(o.top === 'tshirt' ? skin : armTop) },
+      { y: 1.18, rx: 0.05 * M(0.3), rz: 0.054 * M(0.3), cx: x, w: [[ua, 0.5], [fa, 0.5]], col: stripe(lowerCol) },
+      { y: 1.09, rx: 0.053 * M(0.6), rz: 0.057 * M(0.5), cx: x, cz: 0.004, w: [[fa, 1]], col: stripe(lowerCol) },
+      { y: 0.98, rx: 0.04 * M(0.25), rz: 0.036 * M(0.25), cx: x, w: [[fa, 1]], col: suit ? top : sleeves ? trim : wrist ?? skin },
+      { y: 0.95, rx: 0.038 * M(0.2), rz: 0.034 * M(0.2), cx: x, w: [[fa, 0.6], [hand, 0.4]], col: skin },
+    ];
+    armRings.push(arm);
+    g.tube(arm, 8, true, true);
     // fist
+    const fm = 1 + 0.18 * mus;
     g.box(
       new THREE.Vector3(x, 0.885, 0.012),
-      new THREE.Vector3(0.07 * wb * F.fist, 0.09 * lerp(1, F.fist, 0.5), 0.084 * Math.sqrt(wb) * F.fist),
+      new THREE.Vector3(0.07 * wb * F.fist * fm, 0.09 * lerp(1, F.fist, 0.5) * fm, 0.084 * Math.sqrt(wb) * F.fist * fm),
       [[hand, 1]],
       (n) => (n.z > 0.5 ? skinDark : skin),
     );
 
-    // legs (baggy trousers get wider toward the ankles)
+    // legs (baggy trousers get wider toward the ankles; muscles: big thighs and calves)
     const th = `thigh${L}` as BoneName;
     const sh = `shin${L}` as BoneName;
     const ft = `foot${L}` as BoneName;
     const lx = s * hipX;
     const leg: ColorFn = (t) => (Math.abs(Math.cos(t) - s) < 0.3 && o.top === 'tracksuit' ? trim : pants);
     const bw = (k: number) => wb * (1 + k * baggy);
-    g.tube(
-      [
-        { y: 1.0, rx: 0.088 * wb, rz: 0.098 * wb, cx: lx, w: [['hips', 1]], col: leg },
-        { y: 0.92, rx: 0.096 * bw(0.06), rz: 0.102 * bw(0.06), cx: lx, w: [['hips', 0.3], [th, 0.7]], col: leg },
-        { y: 0.72, rx: 0.086 * bw(0.16) * F.thigh, rz: 0.09 * bw(0.16) * F.thigh, cx: lx, w: [[th, 1]], col: leg },
-        { y: 0.51, rx: 0.072 * bw(0.26) * lerp(F.thigh, F.shin, 0.5), rz: 0.076 * bw(0.26) * lerp(F.thigh, F.shin, 0.5), cx: lx, cz: 0.006, w: [[th, 0.5], [sh, 0.5]], col: leg },
-        { y: 0.3, rx: 0.074 * bw(0.34) * F.shin, rz: 0.076 * bw(0.34) * F.shin, cx: lx, w: [[sh, 1]], col: leg },
-        { y: 0.12, rx: 0.084 * bw(0.36) * F.shin, rz: 0.084 * bw(0.4) * F.shin, cx: lx, cz: 0.012 * baggy, w: [[sh, 1]], col: pantsDark },
-        { y: 0.08, rx: 0.07 * bw(0.4) * F.shin, rz: 0.07 * bw(0.5) * F.shin, cx: lx, cz: 0.016 * baggy, w: [[sh, 0.5], [ft, 0.5]], col: pantsDark },
-      ],
-      8,
-      false,
-      true,
+    const LM = (k: number) => 1 + k * mus;
+    const kneeR = 0.072 * bw(0.26) * lerp(F.thigh, F.shin, 0.5) * LM(0.25);
+    const thighR = 0.086 * bw(0.16) * F.thigh * LM(0.5);
+    const legRings: Ring[] = [
+      { y: 1.0, rx: 0.088 * wb * LM(0.2), rz: 0.098 * wb * LM(0.2), cx: lx, w: [['hips', 1]], col: leg },
+      { y: 0.92, rx: 0.096 * bw(0.06) * LM(0.3), rz: 0.102 * bw(0.06) * LM(0.3), cx: lx, w: [['hips', 0.3], [th, 0.7]], col: leg },
+      { y: 0.72, rx: thighR, rz: 0.09 * bw(0.16) * F.thigh * LM(0.5), cx: lx, w: [[th, 1]], col: leg },
+    ];
+    if (shorts) {
+      // loose hem just above the knee, then bare leg
+      const hem = lerp(thighR, kneeR, 0.4);
+      legRings.push(
+        { y: 0.63, rx: hem * 1.14, rz: hem * 1.18, cx: lx, w: [[th, 1]], col: pantsDark },
+        { y: 0.63, rx: hem * 0.94, rz: hem * 0.98, cx: lx, w: [[th, 1]], col: skin },
+      );
+    }
+    legRings.push(
+      { y: 0.51, rx: kneeR, rz: 0.076 * bw(0.26) * lerp(F.thigh, F.shin, 0.5) * LM(0.25), cx: lx, cz: 0.006, w: [[th, 0.5], [sh, 0.5]], col: shorts ? skin : leg },
+      { y: 0.3, rx: 0.074 * bw(0.34) * F.shin * LM(0.4), rz: 0.076 * bw(0.34) * F.shin * LM(0.4), cx: lx, w: [[sh, 1]], col: shorts ? skin : suit ? shoes : leg },
+      { y: 0.12, rx: 0.084 * bw(0.36) * F.shin, rz: 0.084 * bw(0.4) * F.shin, cx: lx, cz: 0.012 * baggy, w: [[sh, 1]], col: shorts ? socks : suit ? shoes : pantsDark },
+      { y: 0.08, rx: 0.07 * bw(0.4) * F.shin, rz: 0.07 * bw(0.5) * F.shin, cx: lx, cz: 0.016 * baggy, w: [[sh, 0.5], [ft, 0.5]], col: shorts ? socks : suit ? shoes : pantsDark },
     );
+    g.tube(legRings, 8, false, true);
+    if (web) {
+      // boots: two hoops + four lines
+      const boot = legRings.filter((r) => r.y <= 0.3 && r.y >= 0.12);
+      for (const r of boot) webHoop(g, r, 8, 0, Math.PI * 2, web);
+      webLines(g, boot, 8, [0.4, 2.0, 3.5, 5.1], web);
+    }
     // sneaker: upper + sole
     const fw = Math.sqrt(wb) * F.foot;
     g.box(new THREE.Vector3(lx, 0.075, 0.055), new THREE.Vector3(0.11 * fw, 0.09, 0.27), [[ft, 1]], (n) => (n.y > 0.5 ? shoes.clone().multiplyScalar(1.1) : shoes), 0.85);
     g.box(new THREE.Vector3(lx, 0.016, 0.055), new THREE.Vector3(0.118 * fw, 0.032, 0.285), [[ft, 1]], sole);
+  }
+
+  // bodysuit web: a grid of thin lines over the main colour (front / back of the torso, shoulders, arms)
+  if (web) {
+    const front = Math.PI / 2;
+    const back = (3 * Math.PI) / 2;
+    const half = Math.acos(0.62) - 0.04; // stay inside the main-colour panel
+    const lower = torso.filter((r) => r.y >= 1.04 && r.y <= 1.37);
+    const upper = torso.filter((r) => r.y >= 1.37);
+    for (const c of [front, back]) {
+      // vertical lines on the front / back panel, converging up to the neck
+      const angles = [-1, -0.5, 0, 0.5, 1].map((k) => c + k * half);
+      webLines(g, [...lower, ...upper.slice(1)], SEG, angles, web);
+      for (const r of lower) if (r.y > 1.05 && r.y < 1.36) webHoop(g, r, SEG, c - half, c + half, web);
+    }
+    // shoulders / upper chest: lines all around + full hoops
+    webLines(g, upper, SEG, [0.15, 0.5, 2.64, 2.99, 3.3, 3.65, 5.78, 6.13], web);
+    for (const r of upper.slice(0, 2)) webHoop(g, r, SEG, 0, Math.PI * 2, web);
+    for (const arm of armRings) {
+      const a = arm.slice(0, 6);
+      webLines(g, a, 8, [0.3, 1.35, 2.4, 3.45, 4.5, 5.55], web);
+      for (const r of a.slice(1, 5)) webHoop(g, r, 8, 0, Math.PI * 2, web);
+    }
   }
 
   // ---------------- head ----------------
@@ -531,12 +633,13 @@ export function buildCharacter(def: FighterDef, face: FaceAssets): CharacterMode
   hb.addGeometry(headGeo, [['head', 1]], new THREE.Color(1, 1, 1));
   headGeo.dispose();
 
-  // ears (skin)
+  // ears (same skin tone as the face edge / neck: the lighting alone shades them)
   for (const s of [1, -1]) {
-    g.box(new THREE.Vector3(s * R.x * 0.97, headCY - 0.005, -0.01), new THREE.Vector3(0.03, 0.055 * hs, 0.035), [['head', 1]], skinDark);
+    g.box(new THREE.Vector3(s * R.x * 0.97, headCY - 0.005, -0.01), new THREE.Vector3(0.03, 0.055 * hs, 0.035), [['head', 1]], skin);
   }
 
   addHair(g, def, headCY, R, torso);
+  if (!def.face && def.faceGen?.mask === 'spider') addMaskWeb(g, headCY, R, new THREE.Color(def.faceGen.maskLine ?? '#121216'));
   if (def.beard3d) addBeard3d(g, def.beard3d, headCY, R);
   if (def.accessories?.chain) addChain(g, torso, wb, !!def.accessories.whistle);
 
@@ -684,10 +787,170 @@ function addHair(g: GeoBuilder, def: FighterDef, cy: number, R: THREE.Vector3, t
     }
   };
 
+  const headC = new THREE.Vector3(0, cy, 0.012);
+  /** rounded curl clump lying on the hair surface: squashed along the outward direction, random twist */
+  const curl = (pos: THREE.Vector3, r: number, seed: number) => {
+    const geo = new THREE.IcosahedronGeometry(1, 0);
+    geo.scale(r * (1.05 + 0.2 * hashNoise(seed * 1.3)), r * 0.78, r * (0.95 + 0.2 * hashNoise(seed * 3.7)));
+    geo.rotateY(hashNoise(seed * 5.9) * Math.PI * 2);
+    const out = pos.clone().sub(headC).normalize();
+    geo.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), out));
+    geo.translate(pos.x, pos.y, pos.z);
+    // lighter tops, darker undersides: each clump reads as a curl
+    add(geo, (p, i) => col.clone().multiplyScalar(0.74 + 0.16 * hashNoise(seed * 11 + i) + 0.22 * clamp01((p.y - pos.y) / r + 0.5)));
+  };
+  /** point on the hair envelope: longitude phi (0 = front), unit height yu */
+  const envelope = (phi: number, yu: number, f: number) => {
+    const below = Math.max(0, -yu);
+    const head = Math.max(0.64, Math.sqrt(Math.max(0, 1 - yu * yu)) * (1 - 0.22 * below * below));
+    const rr = yu > 0.2 ? f : head * f;
+    let z = Math.cos(phi) * R.z * rr;
+    if (z > 0) z *= 0.9;
+    return new THREE.Vector3(Math.sin(phi) * R.x * rr, cy + yu * R.y, z + 0.012);
+  };
+
+  /**
+   * Long hair falling past the jaw to the shoulders: hugs the skull, then hangs straight down
+   * and spreads a little on the shoulders, with waves. The lower part follows the neck / chest.
+   */
+  const drape = (halfTop: number, halfBottom: number, yuBottom: number, wave: number, NI: number, NJ: number) => {
+    const outer: THREE.Vector3[][] = [];
+    const inner: THREE.Vector3[][] = [];
+    for (let i = 0; i <= NI; i++) {
+      const s = i / NI;
+      const yu = lerp(0.3, yuBottom, s);
+      const below = Math.max(0, -yu);
+      const skull = Math.sqrt(Math.max(0, 1 - yu * yu)) * (1 - 0.22 * below * below);
+      const fall = yu < 0 ? Math.max(skull, 0.96 + 0.07 * clamp01(-yu - 1)) : skull;
+      const psi0 = THREE.MathUtils.degToRad(lerp(halfTop, halfBottom, s * s * (3 - 2 * s)));
+      const ro: THREE.Vector3[] = [];
+      const ri: THREE.Vector3[] = [];
+      for (let j = 0; j <= NJ; j++) {
+        const psi = -psi0 + (2 * psi0 * j) / NJ;
+        const wv = wave * Math.sin(psi * 7 + yu * 3.4) * Math.min(1, 0.25 + s * 2.5);
+        const jag = i === NI ? (j % 2 ? 0.05 : -0.005) * k : 0;
+        const f = fall * 1.1 + wv;
+        const at = (ff: number) => {
+          let z = -Math.cos(psi) * R.z * ff;
+          if (z > 0) z *= 0.9;
+          return new THREE.Vector3(Math.sin(psi) * R.x * ff, cy + yu * R.y + jag, z + 0.012);
+        };
+        ro.push(at(f));
+        ri.push(at(f - 0.13 - 0.05 * s));
+      }
+      outer.push(ro);
+      inner.push(ri);
+    }
+    const weightAt = (p: THREE.Vector3): Weights => {
+      const yu = (p.y - cy) / R.y;
+      const t = clamp01((-0.85 - yu) / (-0.85 - yuBottom));
+      if (t <= 0) return w;
+      return [['head', 1 - 0.65 * t], ['neck', 0.25 * t], ['chest', 0.4 * t]];
+    };
+    const put = (geo: THREE.BufferGeometry, c: (p: THREE.Vector3, i: number) => THREE.Color) => {
+      g.addGeometry(geo, weightAt, c);
+      geo.dispose();
+    };
+    const axis = (p: THREE.Vector3) => new THREE.Vector3(p.x, 0, p.z - 0.012);
+    put(gridGeometry(outer, axis), vary);
+    put(gridGeometry(inner, (p) => axis(p).negate()), (p, i) => vary(p, i).multiplyScalar(0.6));
+    put(gridGeometry([outer[NI], inner[NI]], () => new THREE.Vector3(0, -1, 0)), (p, i) => vary(p, i).multiplyScalar(0.8));
+    const mid = Math.floor(NI / 2);
+    for (const j of [0, NJ]) {
+      // the front edges face away from the rest of the curtain
+      const e = outer[mid][j].clone().sub(outer[mid][j === 0 ? 1 : NJ - 1]);
+      put(gridGeometry([outer.map((r) => r[j]), inner.map((r) => r[j])], () => e), (p, i) => vary(p, i).multiplyScalar(0.85));
+    }
+  };
+
   switch (style) {
     case 'buzz':
       dome(1.03, -0.5, 1.3);
       break;
+    case 'beanie': {
+      // knit beanie worn low on the forehead (no logo): ribbed crown, folded cuff, rolled rim
+      const knit = headwear ?? col;
+      // with a separate beanie colour, the hair shows under it over the ears and at the nape (not on the forehead)
+      if (headwear) dome(1.045, -0.6, 1.55, vary);
+      // front edge just above the brows, sides over the top of the ears, back down to the nape
+      const tilt = -0.42;
+      const tl = 1.45;
+      const sc = 1.12;
+      const W = 32;
+      const ribs = (amp: number) => (_p: THREE.Vector3, i: number) => knit.clone().multiplyScalar((i % (W + 1)) % 2 ? 1 - amp : 1 + 0.04 * hashNoise(i));
+      const shell = (scale: number, from: number, len: number, hSeg: number, color: (p: THREE.Vector3, i: number) => THREE.Color) => {
+        const geo = new THREE.SphereGeometry(1, W, hSeg, 0, Math.PI * 2, from, len);
+        geo.rotateX(tilt);
+        const pos = geo.getAttribute('position');
+        const v = new THREE.Vector3();
+        for (let i = 0; i < pos.count; i++) {
+          onSkull(v.fromBufferAttribute(pos, i), scale);
+          // slightly taller crown
+          v.y = cy + (v.y - cy) * (v.y > cy ? 1.06 : 1);
+          pos.setXYZ(i, v.x, v.y, v.z);
+        }
+        geo.computeVertexNormals();
+        add(geo, color);
+      };
+      shell(sc, 0, tl - 0.3, 5, ribs(0.2));
+      // folded cuff: a slightly thicker band around the bottom
+      shell(sc + 0.04, tl - 0.36, 0.36, 2, ribs(0.3));
+      // rolled bottom edge
+      const rim = new THREE.TorusGeometry(Math.sin(tl), 0.05, 3, 20);
+      rim.rotateX(Math.PI / 2);
+      rim.translate(0, Math.cos(tl), 0);
+      rim.rotateX(tilt);
+      {
+        const pos = rim.getAttribute('position');
+        const v = new THREE.Vector3();
+        for (let i = 0; i < pos.count; i++) {
+          onSkull(v.fromBufferAttribute(pos, i), sc + 0.03);
+          pos.setXYZ(i, v.x, v.y, v.z);
+        }
+        rim.computeVertexNormals();
+      }
+      add(rim, knit.clone().multiplyScalar(0.82));
+      break;
+    }
+    case 'wavy': {
+      // long wavy hair to the shoulders, parted in the middle, the face stays open
+      dome(1.09, -0.45, 1.42, vary, 0.07);
+      drape(118, 104, -1.55, 0.06, 8, 16);
+      break;
+    }
+    case 'ssj': {
+      // "super sayan": huge golden spikes standing up; vertex colours above 1 keep them bright (glowy) under the lighting
+      const glow = (p: THREE.Vector3, i: number) => col.clone().multiplyScalar(1.15 + 0.3 * clamp01((p.y - cy) / (R.y * 2.8)) + 0.08 * hashNoise(i + p.x * 10));
+      dome(1.07, -0.46, 1.38, glow);
+      const N = 26;
+      for (let i = 0; i < N; i++) {
+        const az = i * 2.39996 + 0.3;
+        const h = (i + 0.5) / N;
+        let pb = 0.12 + 1.15 * Math.sqrt(h); // polar angle of the root on the skull
+        if (Math.cos(az) > 0.25) pb = Math.min(pb, 0.62); // keep the forehead clear
+        const root = new THREE.Vector3(Math.sin(pb) * Math.sin(az), Math.cos(pb), Math.sin(pb) * Math.cos(az));
+        // standing up (flame-like), leaning outward and a bit back
+        const dir = root.clone().multiplyScalar(0.62).add(new THREE.Vector3(0, 1, -0.12)).normalize();
+        const len = k * (0.2 + 0.12 * hashNoise(i * 3.1)) * (1.15 - 0.4 * Math.sin(pb));
+        const cone = new THREE.ConeGeometry(k * (0.05 + 0.018 * hashNoise(i * 1.7)), len, 5);
+        cone.translate(0, len / 2, 0);
+        cone.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+        const base = onSkull(root.clone(), 0.96);
+        cone.translate(base.x, base.y, base.z);
+        add(cone, glow);
+      }
+      // two bangs falling over the forehead
+      for (const sx of [-1, 1]) {
+        const base = skullPoint(new THREE.Vector3(sx * 0.22, 0.86, 0.48), 1.05);
+        const len = k * 0.1;
+        const cone = new THREE.ConeGeometry(k * 0.026, len, 4);
+        cone.translate(0, len / 2, 0);
+        cone.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(sx * 0.35, -0.75, 0.55).normalize()));
+        cone.translate(base.x, base.y, base.z);
+        add(cone, glow);
+      }
+      break;
+    }
     case 'short':
       dome(1.07, -0.48, 1.38);
       break;
@@ -766,31 +1029,30 @@ function addHair(g: GeoBuilder, def: FighterDef, cy: number, R: THREE.Vector3, t
       curtain(116, -1.08, 0.07, 0.04, 1.13, 6, 14);
       break;
     }
+    case 'curlyshort': {
+      // short curly crop: bumpy cap + tight curls over the crown, short on the sides (ears visible)
+      dome(1.07, -0.5, 1.32, vary, 0.08);
+      const NT = 30;
+      for (let i = 0; i < NT; i++) {
+        const t = (i + 0.5) / NT;
+        const yu = 1 - t * 0.66;
+        const phi = i * 2.39996;
+        if (Math.cos(phi) > 0.3 && yu < 0.72) continue;
+        const dir = new THREE.Vector3(Math.sqrt(1 - yu * yu) * Math.sin(phi), yu, Math.sqrt(1 - yu * yu) * Math.cos(phi)).applyAxisAngle(AXIS_X, -0.3);
+        curl(onSkull(dir, 1.08 + 0.03 * hashNoise(i * 3.3)), k * (0.027 + 0.008 * hashNoise(i)), 300 + i);
+      }
+      // small curls along the hairline
+      for (let i = 0; i < 5; i++) {
+        const phi = THREE.MathUtils.degToRad(-40 + 20 * i);
+        const p = skullPoint(new THREE.Vector3(Math.sin(phi) * 0.72, 0.7, Math.cos(phi) * 0.72), 1.07);
+        curl(p, k * (0.02 + 0.005 * hashNoise(i * 9.1)), 340 + i);
+      }
+      break;
+    }
     case 'curlymid': {
       // voluminous curly cut: bumpy base + many curl clumps on top, over the ears and down to the jaw
       dome(1.1, -0.42, 1.45, vary, 0.1);
       curtain(112, -0.92, 0.12, 0.05, 1.22, 5, 12);
-      const headC = new THREE.Vector3(0, cy, 0.012);
-      const curl = (pos: THREE.Vector3, r: number, seed: number) => {
-        // rounded clump lying on the hair surface: squashed along the outward direction, random twist
-        const geo = new THREE.IcosahedronGeometry(1, 0);
-        geo.scale(r * (1.05 + 0.2 * hashNoise(seed * 1.3)), r * 0.78, r * (0.95 + 0.2 * hashNoise(seed * 3.7)));
-        geo.rotateY(hashNoise(seed * 5.9) * Math.PI * 2);
-        const out = pos.clone().sub(headC).normalize();
-        geo.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), out));
-        geo.translate(pos.x, pos.y, pos.z);
-        // lighter tops, darker undersides: each clump reads as a curl
-        add(geo, (p, i) => col.clone().multiplyScalar(0.74 + 0.16 * hashNoise(seed * 11 + i) + 0.22 * clamp01((p.y - pos.y) / r + 0.5)));
-      };
-      /** point on the hair envelope: longitude phi (0 = front), unit height yu */
-      const envelope = (phi: number, yu: number, f: number) => {
-        const below = Math.max(0, -yu);
-        const head = Math.max(0.64, Math.sqrt(Math.max(0, 1 - yu * yu)) * (1 - 0.22 * below * below));
-        const rr = yu > 0.2 ? f : head * f;
-        let z = Math.cos(phi) * R.z * rr;
-        if (z > 0) z *= 0.9;
-        return new THREE.Vector3(Math.sin(phi) * R.x * rr, cy + yu * R.y, z + 0.012);
-      };
       // messy curls over the crown (golden spiral), none below the hairline in front
       const NT = 30;
       for (let i = 0; i < NT; i++) {
@@ -1147,6 +1409,99 @@ function torsoAt(rings: Ring[], y: number): { rx: number; rz: number; cz: number
   const b = rings[i + 1];
   const t = clamp01((y - a.y) / (b.y - a.y));
   return { rx: lerp(a.rx, b.rx, t), rz: lerp(a.rz, b.rz, t), cz: lerp(a.cz ?? 0, b.cz ?? 0, t) };
+}
+
+/* ---------------------------- web lines (bodysuit) ---------------------------- */
+
+const WEB_W = 0.009;
+const WEB_OFF = 0.0045;
+
+/** Point on the polygonal ring of a tube (exactly on its facets) at angle `th`, pushed out along the normal. */
+function ringPoint(r: Ring, th: number, segs: number): { p: THREE.Vector3; n: THREE.Vector3 } {
+  const TAU = Math.PI * 2;
+  const t = (((th % TAU) + TAU) % TAU) / TAU * segs;
+  const s0 = Math.floor(t);
+  const f = t - s0;
+  const at = (s: number) => {
+    const a = (s / segs) * TAU;
+    return new THREE.Vector3((r.cx ?? 0) + r.rx * Math.cos(a), r.y, (r.cz ?? 0) + r.rz * Math.sin(a));
+  };
+  const p = at(s0).lerp(at(s0 + 1), f);
+  const n = new THREE.Vector3(Math.cos(th) / Math.max(r.rx, 1e-3), 0, Math.sin(th) / Math.max(r.rz, 1e-3)).normalize();
+  p.addScaledVector(n, WEB_OFF);
+  return { p, n };
+}
+
+/** Thin line running along a tube (one point per ring) at each of the given angles. */
+function webLines(g: GeoBuilder, rings: Ring[], segs: number, angles: number[], col: THREE.Color) {
+  for (const th of angles) {
+    const pts = rings.map((r) => ringPoint(r, th, segs));
+    g.ribbon(
+      pts.map((q) => q.p),
+      pts.map((q) => q.n),
+      rings.map((r) => r.w),
+      WEB_W,
+      col,
+    );
+  }
+}
+
+/** Thin line around a tube ring, from angle th0 to th1 (a full turn is closed). */
+function webHoop(g: GeoBuilder, r: Ring, segs: number, th0: number, th1: number, col: THREE.Color) {
+  const full = th1 - th0 >= Math.PI * 2 - 1e-6;
+  const step = (Math.PI * 2) / segs;
+  const ths: number[] = [];
+  if (full) for (let s = 0; s < segs; s++) ths.push(th0 + s * step);
+  else {
+    ths.push(th0);
+    for (let a = Math.ceil(th0 / step) * step; a < th1 - 1e-4; a += step) if (a > th0 + 1e-4) ths.push(a);
+    ths.push(th1);
+  }
+  const pts = ths.map((th) => ringPoint(r, th, segs));
+  g.ribbon(
+    pts.map((q) => q.p),
+    pts.map((q) => q.n),
+    pts.map(() => r.w),
+    WEB_W,
+    col,
+    full,
+  );
+}
+
+/** Web lines over the back and sides of a masked head (the front is drawn in the face texture). */
+function addMaskWeb(g: GeoBuilder, cy: number, R: THREE.Vector3, col: THREE.Color) {
+  const w: Weights = [['head', 1]];
+  const pointAt = (phi: number, yu: number) => {
+    const p = headSurface(phi, yu, cy, R);
+    const n = new THREE.Vector3(p.x / (R.x * R.x), (p.y - cy) / (R.y * R.y), (p.z - 0.012) / (R.z * R.z)).normalize();
+    p.addScaledVector(n, 0.006);
+    return { p, n };
+  };
+  const D = THREE.MathUtils.degToRad;
+  // meridians from the crown down to the nape, around the sides and back
+  for (let deg = 75; deg <= 285; deg += 30) {
+    const pts: { p: THREE.Vector3; n: THREE.Vector3 }[] = [];
+    for (let i = 0; i <= 8; i++) pts.push(pointAt(D(deg), lerp(0.97, -0.88, i / 8)));
+    g.ribbon(
+      pts.map((q) => q.p),
+      pts.map((q) => q.n),
+      pts.map(() => w),
+      WEB_W * 0.9,
+      col,
+    );
+  }
+  // a few rings across them
+  for (const yu of [0.62, 0.15, -0.4]) {
+    const pts: { p: THREE.Vector3; n: THREE.Vector3 }[] = [];
+    for (let deg = 70; deg <= 290; deg += 10) pts.push(pointAt(D(deg), yu));
+    g.ribbon(
+      pts.map((q) => q.p),
+      pts.map((q) => q.n),
+      pts.map(() => w),
+      WEB_W * 0.9,
+      col,
+    );
+  }
 }
 
 /** Gold chain lying around the neck base and down the chest, with a medallion or a whistle. Skinned to the chest. */

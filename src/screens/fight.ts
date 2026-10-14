@@ -101,7 +101,33 @@ export class FightScreen implements Screen {
         return;
       }
       this.world = w;
+      w.setCineHooks({
+        say: (sp, text, o) => {
+          this.showLine(sp.name, sp.portrait, text, (o.dur / 60) * 1000);
+          const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+          void audio.say(text, {
+            lang: sp.voice?.lang,
+            pitch: clamp((sp.voice?.pitch ?? 1) * (o.pitch ?? 1), 0, 2),
+            rate: clamp((sp.voice?.rate ?? 1) * (o.rate ?? 1) * 1.05, 0.1, 2),
+          });
+        },
+        text: (t, style, dur, color) => this.hud.comic(t, style, dur, color),
+        music: (id) => audio.playMusic(id ?? getStage(this.setup.stageId).music, { fade: id ? 0.25 : 0.8 }),
+      });
     });
+  }
+
+  private lineToken = 0;
+  /** Subtitle (with ducking) that clears itself unless a newer line replaced it. */
+  private showLine(name: string, portrait: string, line: string, ms: number) {
+    const token = ++this.lineToken;
+    this.hud.subtitle(name, portrait, line);
+    audio.duck(true);
+    setTimeout(() => {
+      if (this.disposed || token !== this.lineToken) return;
+      this.hud.clearSubtitle();
+      audio.duck(false);
+    }, ms);
   }
 
   enter() {
@@ -461,16 +487,8 @@ export class FightScreen implements Screen {
         const lines = def.superLines?.length ? def.superLines : ['Prends ça… BBL MAX !'];
         const line = lines[(this.setup.seed + this.state.frame) % lines.length];
         this.hud.announce(ultimateOf(def).name, 'small super', 80);
-        this.hud.subtitle(def.name, this.world!.faces[ev.p].portraitUrl, line);
-        audio.duck(true);
+        this.showLine(def.name, this.world!.faces[ev.p].portraitUrl, line, 2600);
         void audio.say(line, { lang: def.voice?.lang, pitch: def.voice?.pitch, rate: (def.voice?.rate ?? 1) * 1.05 });
-        const myFrame = this.state.frame;
-        setTimeout(() => {
-          if (this.disposed) return;
-          this.hud.clearSubtitle();
-          audio.duck(false);
-          void myFrame;
-        }, 2600);
         break;
       }
       case 'superCombo':
