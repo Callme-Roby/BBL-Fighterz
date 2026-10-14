@@ -429,8 +429,12 @@ export function loadTournament(): Tournament | null {
     }
     for (const round of t.rounds) for (const m of round) m.bye = !!m.bye;
     // fighters that no longer exist (deleted lab fighter…) → first roster fighter
+    // (an empty id = not picked yet, only possible during the pick phase)
     const roster = fullRoster();
-    for (const p of t.participants) if (!roster.some((d) => d.id === p.fighterId)) p.fighterId = roster[0]?.id ?? '';
+    for (const p of t.participants) {
+      const missing = !roster.some((d) => d.id === p.fighterId);
+      if (missing && (p.fighterId || t.phase !== 'pick')) p.fighterId = roster[0]?.id ?? '';
+    }
     refresh(t);
     return t.phase === 'done' ? null : t;
   } catch {

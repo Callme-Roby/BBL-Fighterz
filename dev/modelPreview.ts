@@ -46,7 +46,7 @@ if (hairs.length) defs = hairs.map((style, i) => ({ ...defs[i % defs.length], ha
 if (q.get('body')) defs = defs.map((d) => ({ ...d, body: q.get('body') as BodyType }));
 if (q.get('belly')) defs = defs.map((d) => ({ ...d, belly: Number(q.get('belly')) }));
 const spacing = Number(q.get('spacing') ?? (cam === 'faces' ? 0.42 : 1.1));
-const stats: { id: string; tris: number }[] = [];
+const stats: { id: string; tris: number; skin: string }[] = [];
 (async () => {
   let i = 0;
   const models: CharacterModel[] = [];
@@ -54,7 +54,7 @@ const stats: { id: string; tris: number }[] = [];
     const face = await loadFace(def);
     const m = buildCharacter(def, face);
     models.push(m);
-    stats.push({ id: def.id, tris: countTriangles(m) });
+    stats.push({ id: def.id, tris: countTriangles(m), skin: '#' + face.skin.getHexString() });
     const x = (i - (defs.length - 1) / 2) * spacing;
     m.root.position.x = x;
     if (cam === 'side' || cam === 'game') {

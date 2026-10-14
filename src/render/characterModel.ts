@@ -213,6 +213,40 @@ class GeoBuilder {
     }
   }
 
+  /** Tube along a polyline: one ring per point with its own radius and skin weights (dreads...), pointed tip. */
+  pathTube(pts: THREE.Vector3[], radii: number[], weights: Weights[], segs: number, col: (ring: number) => THREE.Color) {
+    const n = pts.length;
+    const t = new THREE.Vector3();
+    const u = new THREE.Vector3();
+    const rings: number[][] = [];
+    for (let i = 0; i < n; i++) {
+      t.subVectors(pts[Math.min(n - 1, i + 1)], pts[Math.max(0, i - 1)]).normalize();
+      // parallel-transported frame: no twisting along the lock
+      if (i === 0) u.crossVectors(t, Math.abs(t.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0)).normalize();
+      else u.addScaledVector(t, -u.dot(t)).normalize();
+      const v = new THREE.Vector3().crossVectors(t, u);
+      const c = col(i);
+      const ring: number[] = [];
+      for (let s = 0; s < segs; s++) {
+        const a = (s / segs) * Math.PI * 2;
+        const nrm = u.clone().multiplyScalar(Math.cos(a)).addScaledVector(v, Math.sin(a));
+        ring.push(this.vert(pts[i].clone().addScaledVector(nrm, radii[i]), nrm, c, weights[i]));
+      }
+      rings.push(ring);
+    }
+    for (let i = 0; i < n - 1; i++) {
+      for (let s = 0; s < segs; s++) {
+        const s1 = (s + 1) % segs;
+        this.tri(rings[i][s], rings[i][s1], rings[i + 1][s1]);
+        this.tri(rings[i][s], rings[i + 1][s1], rings[i + 1][s]);
+      }
+    }
+    const last = n - 1;
+    const dir = new THREE.Vector3().subVectors(pts[last], pts[last - 1]).normalize();
+    const tip = this.vert(pts[last].clone().addScaledVector(dir, radii[last] * 1.6), dir, col(last), weights[last]);
+    for (let s = 0; s < segs; s++) this.tri(rings[last][s], rings[last][(s + 1) % segs], tip);
+  }
+
   build(): THREE.BufferGeometry {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
@@ -502,7 +536,8 @@ export function buildCharacter(def: FighterDef, face: FaceAssets): CharacterMode
     g.box(new THREE.Vector3(s * R.x * 0.97, headCY - 0.005, -0.01), new THREE.Vector3(0.03, 0.055 * hs, 0.035), [['head', 1]], skinDark);
   }
 
-  addHair(g, def, headCY, R);
+  addHair(g, def, headCY, R, torso);
+  if (def.beard3d) addBeard3d(g, def.beard3d, headCY, R);
   if (def.accessories?.chain) addChain(g, torso, wb, !!def.accessories.whistle);
 
   // ---------------- meshes ----------------
@@ -562,7 +597,7 @@ const AXIS_X = new THREE.Vector3(1, 0, 0);
 const WHITE = new THREE.Color(1, 1, 1);
 
 /** Hair & headwear: everything rigidly skinned to the head bone, kept above the hairline / behind the ears. */
-function addHair(g: GeoBuilder, def: FighterDef, cy: number, R: THREE.Vector3) {
+function addHair(g: GeoBuilder, def: FighterDef, cy: number, R: THREE.Vector3, torso: Ring[]) {
   const style: HairStyle = def.hair.style;
   if (style === 'bald') return;
   const col = new THREE.Color(def.hair.color);
@@ -585,14 +620,15 @@ function addHair(g: GeoBuilder, def: FighterDef, cy: number, R: THREE.Vector3) {
     geo.dispose();
   };
 
-  /** spherical cap covering the top of the skull (front edge = hairline) */
-  const dome = (scale: number, tilt: number, thetaLen: number, color: (p: THREE.Vector3, i: number) => THREE.Color = vary) => {
+  /** spherical cap covering the top of the skull (front edge = hairline); `bump` = curly relief */
+  const dome = (scale: number, tilt: number, thetaLen: number, color: (p: THREE.Vector3, i: number) => THREE.Color = vary, bump = 0) => {
     const geo = new THREE.SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, thetaLen);
     geo.rotateX(tilt);
     const pos = geo.getAttribute('position');
     const v = new THREE.Vector3();
     for (let i = 0; i < pos.count; i++) {
-      onSkull(v.fromBufferAttribute(pos, i), scale);
+      v.fromBufferAttribute(pos, i);
+      onSkull(v, scale * (1 + bump * (posNoise(v) - 0.3)));
       pos.setXYZ(i, v.x, v.y, v.z);
     }
     geo.computeVertexNormals();
@@ -626,18 +662,30 @@ function addHair(g: GeoBuilder, def: FighterDef, cy: number, R: THREE.Vector3) {
       }
       break;
     }
-    case 'afro': {
-      const geo = new THREE.IcosahedronGeometry(1, 1);
+    case 'afro':
+    case 'bigafro': {
+      const big = style === 'bigafro';
+      const geo = new THREE.IcosahedronGeometry(1, big ? 2 : 1);
       const pos = geo.getAttribute('position');
       const v = new THREE.Vector3();
       const hairline = cy + R.y * 0.6;
+      const [sx, sy, sz, lift, zo] = big ? [1.9, 1.48, 1.62, 0.52, -0.05] : [1.45, 1.15, 1.3, 0.4, -0.04];
       for (let i = 0; i < pos.count; i++) {
         v.fromBufferAttribute(pos, i);
-        let y = v.y * R.y * 1.15 + cy + R.y * 0.4;
+        const b = big ? 1 + 0.09 * (posNoise(v) - 0.5) : 1;
+        const x = v.x * R.x * sx * b;
+        let y = v.y * R.y * sy * b + cy + R.y * lift;
+        let z = v.z * R.z * sz * b + zo;
         // keep the face clear: the front-lower part is lifted up to the hairline
         const front = clamp01(v.z * 1.8 - 0.25);
         if (y < hairline) y = lerp(y, hairline, front);
-        pos.setXYZ(i, v.x * R.x * 1.45, y, v.z * R.z * 1.3 - 0.04);
+        if (big && z > 0) {
+          if (y < hairline && Math.abs(x) < R.x * 1.12) y = hairline;
+          // rounded front: just above the forehead at the hairline, bulging forward higher up
+          const cap = y >= hairline ? R.z * 0.95 + 0.012 + 0.85 * (y - hairline) : R.z * 0.7;
+          z = Math.min(z, cap);
+        }
+        pos.setXYZ(i, x, y, z);
       }
       geo.computeVertexNormals();
       add(geo, vary);
@@ -659,6 +707,156 @@ function addHair(g: GeoBuilder, def: FighterDef, cy: number, R: THREE.Vector3) {
         cone.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
         cone.translate(dir.x * R.x * 0.9, dir.y * R.y * 0.9 + cy, dir.z * R.z * 0.9);
         add(cone, vary);
+      }
+      break;
+    }
+    case 'midlong': {
+      // curly cap + a thick curtain of hair around the sides and back, down to the chin / neck
+      dome(1.08, -0.46, 1.42, vary, 0.06);
+      const psi0 = THREE.MathUtils.degToRad(116); // from the back: the front stays open (+-64 deg)
+      const NI = 5;
+      const NJ = 12;
+      const outer: THREE.Vector3[][] = [];
+      const inner: THREE.Vector3[][] = [];
+      for (let i = 0; i <= NI; i++) {
+        const s = i / NI;
+        const yu = lerp(0.3, -1.06, s);
+        const ro: THREE.Vector3[] = [];
+        const ri: THREE.Vector3[] = [];
+        for (let j = 0; j <= NJ; j++) {
+          const psi = -psi0 + (2 * psi0 * j) / NJ;
+          const flare = 1.07 + 0.16 * Math.pow(s, 1.2) + 0.05 * s * hashNoise(i * 13 + j * 5);
+          const jag = i === NI ? (j % 2 ? 0.035 : -0.005) * k : 0;
+          const at = (f: number) => {
+            let z = -Math.cos(psi) * R.z * f;
+            if (z > 0) z *= 0.9;
+            return new THREE.Vector3(Math.sin(psi) * R.x * f, cy + yu * R.y + jag, z + 0.012);
+          };
+          ro.push(at(flare));
+          ri.push(at(flare - 0.09));
+        }
+        outer.push(ro);
+        inner.push(ri);
+      }
+      const axis = (p: THREE.Vector3) => new THREE.Vector3(p.x, 0, p.z - 0.012);
+      add(gridGeometry(outer, axis), vary);
+      add(gridGeometry(inner, (p) => axis(p).negate()), (p, i) => vary(p, i).multiplyScalar(0.7));
+      add(gridGeometry([outer[NI], inner[NI]], () => new THREE.Vector3(0, -1, 0)), vary);
+      for (const j of [0, NJ]) {
+        const e = outer[2][j].clone().sub(outer[2][j === 0 ? 1 : NJ - 1]);
+        add(
+          gridGeometry(
+            [outer.map((r) => r[j]), inner.map((r) => r[j])],
+            () => e,
+          ),
+          vary,
+        );
+      }
+      break;
+    }
+    case 'tahiti': {
+      // huge palm-tree mass: a bushy core on the crown and big spiky fronds fanning up and out
+      dome(1.07, -0.46, 1.38);
+      const centre = new THREE.Vector3(0, cy + R.y * 1.12, -0.035 * k);
+      const core = new THREE.IcosahedronGeometry(1, 1);
+      core.scale(0.15 * k, 0.12 * k, 0.14 * k);
+      core.translate(centre.x, centre.y, centre.z);
+      add(core, vary);
+      const tipShade = (p: THREE.Vector3, i: number) => col.clone().multiplyScalar(0.62 + 0.55 * clamp01(p.distanceTo(centre) / (0.34 * k)) + 0.12 * hashNoise(i));
+      const N = 30;
+      for (let i = 0; i < N; i++) {
+        const az = i * 2.39996 + 0.4;
+        let el = THREE.MathUtils.degToRad(lerp(10, 82, (i * 0.618034) % 1));
+        // nothing droops over the face: forward fronds point up
+        if (Math.cos(az) > 0.2) el = Math.max(el, THREE.MathUtils.degToRad(48));
+        const dir = new THREE.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az) - 0.15).normalize();
+        const len = k * (0.17 + 0.15 * hashNoise(i * 2.7)) * (0.85 + 0.35 * Math.sin(el));
+        const cone = new THREE.ConeGeometry(k * (0.04 + 0.016 * hashNoise(i * 5.3)), len, 5);
+        cone.translate(0, len / 2, 0);
+        cone.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+        cone.translate(centre.x + dir.x * 0.08 * k, centre.y + dir.y * 0.06 * k, centre.z + dir.z * 0.08 * k);
+        add(cone, tipShade);
+      }
+      break;
+    }
+    case 'dreads': {
+      dome(1.05, -0.5, 1.45, vary, 0.04);
+      const skull = (phi: number, yu: number, f: number) => {
+        const cl = Math.sqrt(Math.max(0, 1 - yu * yu));
+        return onSkull(new THREE.Vector3(cl * Math.sin(phi), yu, cl * Math.cos(phi)), f);
+      };
+      const surfZ = (x: number, y: number, front: boolean, gap: number) => {
+        const s = torsoAt(torso, y);
+        const q = Math.sqrt(Math.max(0, 1 - Math.min(1, (x / s.rx) ** 2)));
+        return s.cz + (front ? 1 : -1) * (s.rz * q + gap);
+      };
+      const pushOut = (p: THREE.Vector3) => {
+        if (p.y > 1.53) return;
+        const s = torsoAt(torso, p.y);
+        const q = Math.hypot(p.x / s.rx, (p.z - s.cz) / s.rz);
+        if (q < 1.1) {
+          const f = 1.1 / Math.max(q, 0.05);
+          p.x *= f;
+          p.z = s.cz + (p.z - s.cz) * f;
+        }
+      };
+      const weightAt = (y: number): Weights => {
+        if (y > cy - R.y * 0.8) return [['head', 1]];
+        if (y > 1.53) return [['head', 0.45], ['neck', 0.2], ['chest', 0.35]];
+        if (y > 1.32) return [['chest', 1]];
+        if (y > 1.2) return [['chest', 0.5], ['spine', 0.5]];
+        return [['spine', 1]];
+      };
+      const lock = (pts: THREE.Vector3[], seed: number) => {
+        pts.forEach(pushOut);
+        const n = pts.length;
+        const r0 = k * (0.012 + 0.004 * hashNoise(seed * 3.1));
+        const radii = pts.map((_, i) => r0 * (1 + 0.25 * Math.sin((Math.PI * i) / (n - 1))));
+        const shade = 0.8 + 0.35 * hashNoise(seed * 7.7);
+        g.pathTube(pts, radii, pts.map((p) => weightAt(p.y)), 4, (i) => col.clone().multiplyScalar(shade * (i === n - 1 ? 1.25 : 1)));
+      };
+      // back & sides: from the crown, around the skull, down the back to the belly
+      const M = 20;
+      for (let m = 0; m < M; m++) {
+        const phi = THREE.MathUtils.degToRad(78 + (204 * (m + 0.5)) / M + 4 * (hashNoise(m) - 0.5));
+        const sn = Math.sin(phi);
+        const yu0 = m % 2 ? 0.72 : 0.36;
+        const p2 = skull(phi, -0.55, 1.17);
+        if (Math.abs(p2.x) < R.x * 1.08 && Math.cos(phi) > -0.2) p2.x = Math.sign(sn) * R.x * 1.08;
+        const bx = sn * 0.15;
+        const tipY = 1.12 + 0.07 * hashNoise(m * 1.7);
+        lock(
+          [
+            skull(phi, yu0, 1.0),
+            skull(phi, yu0 - 0.42, 1.13),
+            p2,
+            new THREE.Vector3(sn * R.x * 1.05, cy - R.y * 1.05, Math.min(-0.05, Math.cos(phi) * 0.13)),
+            new THREE.Vector3(bx, 1.44, surfZ(bx, 1.44, false, 0.022)),
+            new THREE.Vector3(bx * 1.02, 1.3, surfZ(bx, 1.3, false, 0.022)),
+            new THREE.Vector3(bx * 0.96, tipY, surfZ(bx, tipY, false, 0.022)),
+          ],
+          m,
+        );
+      }
+      // a few locks in front of the shoulders, framing the face (always outside the cheeks)
+      for (const sg of [1, -1]) {
+        for (let n = 0; n < 3; n++) {
+          const phi = sg * THREE.MathUtils.degToRad(60 + 10 * n);
+          const fx = sg * (0.105 + 0.026 * n);
+          const tipY = 1.16 + 0.05 * hashNoise(n * 9.1 + sg);
+          lock(
+            [
+              skull(phi, 0.5 - 0.08 * n, 1.0),
+              new THREE.Vector3(sg * R.x * 1.1, cy + R.y * 0.15, R.z * (0.34 - 0.08 * n)),
+              new THREE.Vector3(sg * R.x * 1.16, cy - R.y * 0.45, R.z * (0.3 - 0.06 * n)),
+              new THREE.Vector3(sg * R.x * 1.13, cy - R.y * 1.0, R.z * (0.32 - 0.06 * n)),
+              new THREE.Vector3(fx, 1.45, surfZ(fx, 1.45, true, 0.024)),
+              new THREE.Vector3(fx * 1.03, 1.3, surfZ(fx, 1.3, true, 0.024)),
+              new THREE.Vector3(fx * 1.05, tipY, surfZ(fx, tipY, true, 0.024)),
+            ],
+            40 + n * 2 + sg,
+          );
+        }
       }
       break;
     }
@@ -770,6 +968,110 @@ function addHair(g: GeoBuilder, def: FighterDef, cy: number, R: THREE.Vector3) {
       break;
     }
   }
+}
+
+/** Noise from a position (stable for vertices shared by several faces). */
+function posNoise(v: THREE.Vector3): number {
+  return hashNoise(v.x * 12.9898 + v.y * 78.233 + v.z * 37.719);
+}
+
+/** Indexed grid surface (rows x cols of points); each triangle is oriented so its normal agrees with `out(p)`. */
+function gridGeometry(P: THREE.Vector3[][], out: (p: THREE.Vector3) => THREE.Vector3): THREE.BufferGeometry {
+  const rows = P.length;
+  const cols = P[0].length;
+  const pos: number[] = [];
+  for (const r of P) for (const p of r) pos.push(p.x, p.y, p.z);
+  const idx: number[] = [];
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const n = new THREE.Vector3();
+  const e = new THREE.Vector3();
+  const tri = (i0: number, i1: number, i2: number) => {
+    a.fromArray(pos, i0 * 3);
+    b.fromArray(pos, i1 * 3);
+    c.fromArray(pos, i2 * 3);
+    n.subVectors(b, a).cross(e.subVectors(c, a));
+    const m = a.clone().add(b).add(c).multiplyScalar(1 / 3);
+    if (n.dot(out(m)) < 0) idx.push(i0, i2, i1);
+    else idx.push(i0, i1, i2);
+  };
+  for (let i = 0; i < rows - 1; i++) {
+    for (let j = 0; j < cols - 1; j++) {
+      const p = i * cols + j;
+      tri(p, p + cols, p + 1);
+      tri(p + 1, p + cols, p + cols + 1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** Point on the head surface (same shape as the head mesh): longitude phi (0 = front), unit-sphere height yu. */
+function headSurface(phi: number, yu: number, cy: number, R: THREE.Vector3): THREE.Vector3 {
+  const cl = Math.sqrt(Math.max(0, 1 - yu * yu));
+  let x = cl * Math.sin(phi);
+  let z = cl * Math.cos(phi);
+  const below = Math.max(0, -yu);
+  x *= 1 - 0.22 * below * below;
+  z *= 1 - 0.08 * below * below;
+  if (z > 0) z *= 0.86;
+  return new THREE.Vector3(x * R.x, yu * R.y + cy, z * R.z + 0.012);
+}
+
+/**
+ * 3D beard: a low-poly mass hugging the jaw, chin and lower cheeks. Its top edge stays
+ * below the lower lip in front (and rises to the sideburns on the sides), so the photo's
+ * eyes / nose / mouth stay visible. Rigid on the head bone.
+ */
+function addBeard3d(g: GeoBuilder, beard: { color: string; size?: number }, cy: number, R: THREE.Vector3) {
+  const size = Math.min(1.6, Math.max(0.5, beard.size ?? 1));
+  const k = R.x / 0.1;
+  const col = new THREE.Color(beard.color);
+  const NI = 5;
+  const NJ = 12;
+  const phiMax = THREE.MathUtils.degToRad(100);
+  const centre = new THREE.Vector3(0, cy, 0.012);
+  const smooth = (e0: number, e1: number, x: number) => {
+    const t = clamp01((x - e0) / (e1 - e0));
+    return t * t * (3 - 2 * t);
+  };
+  const P: THREE.Vector3[][] = [];
+  for (let i = 0; i <= NI; i++) {
+    const s = i / NI;
+    const row: THREE.Vector3[] = [];
+    for (let j = 0; j <= NJ; j++) {
+      const phi = -phiMax + (2 * phiMax * j) / NJ;
+      const side = Math.abs(Math.sin(phi));
+      const top = -0.62 + 0.46 * Math.pow(side, 1.3);
+      const yu = lerp(top, -0.97, s);
+      const p = headSurface(phi, yu, cy, R);
+      const nrm = new THREE.Vector3(p.x / (R.x * R.x), (p.y - cy) / (R.y * R.y), (p.z - 0.012) / (R.z * R.z)).normalize();
+      const front = Math.abs(phi) < Math.PI / 2 ? Math.cos(phi) ** 2 : 0;
+      const edge = 1 - smooth(0.62, 1, Math.abs(phi) / phiMax);
+      const thick = size * 0.03 * k * smooth(0, 0.55, s) * edge * (0.55 + 0.45 * front);
+      const drop = size * 0.06 * k * s * s * (0.25 + 0.75 * front) * edge;
+      p.addScaledVector(nrm, thick + 0.007 * k * s * (hashNoise(i * 31 + j * 7) - 0.4));
+      p.y -= drop;
+      p.z += drop * 0.3 * front;
+      row.push(p);
+    }
+    P.push(row);
+  }
+  const vary = (_p: THREE.Vector3, i: number) => col.clone().multiplyScalar(0.8 + 0.35 * hashNoise(i * 1.7));
+  let geo = gridGeometry(P, (m) => m.clone().sub(centre));
+  g.addGeometry(geo, [['head', 1]], vary);
+  geo.dispose();
+  // close the underside
+  const last = P[NI];
+  const c = last.reduce((acc, p) => acc.add(p), new THREE.Vector3()).multiplyScalar(1 / last.length);
+  c.y += 0.01 * k;
+  geo = gridGeometry([last, last.map(() => c.clone())], () => new THREE.Vector3(0, -1, 0));
+  g.addGeometry(geo, [['head', 1]], vary);
+  geo.dispose();
 }
 
 /** Torso cross-section (rx, rz, cz) at height y, interpolated between rings sorted by y. */

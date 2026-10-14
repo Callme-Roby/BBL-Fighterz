@@ -251,6 +251,13 @@
   gap: 12px;
   padding: max(10px, env(safe-area-inset-top)) 12px max(10px, env(safe-area-inset-bottom));
   background: radial-gradient(ellipse at center, rgba(5, 5, 15, 0.45), rgba(5, 5, 15, 0.88));
+  /* own stacking context: the z-indexed matches stay below overlays */
+  isolation: isolate;
+}
+
+/* "abandon?" confirmation, above the bracket screen */
+.tn-confirm {
+  z-index: 10;
 }
 
 .tn-bracket-wrap {
@@ -286,9 +293,10 @@
 }
 
 .tn-bracket {
+  --gap: 22px;
   flex: 1 0 auto;
   display: flex;
-  gap: 22px;
+  gap: var(--gap);
 }
 
 .tn-round {
@@ -326,8 +334,8 @@
 .tn-round:not(.last) .tn-slot::after {
   content: '';
   position: absolute;
-  right: -12px;
-  width: 12px;
+  right: calc(var(--gap) / -2 - 1px);
+  width: calc(var(--gap) / 2 + 1px);
   border: 0 solid rgba(255, 255, 255, 0.28);
 }
 
@@ -348,8 +356,8 @@
 .tn-round:not(.first) .tn-slot::before {
   content: '';
   position: absolute;
-  left: -11px;
-  width: 11px;
+  left: calc(var(--gap) / -2);
+  width: calc(var(--gap) / 2);
   top: 50%;
   border-top: 2px solid rgba(255, 255, 255, 0.28);
 }
@@ -714,6 +722,26 @@
   }
 }
 
+@media (max-width: 900px), (max-height: 480px) {
+  .tn-bracket {
+    --gap: 14px;
+  }
+  .tn-round {
+    min-width: 110px;
+  }
+  .tn-side {
+    font-size: 8px;
+    gap: 4px;
+  }
+  .tn-side .tn-ph {
+    width: 18px;
+    height: 24px;
+  }
+  .tn-slot {
+    min-height: 56px;
+  }
+}
+
 @media (max-width: 720px) {
   .tn-bracket-screen {
     grid-template-columns: minmax(0, 1fr) 250px;
@@ -767,6 +795,19 @@
   }
   .tn-pick-bottom .title-hint {
     display: none;
+  }
+  /* smaller portraits so the 3D fighter stays visible above the grid */
+  .tn-pick .grid {
+    grid-template-columns: repeat(var(--cols, 6), 44px);
+    gap: 4px;
+    padding: 6px;
+  }
+  .tn-pick .cell {
+    width: 44px;
+    height: 56px;
+  }
+  .tn-pick .cell .nm {
+    font-size: 6px;
   }
   .tn-panel {
     gap: 7px;

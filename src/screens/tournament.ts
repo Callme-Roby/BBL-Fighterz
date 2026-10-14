@@ -152,6 +152,8 @@ export class TournamentSetupScreen implements Screen {
     const rows = this.entries.slice(0, this.count).map((e, i) => {
       const inp = h('input', { value: e.name, maxLength: NAME_MAX, spellcheck: 'false', autocomplete: 'off', 'aria-label': `Nom du participant ${i + 1}` });
       inp.addEventListener('input', () => (e.name = inp.value));
+      // typing replaces the default name
+      inp.addEventListener('focus', () => inp.select());
       inp.addEventListener('keydown', (ev) => {
         // Enter jumps to the next name, Escape leaves the field (then Escape = back)
         if (ev.key === 'Enter') {

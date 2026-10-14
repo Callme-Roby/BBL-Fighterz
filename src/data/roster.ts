@@ -22,10 +22,34 @@ export type HairStyle =
   /** backwards baseball cap (colour: `accessories.cap`, else hair colour) */
   | 'cap'
   /** bandana tied on the head, knot at the back (colour: `accessories.cap`, else hair colour) */
-  | 'bandana';
+  | 'bandana'
+  /** hair down to the chin / neck, covering the sides and back, open in front of the face */
+  | 'midlong'
+  /** huge, tall, spiky palm-tree mass of hair */
+  | 'tahiti'
+  /** long locks down to the belly (lower part drapes with the chest / spine) */
+  | 'dreads'
+  /** very voluminous afro */
+  | 'bigafro';
 
 /** Every hair style, in the order shown by the lab (also used to validate network data). */
-export const HAIR_STYLES: readonly HairStyle[] = ['short', 'spiky', 'buzz', 'afro', 'long', 'mohawk', 'ponytail', 'bun', 'cap', 'bandana', 'bald'];
+export const HAIR_STYLES: readonly HairStyle[] = [
+  'short',
+  'spiky',
+  'buzz',
+  'afro',
+  'bigafro',
+  'midlong',
+  'long',
+  'dreads',
+  'mohawk',
+  'tahiti',
+  'ponytail',
+  'bun',
+  'cap',
+  'bandana',
+  'bald',
+];
 
 export type TopStyle = 'tank' | 'tshirt' | 'tracksuit' | 'shirtless' | 'hoodie';
 
@@ -108,6 +132,8 @@ export interface FighterDef {
   body?: BodyType;
   /** round belly, 0 (none) .. 1 (barbecue king) */
   belly?: number;
+  /** 3D beard volume around the jaw / chin / lower cheeks (below the mouth, never over the face) */
+  beard3d?: { color: string; /** 0.5 (short) .. 1.6 (huge), default 1 */ size?: number };
   accessories?: Accessories;
   /** head size multiplier (bigger heads = more recognisable faces) */
   headScale?: number;
@@ -147,7 +173,8 @@ export const ROSTER: FighterDef[] = [
       shoesColor: '#1d1d1f',
       beltColor: '#4a2f1c',
     },
-    build: 1.1,
+    build: 1.3,
+    belly: 1,
     headScale: 1.18,
     introLines: ['Je vais te tuer.', 'Viens par là, toi !', "T'es mort, mon pote."],
     winLines: ['Trop facile.', 'Retourne chez ta mère !', 'Grove Street, baby.'],
@@ -159,7 +186,8 @@ export const ROSTER: FighterDef[] = [
     name: 'CLÉMENT',
     title: 'Calme, barbu, dangereux',
     face: 'faces/clement.jpg',
-    hair: { style: 'short', color: '#3a2618' },
+    hair: { style: 'buzz', color: '#1e1610' },
+    beard3d: { color: '#2a1a10', size: 1.35 },
     outfit: {
       top: 'tracksuit',
       topColor: '#16171c',
@@ -174,15 +202,12 @@ export const ROSTER: FighterDef[] = [
     superLines: ["C'est fini pour toi !", 'Zéro émotion… BBL MAX !'],
     voice: { lang: 'fr-FR', pitch: 0.75, rate: 0.95 },
   },
-  // photo à venir : mettre public/faces/alex.jpg puis face: 'faces/alex.jpg' et retirer photoPending (et skin, pour reprendre le teint de la photo)
   {
     id: 'alex',
     name: 'ALEX',
-    title: 'Visage en chargement…',
-    face: '',
-    photoPending: true,
-    skin: '#d6a27c',
-    hair: { style: 'bun', color: '#4a3020' },
+    title: 'Boucles et uppercuts',
+    face: 'faces/alex.jpg',
+    hair: { style: 'midlong', color: '#1a120c' },
     outfit: {
       top: 'hoodie',
       topColor: '#e0742a',
@@ -190,24 +215,41 @@ export const ROSTER: FighterDef[] = [
       pantsColor: '#2b2f3a',
       shoesColor: '#f0f0f0',
     },
-    faceGen: { eyes: '#4a2e1a', brows: '#3a2416', mouth: 'smirk' },
-    build: 1,
-    body: 'standard',
-    headScale: 1.16,
-    introLines: ['Je vais te tuer.', 'Photo ou pas, je cogne pareil.', 'Approche, si tu oses.'],
-    winLines: ['Même sans visage, je gagne.', 'Souris pour la photo !', 'Trop facile.'],
-    superLines: ['Prends ça… BBL BUSTER !', 'Flash ! Photo souvenir !'],
+    build: 0.9,
+    body: 'fine',
+    headScale: 1.18,
+    introLines: ['Je vais te tuer.', 'Approche, si tu oses.', 'Mes boucles sont prêtes, et toi ?'],
+    winLines: ['Trop facile.', 'Même pas décoiffé.', 'Au suivant !'],
+    superLines: ['Prends ça… BBL BUSTER !', 'Tornade de boucles !'],
     voice: { lang: 'fr-FR', pitch: 1, rate: 1.05 },
   },
-  // photo à venir : mettre public/faces/isis.jpg puis face: 'faces/isis.jpg' et retirer photoPending (et skin, pour reprendre le teint de la photo)
+  {
+    id: 'benji',
+    name: 'BENJI',
+    title: 'Brushing tropical',
+    face: 'faces/benji.jpg',
+    hair: { style: 'tahiti', color: '#a07a48' },
+    outfit: {
+      top: 'tshirt',
+      topColor: '#2c64c8',
+      trimColor: '#f2f2ea',
+      pantsColor: '#3a3a40',
+      shoesColor: '#e8e2d0',
+      beltColor: '#1a1a1c',
+    },
+    build: 1,
+    headScale: 1.18,
+    introLines: ['Je vais te tuer.', 'Admire la coupe, après tu dors.', 'Attention, ça décoiffe !'],
+    winLines: ['Pas un cheveu de travers.', 'Retourne chez le coiffeur !', 'Trop facile, mon pote.'],
+    superLines: ['Palmier… BBL BUSTER !', 'Coup de brushing tropical !'],
+    voice: { lang: 'fr-FR', pitch: 1.1, rate: 1.1 },
+  },
   {
     id: 'isis',
     name: 'ISIS',
-    title: 'Bientôt en haute définition',
-    face: '',
-    photoPending: true,
-    skin: '#b47a54',
-    hair: { style: 'mohawk', color: '#1c1a22' },
+    title: 'Afro XXL, coups XXL',
+    face: 'faces/isis.jpg',
+    hair: { style: 'bigafro', color: '#151010' },
     outfit: {
       top: 'tracksuit',
       topColor: '#178a8a',
@@ -215,24 +257,19 @@ export const ROSTER: FighterDef[] = [
       pantsColor: '#178a8a',
       shoesColor: '#1a1a1e',
     },
-    faceGen: { eyes: '#3c6a40', brows: '#1c1a22', mouth: 'neutral' },
     build: 1,
-    body: 'standard',
-    headScale: 1.16,
+    headScale: 1.18,
     introLines: ['Je vais te tuer.', 'Tu vas regretter ce combat.', 'Échauffement terminé.'],
     winLines: ['Au tapis, sans discuter.', "C'était même pas sérieux.", 'Suivant !'],
-    superLines: ["C'est fini pour toi !", 'Mode légende : activé !'],
+    superLines: ["C'est fini pour toi !", 'Afro power… BBL MAX !'],
     voice: { lang: 'fr-FR', pitch: 1.1, rate: 1 },
   },
-  // photo à venir : mettre public/faces/enola.jpg puis face: 'faces/enola.jpg' et retirer photoPending (et skin, pour reprendre le teint de la photo)
   {
     id: 'enola',
     name: 'ENOLA',
-    title: 'Le mystère du quartier',
-    face: '',
-    photoPending: true,
-    skin: '#8a5638',
-    hair: { style: 'afro', color: '#2a1810' },
+    title: 'Lunettes noires, sang-froid',
+    face: 'faces/enola.jpg',
+    hair: { style: 'midlong', color: '#a4452a' },
     outfit: {
       top: 'tshirt',
       topColor: '#c8323a',
@@ -241,24 +278,19 @@ export const ROSTER: FighterDef[] = [
       shoesColor: '#f2f2f2',
       beltColor: '#101012',
     },
-    faceGen: { eyes: '#2a1a12', brows: '#1e120c', mouth: 'smile' },
     build: 1,
-    body: 'standard',
-    headScale: 1.14,
+    headScale: 1.18,
     introLines: ['Je vais te tuer.', 'Tu trembles déjà, non ?', 'On danse ?'],
     winLines: ['Trop lent, trop tard.', "Respire, c'est fini.", "Je t'avais dit de partir."],
     superLines: ['Tempête… BBL MAX !', 'Tu ne verras rien venir !'],
     voice: { lang: 'fr-FR', pitch: 0.95, rate: 0.95 },
   },
-  // photo à venir : mettre public/faces/zia.jpg puis face: 'faces/zia.jpg' et retirer photoPending (et skin, pour reprendre le teint de la photo)
   {
     id: 'zia',
     name: 'ZIA',
-    title: 'Photo bientôt, baffes maintenant',
-    face: '',
-    photoPending: true,
-    skin: '#e4b896',
-    hair: { style: 'ponytail', color: '#8a3a1c' },
+    title: 'Reine des dreads',
+    face: 'faces/zia.jpg',
+    hair: { style: 'dreads', color: '#3b3631' },
     outfit: {
       top: 'tank',
       topColor: '#f0c030',
@@ -268,10 +300,8 @@ export const ROSTER: FighterDef[] = [
       beltColor: '#2a1e14',
       wristColor: '#1a1a1e',
     },
-    faceGen: { eyes: '#6a5a2a', brows: '#5a2a14', mouth: 'grin' },
     build: 1,
-    body: 'standard',
-    headScale: 1.16,
+    headScale: 1.18,
     introLines: ['Je vais te tuer.', 'Prépare tes excuses.', 'Ça va piquer.'],
     winLines: ['Bisous, au revoir.', 'Pas de quartier !', 'Une revanche ? Non merci.'],
     superLines: ['Prends ça en pleine face !', 'Z comme… ZÉRO PITIÉ !'],
@@ -295,8 +325,8 @@ export const ROSTER: FighterDef[] = [
       stains: '#a8783c',
     },
     faceGen: { moustache: true, beardColor: '#6e6a66', brows: '#6a6662', browSize: 1.4, blush: true, wrinkles: true, mouth: 'smile', eyes: '#4a5a6a' },
-    build: 1.22,
-    belly: 0.95,
+    build: 1.2,
+    belly: 0.8,
     headScale: 1.12,
     height: 0.98,
     introLines: ['Je vais te tuer, et après on mange.', 'Viens goûter mes grillades !', 'Tonton est chaud comme la braise.'],
