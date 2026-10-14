@@ -248,7 +248,10 @@ export class FightWorld {
     let dimTarget = sup >= 0 ? 0.4 : 1;
     if (sup >= 0 && s.fighters[sup].action === 'superCombo') {
       const u = getUltimate(s.fighters[sup].ult);
-      dimTarget = this.cine.light ?? (s.fighters[sup].actionFrame > u.length - 20 ? 1 : 0.4);
+      const k = s.fighters[sup].actionFrame;
+      // story cinematics (dialogue, close-ups) stay brighter after the power-up
+      const base = u.cine && k > 20 ? 0.72 : 0.4;
+      dimTarget = this.cine.light ?? (k > u.length - 20 ? 1 : base);
     }
     this.dim += (dimTarget - this.dim) * (1 - Math.exp(-dt * 8));
     this.effects.update(dtFrames);
