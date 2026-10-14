@@ -10,7 +10,7 @@ import { input } from '../input/input';
 import { Showroom } from '../render/showroom';
 import { h, Menu, uiRoot } from '../ui/dom';
 import { goMenu, goTournament } from './flow';
-import { centerShowroom, noButtonFocus } from './tournamentShared';
+import { centerShowroom, guardButtons, syncMenuFocus } from './tournamentShared';
 
 const CONFETTI_COLORS = ['#ffd23a', '#ff8a1c', '#d8202a', '#29d7c4', '#7cc4ff', '#ffffff', '#c040ff'];
 /** seconds between two victory poses */
@@ -84,6 +84,7 @@ export class TournamentChampionScreen implements Screen {
       ],
       () => audio.sfx('cursor'),
     );
+    syncMenuFocus(this.menu);
     this.root = h(
       'div',
       { class: 'screen tn-champ' },
@@ -98,7 +99,7 @@ export class TournamentChampionScreen implements Screen {
       ),
       this.menu.el,
     );
-    noButtonFocus(this.root);
+    guardButtons(this.root);
     uiRoot().append(this.root);
     this.layout();
   }

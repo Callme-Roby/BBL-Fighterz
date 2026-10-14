@@ -29,7 +29,7 @@ import { Showroom } from '../render/showroom';
 import { STAGES } from '../render/stages';
 import { backButton, h, Menu, uiRoot } from '../ui/dom';
 import { goMenu, goTournamentBracket, goTournamentChampion, startFight } from './flow';
-import { controlsEl, noButtonFocus, portrait } from './tournamentShared';
+import { controlsEl, guardButtons, portrait, syncMenuFocus } from './tournamentShared';
 
 /**
  * Records the result of match (r, m) and saves. Returns the message to flash
@@ -68,7 +68,7 @@ export class TournamentBracketScreen implements Screen {
   enter() {
     audio.playMusic('select');
     this.root = h('div', { class: 'tn-bracket-screen' });
-    noButtonFocus(this.root);
+    guardButtons(this.root);
     uiRoot().append(this.root);
     if (champion(this.t) !== null) {
       // nothing left to play (should not happen: finished tournaments go to the champion screen)
@@ -170,6 +170,7 @@ export class TournamentBracketScreen implements Screen {
     if (humans === 0) items.push({ label: 'SIMULER', sub: 'Résultat instantané', action: () => this.simulate() });
     items.push({ label: 'ABANDONNER LE TOURNOI', sub: 'Le tournoi sera effacé', action: () => this.askAbandon() });
     this.menu = new Menu(items, () => audio.sfx('cursor'));
+    syncMenuFocus(this.menu);
     panel.append(this.menu.el, h('div', { class: 'tn-saved' }, 'Sauvegarde automatique · Échap = menu principal'));
     return panel;
   }
@@ -195,6 +196,7 @@ export class TournamentBracketScreen implements Screen {
       difficulty: settings.difficulty,
       seed: fightSeed(t),
       cpuSides: [pa.cpu, pb.cpu],
+      names: [pa.name, pb.name],
       tournament: {
         title: matchTitle(t, r, m),
         onResult: (w) => {
@@ -238,6 +240,7 @@ export class TournamentBracketScreen implements Screen {
       ],
       () => audio.sfx('cursor'),
     );
+    syncMenuFocus(this.confirmMenu);
     this.confirmEl = h(
       'div',
       { class: 'overlay tn-confirm' },
@@ -245,7 +248,7 @@ export class TournamentBracketScreen implements Screen {
       h('div', { class: 'status' }, `${this.t.played} combat${this.t.played > 1 ? 's' : ''} déjà joué${this.t.played > 1 ? 's' : ''}.`),
       this.confirmMenu.el,
     );
-    noButtonFocus(this.confirmEl);
+    guardButtons(this.confirmEl);
     uiRoot().append(this.confirmEl);
   }
 

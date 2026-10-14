@@ -27,6 +27,8 @@ export interface FightSetup {
   link?: NetLink;
   localPlayer?: 0 | 1;
   skipIntro?: boolean;
+  /** player names shown instead of the fighter names (tournament participants) */
+  names?: [string, string];
   /** local modes: which sides are played by the CPU (overrides the mode default) */
   cpuSides?: [boolean, boolean];
   /** set when the match is part of a tournament */
@@ -85,7 +87,7 @@ export class FightScreen implements Screen {
       this.unsubs.push(setup.link.on((m) => this.onNet(m)));
       this.unsubs.push(setup.link.onClose((reason) => this.disconnected(reason)));
     }
-    this.hud = new Hud([setup.p1.name, setup.p2.name], this.superKeys());
+    this.hud = new Hud(this.labels(), this.superKeys());
     // console access for testing: open the game with ?debug
     if (location.search.includes('debug')) (window as unknown as { bblFight: unknown }).bblFight = this;
     FightWorld.create(setup.p1, setup.p2, setup.stageId).then((w) => {
@@ -119,10 +121,13 @@ export class FightScreen implements Screen {
 
   /** "P1 VS P2" splash shown while the match loads. */
   private showVs() {
+    const names = this.setup.names;
     const side = (def: FighterDef, cls: string) => {
+      const who = names ? names[cls === 'l' ? 0 : 1] : null;
       const ph = h('div', { class: 'portrait' });
       import('../render/faceTexture').then(({ loadFace }) => loadFace(def).then((f) => (ph.style.backgroundImage = `url(${f.portraitUrl})`)));
-      return h('div', { class: 'side ' + cls }, ph, h('div', { class: 'pname ' + (cls === 'l' ? 'p1' : 'p2') }, def.name, h('span', { class: 'ttl' }, def.title)));
+      const sub = who && who.toUpperCase() !== def.name.toUpperCase() ? `avec ${def.name} — ${def.title}` : def.title;
+      return h('div', { class: 'side ' + cls }, ph, h('div', { class: 'pname ' + (cls === 'l' ? 'p1' : 'p2') }, who ? who.toUpperCase() : def.name, h('span', { class: 'ttl' }, sub)));
     };
     const mid = h('div', { style: 'display:flex;flex-direction:column;align-items:center;gap:10px' });
     if (this.setup.tournament) mid.append(h('div', { class: 'title-hint', style: 'color:#fff;font-size:12px' }, this.setup.tournament.title));
@@ -159,6 +164,13 @@ export class FightScreen implements Screen {
   private quitToMenu() {
     this.setup.link?.close();
     goMenu();
+  }
+
+  /** HUD / result labels: participant names when given, otherwise fighter names */
+  private labels(): [string, string] {
+    const [n1, n2] = this.setup.names ?? [this.setup.p1.name, this.setup.p2.name];
+    const tag = (n: string, def: FighterDef) => (n.toUpperCase() === def.name.toUpperCase() ? def.name : `${n.toUpperCase()} (${def.name})`);
+    return [tag(n1, this.setup.p1), tag(n2, this.setup.p2)];
   }
 
   // ---------------------------------------------------------------- input
@@ -313,7 +325,7 @@ export class FightScreen implements Screen {
           ];
     this.menu = new Menu(items, () => audio.sfx('cursor'));
     const w = this.state.matchWinner;
-    const title = w === 2 ? 'MATCH NUL' : (w === 0 ? this.setup.p1.name : this.setup.p2.name) + ' GAGNE';
+    const title = w === 2 ? 'MATCH NUL' : this.winnerName(w) + ' GAGNE';
     this.overlay = h('div', { class: 'overlay', style: 'background:rgba(4,4,12,0.35);justify-content:flex-end;padding-bottom:12vh' }, h('div', { class: 'h1' }, title), this.menu.el);
     uiRoot().append(this.overlay);
   }
@@ -383,6 +395,12 @@ export class FightScreen implements Screen {
   }
 
   private nameOf(i: number) {
+    return this.winnerName(i);
+  }
+
+  private winnerName(i: number) {
+    const n = this.setup.names?.[i];
+    if (n) return n.toUpperCase();
     return i === 0 ? this.setup.p1.name : this.setup.p2.name;
   }
 

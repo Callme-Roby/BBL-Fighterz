@@ -25,7 +25,7 @@ import { input } from '../input/input';
 import { Showroom } from '../render/showroom';
 import { backButton, h, Menu, uiRoot } from '../ui/dom';
 import { goMenu, goTournamentBracket, goTournamentPick } from './flow';
-import { noButtonFocus } from './tournamentShared';
+import { guardButtons, syncMenuFocus } from './tournamentShared';
 
 interface Entry {
   name: string;
@@ -62,11 +62,8 @@ export class TournamentSetupScreen implements Screen {
   enter() {
     audio.playMusic('select');
     this.root = h('div', { class: 'screen dim tn-setup' });
-    noButtonFocus(this.root);
     // Enter on a focused button is handled by frame() (menu "confirm"), not natively: no double press
-    this.root.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'BUTTON') e.preventDefault();
-    });
+    guardButtons(this.root);
     uiRoot().append(this.root);
     const saved = this.prefill ? null : loadTournament();
     if (saved) this.showResume(saved);
@@ -98,6 +95,7 @@ export class TournamentSetupScreen implements Screen {
       ],
       () => audio.sfx('cursor'),
     );
+    syncMenuFocus(this.menu);
     this.root.classList.add('tn-center');
     this.root.replaceChildren(
       h('div', { class: 'h1' }, 'TOURNOI'),

@@ -77,6 +77,7 @@ export function sanitizeDef(d: FighterDef): FighterDef {
   const obj = <T extends object>(v: T | undefined): T | null => (v && typeof v === 'object' ? v : null);
   const fg = obj(d.faceGen);
   const acc = obj(d.accessories);
+  const beard = obj(d.beard3d);
   const superLines = lines(d.superLines, 3, 60);
   return {
     id: str(d.id, 40, 'remote'),
@@ -124,6 +125,7 @@ export function sanitizeDef(d: FighterDef): FighterDef {
     build: num(d.build, 0.8, 1.3, 1),
     body: d.body === 'fine' ? 'fine' : 'standard',
     belly: num(d.belly, 0, 1, 0),
+    beard3d: beard ? { color: col(beard.color, '#2a1a10'), size: num(beard.size, 0.5, 1.6, 1) } : undefined,
     headScale: num(d.headScale, 0.9, 1.4, 1.15),
     height: num(d.height, 0.85, 1.15, 1),
     introLines: lines(d.introLines, 4, 80),

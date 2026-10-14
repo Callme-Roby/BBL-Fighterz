@@ -145,6 +145,28 @@ export function drawProceduralFace(ctx: CanvasRenderingContext2D, w: number, h: 
     ctx.putImageData(img, 0, 0);
   }
 
+  // ---- 1b. hair / headwear band at the very top: only seen on menu portraits, the 3D hair covers it ----
+  {
+    const st = def.hair.style;
+    const hairC = C(def.hair.color);
+    const wear = def.accessories?.cap ? C(def.accessories.cap) : hairC;
+    const band = (rows: number, col: THREE.Color, amount = 1, x0 = 0, x1 = 72) => {
+      for (let x = x0; x < x1; x++) {
+        const edge = rows + 3 * ((x - 35.5) / 36) ** 2 + (hash01(seed + x * 3.7) - 0.5) * 1.6;
+        for (let y = 0; y < edge; y++) P(x, y, mix(skin, col.clone().multiplyScalar(0.85 + 0.3 * hash01(seed + x * 7.1 + y * 13.3)), amount));
+      }
+    };
+    if (st === 'buzz') band(11, hairC, 0.6);
+    else if (st === 'mohawk') {
+      band(9, hairC, 0.35);
+      band(12, hairC, 1, 28, 44);
+    } else if (st === 'afro' || st === 'bigafro') band(15, hairC);
+    else if (st === 'cap' || st === 'bandana') {
+      band(st === 'cap' ? 12 : 14, wear);
+      R(0, st === 'cap' ? 13 : 15, 72, 1, wear.clone().multiplyScalar(0.7));
+    } else if (st !== 'bald') band(13, hairC);
+  }
+
   const browCol = C(fg.brows ?? mix(def.hair.style === 'bald' ? '#2a1a10' : def.hair.color, '#20140c', 0.45));
   const beardCol = C(fg.beardColor ?? browCol);
   const dark = mix(tone(0.3), '#140c0a', 0.5);

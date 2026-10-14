@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import type { FighterDef } from '../data/roster';
 import { loadFace } from '../render/faceTexture';
 import type { Showroom } from '../render/showroom';
-import { h } from '../ui/dom';
+import { h, type Menu } from '../ui/dom';
 
 /**
  * Turns the two-slot showroom into a one-fighter studio: slot 0 (and its
@@ -37,13 +37,27 @@ export function portrait(def: FighterDef | null, cls = 'tn-ph'): HTMLDivElement 
 }
 
 /**
- * Mouse / touch clicks must not leave buttons focused: a later Enter would
- * then both "click" the focused button natively and fire the screen's own
- * confirm action.
+ * The buttons of the tournament screens are driven by the screen's own menu
+ * events (input.menuEvents(): Enter, gamepad A…). So a mouse click must not
+ * leave a button focused, and Enter / Space must not also "click" a focused
+ * button natively: the action would run twice.
  */
-export function noButtonFocus(root: HTMLElement) {
+export function guardButtons(root: HTMLElement) {
   root.addEventListener('mousedown', (e) => {
     if ((e.target as Element | null)?.closest?.('button')) e.preventDefault();
+  });
+  const block = (e: KeyboardEvent) => {
+    if ((e.key === 'Enter' || e.key === ' ') && (e.target as HTMLElement | null)?.tagName === 'BUTTON') e.preventDefault();
+  };
+  root.addEventListener('keydown', block);
+  root.addEventListener('keyup', block);
+}
+
+/** Keeps a Menu's selection on the button focused with Tab (Enter then activates that one). */
+export function syncMenuFocus(menu: Menu) {
+  menu.el.addEventListener('focusin', (e) => {
+    const i = [...menu.el.children].indexOf(e.target as Element);
+    if (i >= 0) menu.select(i, false);
   });
 }
 

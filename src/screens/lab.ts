@@ -229,8 +229,12 @@ export class LabScreen implements Screen {
             ['spiky', 'PIQUES'],
             ['buzz', 'RASÉS'],
             ['afro', 'AFRO'],
+            ['bigafro', 'AFRO XXL'],
+            ['midlong', 'MI-LONGS'],
             ['long', 'LONGS'],
+            ['dreads', 'DREADS'],
             ['mohawk', 'IROQUOIS'],
+            ['tahiti', 'PALMIER'],
             ['ponytail', 'QUEUE'],
             ['bun', 'CHIGNON'],
             ['cap', 'CASQUETTE'],
@@ -247,7 +251,12 @@ export class LabScreen implements Screen {
             }
           },
         ),
-        row(color(d.hair.color, (v) => (d.hair.color = v))),
+        row(
+          color(d.hair.color, (v) => {
+            d.hair.color = v;
+            if (d.beard3d) d.beard3d = { ...d.beard3d, color: v };
+          }),
+        ),
       ),
       field('COULEUR CASQUETTE / BANDANA', row(capInput)),
       field(
@@ -279,6 +288,18 @@ export class LabScreen implements Screen {
         ),
       ),
       field('BIDON', range(0, 1, 0.05, d.belly ?? 0, (v) => (d.belly = v))),
+      field(
+        'BARBE 3D (couleur des cheveux)',
+        chips<'none' | 'short' | 'big'>(
+          [
+            ['none', 'AUCUNE'],
+            ['short', 'COURTE'],
+            ['big', 'GROSSE'],
+          ],
+          () => (!d.beard3d ? 'none' : (d.beard3d.size ?? 1) > 1.1 ? 'big' : 'short'),
+          (v) => (d.beard3d = v === 'none' ? undefined : { color: d.hair.color, size: v === 'big' ? 1.35 : 0.8 }),
+        ),
+      ),
       field(
         'ACCESSOIRES',
         chips<'none' | 'chain' | 'whistle'>(

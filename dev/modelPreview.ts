@@ -3,7 +3,7 @@
 //   ids=a,b,c        fighters (default: whole roster)
 //   clip / clips     one clip for all, or one per slot (clip=bind = bind pose, no animation)
 //   frame / frames   frame(s) to sample
-//   cam=front|face|faces|game|back   (faces = row of head close-ups)
+//   cam=front|face|faces|game|back   (faces = row of head close-ups; camy = camera height offset)
 //   hairs=cap,bun,...  one copy of the (first) fighter per hair style; body=fine; belly=0..1
 //   spacing, mirror=1, lines, yaw=deg (extra body rotation), labels=1 (name + triangle count under each fighter)
 import * as THREE from 'three';
@@ -82,7 +82,8 @@ const stats: { id: string; tris: number; skin: string }[] = [];
     const hy = models.reduce((a, m) => a + m.headY, 0) / Math.max(1, models.length);
     const half = Math.tan(THREE.MathUtils.degToRad(18)) * camera.aspect;
     const dist = (defs.length * spacing) / 2 / half + 0.25;
-    camera.position.set(0, hy + 0.02, dist);
+    const dy = Number(q.get('camy') ?? 0.02); // camera height offset from the eyes (negative = looking up)
+    camera.position.set(0, hy + dy, dist);
     camera.lookAt(0, hy - 0.01, 0);
   } else if (cam === 'back') {
     camera.position.set(0, 1.3, -4.5);

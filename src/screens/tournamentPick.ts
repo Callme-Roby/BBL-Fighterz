@@ -12,7 +12,7 @@ import { loadFace } from '../render/faceTexture';
 import { Showroom } from '../render/showroom';
 import { backButton, h, uiRoot } from '../ui/dom';
 import { goTournament, goTournamentBracket } from './flow';
-import { centerShowroom, noButtonFocus, portrait } from './tournamentShared';
+import { centerShowroom, guardButtons, portrait } from './tournamentShared';
 
 /** delay between a confirmed pick and the next participant (win pose time) */
 const NEXT_DELAY = 750;
@@ -73,9 +73,9 @@ export class TournamentPickScreen implements Screen {
         h('div', { class: 'title-hint' }, '← → ↑ ↓ / ZQSD pour choisir · Entrée pour valider · Échap = participant précédent'),
       ),
     );
-    noButtonFocus(root);
+    guardButtons(root);
     const back = backButton(() => this.back());
-    noButtonFocus(back);
+    guardButtons(back);
     uiRoot().append(root, back);
     this.load(Math.min(this.t.pickIndex, this.t.participants.length - 1));
   }

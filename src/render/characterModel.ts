@@ -711,45 +711,50 @@ function addHair(g: GeoBuilder, def: FighterDef, cy: number, R: THREE.Vector3, t
       break;
     }
     case 'midlong': {
-      // curly cap + a thick curtain of hair around the sides and back, down to the chin / neck
+      // curly cap + a thick curtain of hair around the sides and back that follows the jaw
+      // down to the neck; the front stays open (+-64 deg) so the face is never covered
       dome(1.08, -0.46, 1.42, vary, 0.06);
-      const psi0 = THREE.MathUtils.degToRad(116); // from the back: the front stays open (+-64 deg)
-      const NI = 5;
-      const NJ = 12;
+      const psi0 = THREE.MathUtils.degToRad(116); // measured from the back
+      const NI = 6;
+      const NJ = 14;
       const outer: THREE.Vector3[][] = [];
       const inner: THREE.Vector3[][] = [];
       for (let i = 0; i <= NI; i++) {
         const s = i / NI;
-        const yu = lerp(0.3, -1.06, s);
+        const yu = lerp(0.3, -1.08, s);
+        const below = Math.max(0, -yu);
+        // head cross-section at this height (jaw taper), never narrower than the neck
+        const head = Math.max(0.64, Math.sqrt(Math.max(0, 1 - yu * yu)) * (1 - 0.22 * below * below));
         const ro: THREE.Vector3[] = [];
         const ri: THREE.Vector3[] = [];
         for (let j = 0; j <= NJ; j++) {
           const psi = -psi0 + (2 * psi0 * j) / NJ;
-          const flare = 1.07 + 0.16 * Math.pow(s, 1.2) + 0.05 * s * hashNoise(i * 13 + j * 5);
-          const jag = i === NI ? (j % 2 ? 0.035 : -0.005) * k : 0;
+          const curl = 0.07 * (hashNoise(i * 13.3 + j * 5.1) - 0.5) * Math.min(1, s * 3);
+          const flare = head * (1.13 + 0.1 * s) + curl;
+          const jag = i === NI ? (j % 2 ? 0.04 : -0.004) * k : 0;
           const at = (f: number) => {
             let z = -Math.cos(psi) * R.z * f;
             if (z > 0) z *= 0.9;
             return new THREE.Vector3(Math.sin(psi) * R.x * f, cy + yu * R.y + jag, z + 0.012);
           };
           ro.push(at(flare));
-          ri.push(at(flare - 0.09));
+          ri.push(at(flare - 0.13));
         }
         outer.push(ro);
         inner.push(ri);
       }
       const axis = (p: THREE.Vector3) => new THREE.Vector3(p.x, 0, p.z - 0.012);
       add(gridGeometry(outer, axis), vary);
-      add(gridGeometry(inner, (p) => axis(p).negate()), (p, i) => vary(p, i).multiplyScalar(0.7));
-      add(gridGeometry([outer[NI], inner[NI]], () => new THREE.Vector3(0, -1, 0)), vary);
+      add(gridGeometry(inner, (p) => axis(p).negate()), (p, i) => vary(p, i).multiplyScalar(0.62));
+      add(gridGeometry([outer[NI], inner[NI]], () => new THREE.Vector3(0, -1, 0)), (p, i) => vary(p, i).multiplyScalar(0.8));
       for (const j of [0, NJ]) {
-        const e = outer[2][j].clone().sub(outer[2][j === 0 ? 1 : NJ - 1]);
+        const e = outer[3][j].clone().sub(outer[3][j === 0 ? 1 : NJ - 1]);
         add(
           gridGeometry(
             [outer.map((r) => r[j]), inner.map((r) => r[j])],
             () => e,
           ),
-          vary,
+          (p, i) => vary(p, i).multiplyScalar(0.85),
         );
       }
       break;
@@ -757,21 +762,21 @@ function addHair(g: GeoBuilder, def: FighterDef, cy: number, R: THREE.Vector3, t
     case 'tahiti': {
       // huge palm-tree mass: a bushy core on the crown and big spiky fronds fanning up and out
       dome(1.07, -0.46, 1.38);
-      const centre = new THREE.Vector3(0, cy + R.y * 1.12, -0.035 * k);
+      const centre = new THREE.Vector3(0, cy + R.y * 1.2, -0.05 * k);
       const core = new THREE.IcosahedronGeometry(1, 1);
-      core.scale(0.15 * k, 0.12 * k, 0.14 * k);
+      core.scale(0.16 * k, 0.12 * k, 0.13 * k);
       core.translate(centre.x, centre.y, centre.z);
       add(core, vary);
       const tipShade = (p: THREE.Vector3, i: number) => col.clone().multiplyScalar(0.62 + 0.55 * clamp01(p.distanceTo(centre) / (0.34 * k)) + 0.12 * hashNoise(i));
-      const N = 30;
+      const N = 40;
       for (let i = 0; i < N; i++) {
         const az = i * 2.39996 + 0.4;
-        let el = THREE.MathUtils.degToRad(lerp(10, 82, (i * 0.618034) % 1));
+        let el = THREE.MathUtils.degToRad(lerp(8, 84, (i * 0.618034) % 1));
         // nothing droops over the face: forward fronds point up
         if (Math.cos(az) > 0.2) el = Math.max(el, THREE.MathUtils.degToRad(48));
         const dir = new THREE.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az) - 0.15).normalize();
-        const len = k * (0.17 + 0.15 * hashNoise(i * 2.7)) * (0.85 + 0.35 * Math.sin(el));
-        const cone = new THREE.ConeGeometry(k * (0.04 + 0.016 * hashNoise(i * 5.3)), len, 5);
+        const len = k * (0.16 + 0.16 * hashNoise(i * 2.7)) * (0.85 + 0.35 * Math.sin(el));
+        const cone = new THREE.ConeGeometry(k * (0.05 + 0.025 * hashNoise(i * 5.3)), len, 5);
         cone.translate(0, len / 2, 0);
         cone.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
         cone.translate(centre.x + dir.x * 0.08 * k, centre.y + dir.y * 0.06 * k, centre.z + dir.z * 0.08 * k);
@@ -1046,13 +1051,13 @@ function addBeard3d(g: GeoBuilder, beard: { color: string; size?: number }, cy: 
     for (let j = 0; j <= NJ; j++) {
       const phi = -phiMax + (2 * phiMax * j) / NJ;
       const side = Math.abs(Math.sin(phi));
-      const top = -0.62 + 0.46 * Math.pow(side, 1.3);
+      const top = -0.66 + 0.5 * Math.pow(side, 1.3);
       const yu = lerp(top, -0.97, s);
       const p = headSurface(phi, yu, cy, R);
       const nrm = new THREE.Vector3(p.x / (R.x * R.x), (p.y - cy) / (R.y * R.y), (p.z - 0.012) / (R.z * R.z)).normalize();
       const front = Math.abs(phi) < Math.PI / 2 ? Math.cos(phi) ** 2 : 0;
       const edge = 1 - smooth(0.62, 1, Math.abs(phi) / phiMax);
-      const thick = size * 0.03 * k * smooth(0, 0.55, s) * edge * (0.55 + 0.45 * front);
+      const thick = size * 0.03 * k * smooth(0.05, 0.65, s) * edge * (0.55 + 0.45 * front);
       const drop = size * 0.06 * k * s * s * (0.25 + 0.75 * front) * edge;
       p.addScaledVector(nrm, thick + 0.007 * k * s * (hashNoise(i * 31 + j * 7) - 0.4));
       p.y -= drop;

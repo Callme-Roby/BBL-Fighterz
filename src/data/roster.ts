@@ -228,6 +228,7 @@ export const ROSTER: FighterDef[] = [
     name: 'BENJI',
     title: 'Brushing tropical',
     face: 'faces/benji.jpg',
+    skin: '#a87a60',
     hair: { style: 'tahiti', color: '#a07a48' },
     outfit: {
       top: 'tshirt',
@@ -249,6 +250,8 @@ export const ROSTER: FighterDef[] = [
     name: 'ISIS',
     title: 'Afro XXL, coups XXL',
     face: 'faces/isis.jpg',
+    // the photo has purple-ish highlights on the cheeks: explicit body tone
+    skin: '#8c5e48',
     hair: { style: 'bigafro', color: '#151010' },
     outfit: {
       top: 'tracksuit',
