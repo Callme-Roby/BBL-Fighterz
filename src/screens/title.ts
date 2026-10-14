@@ -90,7 +90,8 @@ export class TitleScreen implements Screen {
     this.root.append(logo);
     if (this.skipPress) this.showMenu();
     else {
-      this.pressEl = h('div', { class: 'title-hint blink', style: 'font-size:14px;margin-top:20px' }, 'APPUIE SUR ENTRÉE');
+      const touch = window.matchMedia?.('(pointer: coarse)').matches;
+      this.pressEl = h('div', { class: 'title-hint blink', style: 'font-size:14px;margin-top:20px' }, touch ? "TOUCHE L'ÉCRAN" : 'APPUIE SUR ENTRÉE');
       this.root.append(this.pressEl);
       this.root.addEventListener('click', () => this.press(), { once: true });
     }

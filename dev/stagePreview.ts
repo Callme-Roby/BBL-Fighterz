@@ -35,7 +35,9 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 400);
 
 const def = getStage(stageId);
+const t0 = performance.now();
 const env = def.build();
+const buildMs = Math.round(performance.now() - t0);
 scene.add(env.group);
 
 // two 1.8 m placeholder fighters
@@ -122,6 +124,7 @@ function frame(now: number): void {
     calls: ri.calls,
     triangles: ri.triangles,
     stageTriangles: Math.round(groupTris),
+    buildMs,
     drawables,
     perMesh,
     geometries: renderer.info.memory.geometries,
@@ -135,7 +138,8 @@ requestAnimationFrame(frame);
 
 // dispose/rebuild round-trip check: ?leak=1 builds and disposes the stage 5 times
 if (params.get('leak') === '1') {
-  const before = { ...renderer.info.memory };
+  renderer.render(scene, camera);
+  const before = { ...renderer.info.memory, programs: renderer.info.programs?.length ?? 0 };
   for (let i = 0; i < 5; i++) {
     const e = def.build();
     const s = new THREE.Scene();
@@ -143,5 +147,6 @@ if (params.get('leak') === '1') {
     renderer.render(s, camera);
     e.dispose();
   }
-  console.log('leak-check', JSON.stringify(before), JSON.stringify(renderer.info.memory));
+  const after = { ...renderer.info.memory, programs: renderer.info.programs?.length ?? 0 };
+  console.log('leak-check', JSON.stringify(before), JSON.stringify(after));
 }

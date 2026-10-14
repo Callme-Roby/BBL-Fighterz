@@ -84,3 +84,10 @@ export class Menu {
     if (it && !it.disabled) it.action();
   }
 }
+
+/** Small "back" button (top-left) for mouse / touch users. */
+export function backButton(action: () => void): HTMLButtonElement {
+  const b = h('button', { class: 'btn backbtn' }, '◀ RETOUR');
+  b.addEventListener('click', action);
+  return b;
+}

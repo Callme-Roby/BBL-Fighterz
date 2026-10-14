@@ -6,7 +6,7 @@ import { input, type MenuEvent } from '../input/input';
 import type { NetLink, NetMsg } from '../net/peer';
 import { loadFace } from '../render/faceTexture';
 import { Showroom } from '../render/showroom';
-import { h, uiRoot } from '../ui/dom';
+import { backButton, h, uiRoot } from '../ui/dom';
 import type { FightMode } from './fight';
 import { goMenu, goStageSelect, startFight } from './flow';
 import { settings } from '../game/settings';
@@ -73,7 +73,7 @@ export class SelectScreen implements Screen {
       h('div', { class: 'names' }, this.names[0], this.names[1]),
       h('div', { style: 'display:flex;flex-direction:column;align-items:center;gap:8px' }, grid, this.status),
     );
-    uiRoot().append(root);
+    uiRoot().append(root, backButton(() => this.back()));
     this.refresh();
   }
 
@@ -241,6 +241,16 @@ export class SelectScreen implements Screen {
     else if (this.mode === 'versus') msg = 'J1 : ZQSD/WASD + R/F · J2 : flèches + I/K · Échap = retour';
     else msg = this.waitingStage ? "L'hôte choisit l'arène…" : this.locked[1 - this.me] ? "L'adversaire est prêt !" : "L'adversaire choisit…";
     this.status.textContent = msg;
+  }
+
+  /** back button: unlock the last locked cursor, or leave */
+  private back() {
+    if (this.mode === 'online') {
+      if (this.unlock(this.me)) return;
+    } else if (this.unlock(1) || this.unlock(0)) return;
+    audio.sfx('cancel');
+    this.link?.close();
+    goMenu();
   }
 
   frame(dt: number) {

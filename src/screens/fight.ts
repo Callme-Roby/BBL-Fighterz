@@ -70,6 +70,8 @@ export class FightScreen implements Screen {
       this.unsubs.push(setup.link.onClose((reason) => this.disconnected(reason)));
     }
     this.hud = new Hud([setup.p1.name, setup.p2.name]);
+    // console access for testing: open the game with ?debug
+    if (location.search.includes('debug')) (window as unknown as { bblFight: unknown }).bblFight = this;
     FightWorld.create(setup.p1, setup.p2, setup.stageId).then((w) => {
       if (this.disposed) {
         w.dispose();
@@ -304,6 +306,11 @@ export class FightScreen implements Screen {
   }
 
   private tick() {
+    this.tickInner();
+    input.endTick();
+  }
+
+  private tickInner() {
     if (this.session) {
       const evs = this.session.tick(this.localBits(0));
       this.state = this.session.state;

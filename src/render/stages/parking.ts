@@ -284,9 +284,8 @@ function build(): StageEnv {
     concrete.box(I, 0, CURB, DZ1 + 0.2, DX * 2 + 0.8, 1.0, 0.4, pc);
     concrete.box(I, -DX - 0.2, CURB, (DZ0 + DZ1) / 2, 0.4, 1.0, DZ1 - DZ0, pc);
     concrete.box(I, DX + 0.2, CURB, (DZ0 + DZ1) / 2, 0.4, 1.0, DZ1 - DZ0, pc);
-    // the walkways stop at the parapets, fill the deck sides between walkways (x = ±DX) with a low curb
     // outer facade of the garage, down to the street
-    const fc = { uv: 4, color: 0x5a5866, bottom: 0x2a2834, skip: ['ny', 'py'] as const };
+    const fc = { uv: 4, color: 0x5a5866, bottom: 0x2a2834 };
     concrete.box(I, 0, STREET_Y, DZ0 - 0.4, DX * 2 + 1.2, -STREET_Y + CURB, 0.01, { ...fc, skip: ['ny', 'py', 'pz'] });
     concrete.box(I, 0, STREET_Y, DZ1 + 0.4, DX * 2 + 1.2, -STREET_Y + CURB, 0.01, { ...fc, skip: ['ny', 'py', 'nz'] });
     concrete.box(I, -DX - 0.4, STREET_Y, (DZ0 + DZ1) / 2, 0.01, -STREET_Y + CURB, DZ1 - DZ0 + 1.2, { ...fc, skip: ['ny', 'py', 'px'] });

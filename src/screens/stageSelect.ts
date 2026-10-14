@@ -8,7 +8,7 @@ import type { NetLink } from '../net/peer';
 import type { RetroPipeline } from '../render/pipeline';
 import { PS1Globals } from '../render/ps1Material';
 import { STAGES } from '../render/stages';
-import { h, uiRoot } from '../ui/dom';
+import { backButton, h, uiRoot } from '../ui/dom';
 import type { FightMode } from './fight';
 import { goMenu, goSelect, startFight } from './flow';
 
@@ -75,6 +75,7 @@ export class StageSelectScreen implements Screen {
         list,
         h('div', { class: 'footer-hint' }, '← → pour choisir · Entrée pour valider · Échap pour revenir'),
       ),
+      backButton(() => this.back()),
     );
     this.select(0, false);
     if (this.link) this.link.onClose(() => goMenu());
@@ -110,17 +111,22 @@ export class StageSelectScreen implements Screen {
     });
   }
 
+  private back() {
+    if (this.done) return;
+    audio.sfx('cancel');
+    if (this.mode === 'online' && this.link) {
+      this.link.send({ t: 'toSelect' });
+      goSelect('online', this.link);
+    } else goSelect(this.mode);
+  }
+
   frame(dt: number) {
     for (const e of input.menuEvents()) {
       if (e.action === 'left' || e.action === 'up') this.select(this.index - 1);
       else if (e.action === 'right' || e.action === 'down') this.select(this.index + 1);
       else if (e.action === 'confirm') this.confirm();
       else if (e.action === 'back') {
-        audio.sfx('cancel');
-        if (this.mode === 'online' && this.link) {
-          this.link.send({ t: 'toSelect' });
-          goSelect('online', this.link);
-        } else goSelect(this.mode);
+        this.back();
         return;
       }
     }

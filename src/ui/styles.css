@@ -1035,3 +1035,12 @@ kbd {
     grid-template-columns: repeat(var(--cols, 6), 52px);
   }
 }
+
+.backbtn {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top));
+  left: 10px;
+  padding: 8px 10px;
+  font-size: 9px;
+  z-index: 5;
+}

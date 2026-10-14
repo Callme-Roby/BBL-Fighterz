@@ -92,6 +92,8 @@ const MENU_KEYS: Record<string, [MenuAction, number]> = {
 
 class InputManager {
   private down = new Set<string>();
+  /** keys pressed since the last simulation tick (so very short taps are never lost) */
+  private latch = new Set<string>();
   private menuQueue: MenuEvent[] = [];
   private padPrev: number[][] = [[], [], [], []];
   /** bits from the on-screen touch pad */
@@ -108,6 +110,7 @@ class InputManager {
       if (this.typing) return;
       if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
       this.down.add(e.code);
+      if (!e.repeat) this.latch.add(e.code);
       const m = MENU_KEYS[e.code];
       if (m) this.menuQueue.push({ action: m[0], player: m[1] });
       for (const l of this.listeners) l(e.code);
@@ -126,7 +129,7 @@ class InputManager {
   private keyBits(b: Binding): number {
     let bits = 0;
     for (const k of Object.keys(b) as (keyof Binding)[]) {
-      if (b[k].some((c) => this.down.has(c))) bits |= BIT[k];
+      if (b[k].some((c) => this.down.has(c) || this.latch.has(c))) bits |= BIT[k];
     }
     return bits;
   }
@@ -177,6 +180,11 @@ class InputManager {
       if (edge(9)) this.menuQueue.push({ action: 'start', player });
       this.padPrev[i] = now;
     });
+  }
+
+  /** Call after each simulation tick that read the inputs. */
+  endTick() {
+    this.latch.clear();
   }
 
   menuEvents(): MenuEvent[] {
