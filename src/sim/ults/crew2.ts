@@ -451,7 +451,8 @@ function arsenal(): UltimateScript {
       [188, 'hero'],
       [208, 'over'],
       [226, 'wide'],
-      [252, 'close'],
+      // two-shot: the bazooka on his shoulder would hide his face in a close-up
+      [252, 'two'],
     ],
     cine: {
       props: [

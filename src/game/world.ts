@@ -10,7 +10,7 @@ import { getStage } from '../render/stages';
 import type { StageEnv } from '../render/stages/types';
 import type { RetroPipeline } from '../render/pipeline';
 import { INTRO_SPLIT, type GameState, type SimEvent } from '../sim/types';
-import { getUltimate } from '../sim/ultimates';
+import { cineTime, getUltimate } from '../sim/ultimates';
 import { ultimateOf } from '../data/ultimates';
 import { CineDirector, type CineSpeaker } from './cinematic';
 import type { MusicId } from '../audio/types';
@@ -238,7 +238,7 @@ export class FightWorld {
     const sup = s.fighters.findIndex(
       (f) => f.action === 'superFlash' || f.action === 'superCombo' || (f.action === 'attack' && f.moveId === 'super'),
     );
-    const glowing = sup >= 0 && (s.fighters[sup].action !== 'superCombo' || s.fighters[sup].actionFrame < 16);
+    const glowing = sup >= 0 && (s.fighters[sup].action !== 'superCombo' || cineTime(s.fighters[sup].actionFrame) < 16);
     for (let i = 0; i < 2; i++) this.cine.shown(i).setGlow(i === sup && glowing ? 0.22 + 0.14 * Math.sin(this.time * 40) : 0);
     // aura while powering up / dashing, fading out early in the cinematic so close-ups stay readable
     if (glowing) {
@@ -248,7 +248,7 @@ export class FightWorld {
     let dimTarget = sup >= 0 ? 0.4 : 1;
     if (sup >= 0 && s.fighters[sup].action === 'superCombo') {
       const u = getUltimate(s.fighters[sup].ult);
-      const k = s.fighters[sup].actionFrame;
+      const k = cineTime(s.fighters[sup].actionFrame);
       // story cinematics (dialogue, close-ups) stay brighter after the power-up
       const base = u.cine && k > 20 ? 0.72 : 0.4;
       dimTarget = this.cine.light ?? (k > u.length - 20 ? 1 : base);
@@ -309,7 +309,7 @@ export class FightWorld {
       // BBL MAX cinematic combo: hard camera cuts scripted per ultimate
       const A = s.fighters[sc];
       const V = s.fighters[1 - sc];
-      const k = A.actionFrame;
+      const k = cineTime(A.actionFrame);
       const fa = A.facing;
       const mid = (A.x + V.x) / 2;
       const cams = getUltimate(A.ult).cams;

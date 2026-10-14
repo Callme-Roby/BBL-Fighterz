@@ -265,6 +265,25 @@ export interface Cinematic {
   events?: CineEvent[];
 }
 
+/**
+ * Playback speed of the cinematics: script frames per game frame (3/5 = 0.6, i.e. a
+ * script of 300 frames lasts 500 game frames ≈ 8.3 s). Integer ratio so the
+ * simulation stays exact on every machine (online play).
+ */
+export const CINE_SPEED_NUM = 3;
+export const CINE_SPEED_DEN = 5;
+export const CINE_SPEED = CINE_SPEED_NUM / CINE_SPEED_DEN;
+
+/** Script time (fractional) after `t` game frames of cinematic. */
+export function cineTime(t: number): number {
+  return (t * CINE_SPEED_NUM) / CINE_SPEED_DEN;
+}
+
+/** Last whole script frame reached after `t` game frames. */
+export function cineFrame(t: number): number {
+  return Math.floor((t * CINE_SPEED_NUM) / CINE_SPEED_DEN);
+}
+
 export function curve(keys: CurveKeys | undefined, f: number): number {
   if (!keys || keys.length === 0) return 0;
   if (f <= keys[0][0]) return keys[0][1];

@@ -8,7 +8,7 @@ import { FighterView } from '../render/fighterView';
 import { CLIPS } from '../render/poses';
 import { buildProjectile, buildProp, disposeProp } from '../render/props';
 import type { FighterState, GameState } from '../sim/types';
-import { curve, getUltimate, type CineEvent, type CineRef, type PropBone, type UltimateScript } from '../sim/ultimates';
+import { CINE_SPEED, cineTime, curve, getUltimate, type CineEvent, type CineRef, type PropBone, type UltimateScript } from '../sim/ultimates';
 
 /** Somebody who talks in a cinematic (subtitle + voice). */
 export interface CineSpeaker {
@@ -44,6 +44,8 @@ interface Flying {
   boom: boolean;
   /** frames the object stays visible after arrival (web strands) */
   linger: number;
+  /** script time of the last smoke puff (rocket trail) */
+  trailAt: number;
 }
 
 const tmp = new THREE.Vector3();
@@ -167,7 +169,8 @@ export class CineDirector {
     }
     const A = s.fighters[sc];
     const u = getUltimate(A.ult);
-    const k = A.actionFrame;
+    // script time (the cinematic plays slower than the game clock)
+    const k = cineTime(A.actionFrame);
     if (this.active !== sc || this.script !== u || k < this.lastK - 30) {
       if (this.active >= 0) this.stop();
       this.active = sc;
@@ -339,11 +342,11 @@ export class CineDirector {
     switch (e.t) {
       case 'say': {
         const sp = this.speaker(e.who, sc);
-        if (sp) h?.say(sp, this.sub(e.text, sc), { pitch: e.pitch, rate: e.rate, dur: e.dur ?? 100 });
+        if (sp) h?.say(sp, this.sub(e.text, sc), { pitch: e.pitch, rate: e.rate, dur: (e.dur ?? 100) / CINE_SPEED });
         break;
       }
       case 'text':
-        h?.text(this.sub(e.text, sc), e.style ?? 'boom', e.dur ?? 50, e.color);
+        h?.text(this.sub(e.text, sc), e.style ?? 'boom', (e.dur ?? 50) / CINE_SPEED, e.color);
         break;
       case 'sfx':
         h?.sfx(e.id, A.x, e.vol, e.pitch);
@@ -406,6 +409,7 @@ export class CineDirector {
           arc: e.arc ?? (e.kind === 'grenade' ? 0.8 : 0),
           boom: !!e.boom && !hitBoom,
           linger: e.kind === 'web' ? 8 : 0,
+          trailAt: e.f,
         });
         if (e.kind === 'rocket') h?.sfx('rocket', from.x);
         else if (e.kind === 'web') h?.sfx('thwip', from.x);
@@ -449,7 +453,10 @@ export class CineDirector {
       p.obj.position.copy(pos);
       if (ahead.distanceToSquared(pos) > 1e-8) p.obj.lookAt(ahead);
       if (p.kind === 'grenade') p.obj.rotateX(k * 0.5);
-      if (p.kind === 'rocket' && k % 2 === 0) this.effects.trail(pos);
+      if (p.kind === 'rocket' && k - p.trailAt >= 1.2) {
+        p.trailAt = k;
+        this.effects.trail(pos);
+      }
     }
   }
 

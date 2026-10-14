@@ -1,5 +1,5 @@
 import { MOVES, moveTotal, type MoveDef } from './moves';
-import { curve, getUltimate } from './ultimates';
+import { cineFrame, cineTime, curve, getUltimate } from './ultimates';
 import {
   ARENA_HALF_WIDTH,
   BODY_RADIUS,
@@ -676,13 +676,19 @@ function startSuperCombo(s: GameState, a: FighterState, v: FighterState, idx: nu
 /** Scripted cinematic combo: positions and hits are a pure function of the frame. */
 function runSuperCombo(s: GameState, a: FighterState, v: FighterState, idx: number) {
   const u = getUltimate(a.ult);
-  const k = a.actionFrame;
-  v.actionFrame = k;
+  // the script plays slower than the game clock: `kt` = smooth script time for positions,
+  // events fire when the whole script frame `k` reaches their frame
+  const t = a.actionFrame;
+  v.actionFrame = t;
+  const kt = cineTime(t);
+  const k = cineFrame(t);
+  const kPrev = cineFrame(t - 1);
+  const reached = (f: number) => f > kPrev && f <= k;
   a.vx = a.vy = v.vx = v.vy = 0;
-  a.x = a.ultOrigin + a.facing * curve(u.ax, k);
-  a.y = curve(u.ay, k);
-  v.y = curve(u.vy, k);
-  const d = curve(u.dist, k);
+  a.x = a.ultOrigin + a.facing * curve(u.ax, kt);
+  a.y = curve(u.ay, kt);
+  v.y = curve(u.vy, kt);
+  const d = curve(u.dist, kt);
   let vx = a.x + a.facing * d;
   // keep both fighters inside the arena: slide the whole scene back from the wall
   const lim = ARENA_HALF_WIDTH;
@@ -711,7 +717,7 @@ function runSuperCombo(s: GameState, a: FighterState, v: FighterState, idx: numb
   v.facing = (turned ? a.facing : -a.facing) as 1 | -1;
   for (let i = 0; i <= last; i++) {
     const hit = u.hits[i];
-    if (k !== hit.f) continue;
+    if (!reached(hit.f)) continue;
     // the victim can only be finished by the last blow (the cinematic always plays out)
     v.hp = i === last ? Math.max(0, v.hp - hit.dmg) : Math.max(1, v.hp - hit.dmg);
     v.comboCount++;
@@ -732,13 +738,13 @@ function runSuperCombo(s: GameState, a: FighterState, v: FighterState, idx: numb
   }
   if (u.selfHits) {
     for (const sh of u.selfHits) {
-      if (k !== sh.f) continue;
+      if (!reached(sh.f)) continue;
       a.hp = Math.max(1, a.hp - sh.dmg);
       s.hitstop = Math.max(s.hitstop, 6);
       s.events.push({ t: 'hit', p: 1 - idx, x: a.x, y: a.y + sh.y, strength: 'medium', counter: false, dmg: sh.dmg, self: true });
     }
   }
-  if (k === u.fall) s.events.push({ t: 'fall', p: 1 - idx });
+  if (reached(u.fall)) s.events.push({ t: 'fall', p: 1 - idx });
   if (k >= u.length) {
     toNeutral(a);
     a.y = 0;
