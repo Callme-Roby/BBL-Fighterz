@@ -581,7 +581,7 @@ const SFX: Record<SfxId, (env: SfxEnv, t: number, p: number) => void> = {
       [2600 * p, 7, 0.4],
     ]);
     // Breath shared by every voice: the "h" of each "ha".
-    const br = noise(ctx, t, T + 0.25);
+    const br = noise(ctx, t, T + 0.4);
     const brG = gainNode(ctx, 0.5);
     br.connect(brG);
     noiseBurst(ctx, out, t, { filter: 'bandpass', freq: 1400 * p, q: 0.6, peak: 0.12, attack: 0.15, decay: 0.9 });
@@ -834,6 +834,7 @@ const SFX: Record<SfxId, (env: SfxEnv, t: number, p: number) => void> = {
     lfo.connect(shakeAmt);
     shakeAmt.connect(shake.gain);
     const vg = ctx.createGain();
+    vg.gain.setValueAtTime(0, t);
     vg.gain.setValueAtTime(0, t + 0.02);
     vg.gain.linearRampToValueAtTime(0.5, t + 0.12);
     vg.gain.linearRampToValueAtTime(0.4, t + 0.4);

@@ -241,8 +241,8 @@ const dustyKeys: TonePreset = {
 
 /** Deep round boom-bap bass: sine + a touch of triangle/saw for definition on small speakers. */
 const boomBass: TonePreset = {
-  osc: [{ type: 'sine' }, { type: 'triangle', gain: 0.35 }, { type: 'sawtooth', gain: 0.08 }],
-  a: 0.006, d: 0.5, s: 0.65, r: 0.1,
+  osc: [{ type: 'sine' }, { type: 'triangle', gain: 0.5 }, { type: 'sawtooth', gain: 0.12 }],
+  a: 0.006, d: 0.5, s: 0.55, r: 0.1,
   cutoff: 420, fenv: 250, fdecay: 0.1,
   glide: 0.05, level: 0.9,
 };
@@ -1002,20 +1002,20 @@ function rap(): SongDef {
     delayBeats: 0.75,
     delayFeedback: 0.25,
     instruments: {
-      kick: { drum: 'kick', tune: 0.8, decay: 1.3, gain: 0.5, drive: 0.4 },
-      snare: { drum: 'snare', tune: 0.8, decay: 1.3, gain: 0.32, rev: 0.18, drive: 0.2 },
+      kick: { drum: 'kick', tune: 0.8, decay: 1.3, gain: 0.46, drive: 0.4 },
+      snare: { drum: 'snare', tune: 0.8, decay: 1.3, gain: 0.22, rev: 0.18, drive: 0.2 },
       clap: { drum: 'clap', tune: 0.9, gain: 0.3, rev: 0.2 },
       hat: { drum: 'hat', tune: 0.85, decay: 0.9, gain: 0.13, pan: 0.2 },
       ohat: { drum: 'openHat', tune: 0.85, decay: 0.6, gain: 0.08, pan: 0.2 },
       rim: { drum: 'rim', tune: 0.9, gain: 0.12, pan: -0.25, rev: 0.15 },
-      bass: { synth: boomBass, gain: 0.42, drive: 0.15 },
-      keys: { synth: dustyKeys, gain: 0.2, pan: -0.1, rev: 0.25, drive: 0.25 },
-      loop: { synth: dustyKeys, gain: 0.17, pan: 0.15, rev: 0.25, dly: 0.12, drive: 0.25 },
+      bass: { synth: boomBass, gain: 0.18, drive: 0.15 },
+      keys: { synth: dustyKeys, gain: 0.085, pan: -0.1, rev: 0.25, drive: 0.25 },
+      loop: { synth: dustyKeys, gain: 0.15, pan: 0.15, rev: 0.25, dly: 0.12, drive: 0.25 },
       // The intro plays the sample "through a closed filter" before the beat drops.
-      keysLo: { synth: { ...dustyKeys, cutoff: 420, fenv: 250 }, gain: 0.26, pan: -0.1, rev: 0.25 },
+      keysLo: { synth: { ...dustyKeys, cutoff: 420, fenv: 250 }, gain: 0.15, pan: -0.1, rev: 0.25 },
       loopLo: { synth: { ...dustyKeys, cutoff: 420, fenv: 250 }, gain: 0.24, pan: 0.15, rev: 0.25 },
       pad: { synth: darkPad, gain: 0.1, rev: 0.5 },
-      scratch: { synth: scratchy, gain: 0.12, pan: 0.1, rev: 0.1 },
+      scratch: { synth: scratchy, gain: 0.25, pan: 0.1, rev: 0.1 },
     },
     sections: {
       intro: {
