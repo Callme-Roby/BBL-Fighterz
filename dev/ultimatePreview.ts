@@ -8,10 +8,13 @@
  *   stage    hood | dojo | parking
  *   x        P1 start position (P2 starts 1.2 m in front); flip=1 puts P1 on the right
  *   hud=0    hides the info line
+ *   cam      game (default: the real cinematic camera) | side | back | top (fixed debug views)
+ *   camd     debug camera distance override (metres); clean=1 hides the BBL MAX aura / glow / sparks (any cam)
  * Without `k` the page stops right before the cinematic; `window.__runTo(k)` then
  * advances the real simulation (frame by frame, rendering every frame so camera
  * and animation blends behave as in game) and resolves once frame k is drawn.
  */
+import * as THREE from 'three';
 import { ROSTER } from '../src/data/roster';
 import { ultimateOf } from '../src/data/ultimates';
 import { FightWorld } from '../src/game/world';
@@ -33,6 +36,9 @@ const ult = q.get('ult') ?? ultimateOf(d1).script;
 const stage = q.get('stage') ?? 'dojo';
 const flip = q.get('flip') === '1';
 const x0 = Number(q.get('x') ?? (flip ? 0.6 : -0.6));
+const camMode = q.get('cam') ?? 'game';
+const camDist = q.has('camd') ? Number(q.get('camd')) : 0;
+const clean = q.get('clean') === '1';
 const hud = document.getElementById('hud') as HTMLDivElement;
 if (q.get('hud') === '0') hud.style.display = 'none';
 
@@ -69,6 +75,27 @@ guard = 0;
 while (a.action !== 'superCombo' && guard++ < 400) tick(0, false);
 let ended = 0;
 
+const dbgCam = new THREE.PerspectiveCamera(38, W / H, 0.05, 420);
+function draw() {
+  world.render(nullPipe, s, 0, W / H);
+  if (clean) {
+    world.effects.clear();
+    for (const v of world.views) for (const m of v.model.materials) m.uniforms.uFlash.value = 0;
+  }
+  if (camMode === 'game') {
+    pipe.render(world.scene, world.camera, world.stage.clearColor);
+    return;
+  }
+  const mid = (a.x + b.x) / 2;
+  const top = Math.max(a.y, b.y);
+  const back = camDist || Math.max(4.4, Math.abs(b.x - a.x) * 1.2 + 2.6) + top * 0.5;
+  if (camMode === 'back') dbgCam.position.set(mid, 1.3 + top * 0.4, -back);
+  else if (camMode === 'top') dbgCam.position.set(mid, 5.5, 2.2);
+  else dbgCam.position.set(mid, 1.3 + top * 0.4, back);
+  dbgCam.lookAt(mid, camMode === 'top' ? 0.3 : 0.95 + top * 0.45, 0);
+  pipe.render(world.scene, dbgCam, world.stage.clearColor);
+}
+
 function cineFrame(): number {
   if (a.action === 'superCombo') return a.actionFrame;
   return script.length + ended;
@@ -90,8 +117,7 @@ async function runTo(k: number) {
     tick(0, false);
     if (!was || a.action !== 'superCombo') ended++;
   }
-  // draw twice so the post pass and the camera settle on this exact state
-  world.render(pipe, s, 0, W / H);
+  draw();
   hud.textContent = `${ult}  k=${k}  ${a.action}/${b.action}  vy=${b.y.toFixed(2)} ay=${a.y.toFixed(2)} d=${Math.abs(b.x - a.x).toFixed(2)}`;
   await new Promise((r) => requestAnimationFrame(() => r(null)));
   return info();
@@ -103,5 +129,5 @@ w.__info = info;
 w.__length = script.length;
 w.__hits = script.hits.map((h) => h.f);
 if (q.has('k')) await runTo(Number(q.get('k')));
-else world.render(pipe, s, 0, W / H);
+else draw();
 w.__ready = true;

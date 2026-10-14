@@ -179,7 +179,8 @@ export class FightWorld {
       (f) => f.action === 'superFlash' || f.action === 'superCombo' || (f.action === 'attack' && f.moveId === 'super'),
     );
     for (let i = 0; i < 2; i++) this.views[i].setGlow(i === sup ? 0.22 + 0.14 * Math.sin(this.time * 40) : 0);
-    if (sup >= 0 && (s.fighters[sup].action !== 'superCombo' || s.fighters[sup].actionFrame < 100)) {
+    // aura while powering up / dashing, fading out early in the cinematic so close-ups stay readable
+    if (sup >= 0 && (s.fighters[sup].action !== 'superCombo' || s.fighters[sup].actionFrame < 16)) {
       this.effects.aura(this.views[sup].root.position);
       if (s.fighters[sup].action === 'superFlash') this.effects.aura(this.views[sup].root.position);
     }

@@ -6,6 +6,7 @@ import { buildCharacter, type CharacterModel } from './characterModel';
 import type { FaceAssets } from './faceTexture';
 import { CLIPS } from './poses';
 import { ultimateClip } from './ultimatePoses';
+import { getUltimate } from '../sim/ultimates';
 import { makeCanvasTexture } from './ps1Material';
 
 let shadowTex: THREE.Texture | null = null;
@@ -188,7 +189,12 @@ export class FighterView {
 
     // blob shadow
     const s = Math.max(0.35, 1 - f.y * 0.35);
-    const lying = f.action === 'knockdown' || f.action === 'ko' || f.action === 'juggle' || f.action === 'thrown' || (f.action === 'superVictim' && f.actionFrame > 56);
+    const lying =
+      f.action === 'knockdown' ||
+      f.action === 'ko' ||
+      f.action === 'juggle' ||
+      f.action === 'thrown' ||
+      (f.action === 'superVictim' && (f.y > 0.3 || f.actionFrame >= getUltimate(f.ultBy).fall));
     this.shadow.position.set(f.x - (lying ? f.facing * 0.5 : 0), 0.015, 0);
     this.shadow.scale.set((lying ? 1.9 : 0.95) * s, 1, 0.75 * s);
     this.updateMaterials(dtFrames);
