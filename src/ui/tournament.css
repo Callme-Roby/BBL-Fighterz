@@ -56,6 +56,15 @@
   margin-top: 4px;
 }
 
+/* resume prompt: centred (auto margins keep the top reachable when it overflows) */
+.tn-setup.tn-center > :first-child {
+  margin-top: auto;
+}
+
+.tn-setup.tn-center > :last-child {
+  margin-bottom: auto;
+}
+
 .tn-setup-panel {
   width: min(860px, 100%);
   display: flex;
@@ -558,6 +567,18 @@
   padding: 6px 8px;
 }
 
+.tn-chunk {
+  white-space: nowrap;
+}
+
+.tn-who.l {
+  color: #7cc4ff;
+}
+
+.tn-who.r {
+  color: #ff6a6a;
+}
+
 .tn-panel .menu {
   min-width: 0;
   padding-left: 16px;
@@ -566,6 +587,7 @@
 .tn-panel .menu button {
   padding: 10px 12px;
   font-size: 11px;
+  line-height: 1.35;
 }
 
 .tn-panel .menu button.sel::before {
@@ -631,6 +653,32 @@
   position: relative;
   z-index: 1;
   min-width: min(360px, 92vw);
+}
+
+/* landscape: everything on the left, the champion stands on the right */
+.tn-champ.wide {
+  align-items: flex-start;
+  justify-content: center;
+  gap: 5vh;
+  padding-left: max(6vw, 16px);
+}
+
+.tn-champ.wide .tn-champ-top {
+  align-items: flex-start;
+  text-align: left;
+  max-width: 52vw;
+}
+
+.tn-champ.wide .tn-champ-title {
+  transform-origin: left center;
+}
+
+.tn-champ.wide .tn-champ-top .title-hint {
+  text-align: left;
+}
+
+.tn-champ.wide .menu {
+  min-width: min(380px, 44vw);
 }
 
 .tn-confetti {

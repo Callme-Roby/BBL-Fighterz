@@ -364,7 +364,7 @@ export function buildCharacter(def: FighterDef, face: FaceAssets): CharacterMode
       if (c !== torsoTop || Math.sin(th) < 0.15) return c;
       const s = Math.round((th / (Math.PI * 2)) * SEG);
       const n = hashNoise(seed * 17.3 + s * 3.7 + end * 1.9);
-      return n > 0.7 ? c.clone().lerp(stain, 0.45 + 0.35 * hashNoise(s * 5.1 + seed)) : c;
+      return n > 0.78 ? c.clone().lerp(stain, 0.4 + 0.3 * hashNoise(s * 5.1 + seed)) : c;
     };
   };
 
@@ -630,9 +630,14 @@ function addHair(g: GeoBuilder, def: FighterDef, cy: number, R: THREE.Vector3) {
       const geo = new THREE.IcosahedronGeometry(1, 1);
       const pos = geo.getAttribute('position');
       const v = new THREE.Vector3();
+      const hairline = cy + R.y * 0.6;
       for (let i = 0; i < pos.count; i++) {
         v.fromBufferAttribute(pos, i);
-        pos.setXYZ(i, v.x * R.x * 1.45, v.y * R.y * 1.15 + cy + R.y * 0.4, v.z * R.z * 1.3 - 0.04);
+        let y = v.y * R.y * 1.15 + cy + R.y * 0.4;
+        // keep the face clear: the front-lower part is lifted up to the hairline
+        const front = clamp01(v.z * 1.8 - 0.25);
+        if (y < hairline) y = lerp(y, hairline, front);
+        pos.setXYZ(i, v.x * R.x * 1.45, y, v.z * R.z * 1.3 - 0.04);
       }
       geo.computeVertexNormals();
       add(geo, vary);
@@ -793,7 +798,7 @@ function addChain(g: GeoBuilder, torso: Ring[], wb: number, whistle: boolean) {
   const Fp = new THREE.Vector3(0, yFront, front.cz + front.rz + 0.013);
   const M = B.clone().add(Fp).multiplyScalar(0.5);
   const U = Fp.clone().sub(B).multiplyScalar(0.5);
-  const halfW = 0.1 * Math.sqrt(wb);
+  const halfW = 0.088 * Math.sqrt(wb);
   const pts: THREE.Vector3[] = [];
   const N = 18;
   for (let i = 0; i < N; i++) {

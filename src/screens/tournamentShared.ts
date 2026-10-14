@@ -47,14 +47,31 @@ export function noButtonFocus(root: HTMLElement) {
   });
 }
 
-/** Controls reminder for a match, depending on how many humans play it. */
-export function controlsText(humans: number): string[] {
-  if (humans >= 2)
-    return [
-      'GAUCHE : ZQSD/WASD + R T F G · E = BBL MAX',
-      'DROITE : flèches + I O K L · P = BBL MAX',
-      'ou une manette chacun',
-    ];
-  if (humans === 1) return ['ZQSD/WASD ou flèches · U I J K = poings/pieds · E = BBL MAX', 'ou la manette'];
-  return ['Match entre CPU'];
+/**
+ * Controls reminder for a match, depending on how many humans play it.
+ * Chunks never break inside, lines wrap between them.
+ */
+export function controlsEl(humans: number): HTMLElement {
+  const lines: { who?: string; side?: 'l' | 'r'; chunks: string[] }[] =
+    humans >= 2
+      ? [
+          { who: 'GAUCHE :', side: 'l', chunks: ['ZQSD/WASD + R T F G', 'E = BBL MAX'] },
+          { who: 'DROITE :', side: 'r', chunks: ['flèches + I O K L', 'P = BBL MAX'] },
+          { chunks: ['ou une manette chacun'] },
+        ]
+      : humans === 1
+        ? [{ chunks: ['ZQSD/WASD ou flèches', 'U I J K = poings/pieds', 'E = BBL MAX'] }, { chunks: ['ou la manette'] }]
+        : [{ chunks: ['Match entre CPU'] }];
+  return h(
+    'div',
+    { class: 'tn-controls' },
+    ...lines.map((l) =>
+      h(
+        'div',
+        null,
+        l.who ? h('span', { class: 'tn-chunk tn-who ' + (l.side ?? '') }, l.who) : null,
+        ...l.chunks.flatMap((c, i) => [i ? ' · ' : l.who ? ' ' : '', h('span', { class: 'tn-chunk' }, c)]),
+      ),
+    ),
+  );
 }

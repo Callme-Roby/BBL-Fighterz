@@ -1,4 +1,4 @@
-import { ROSTER, type FighterDef } from '../data/roster';
+import { HAIR_STYLES, ROSTER, type FighterDef } from '../data/roster';
 import type { Difficulty } from '../sim/ai';
 
 export interface Settings {
@@ -65,20 +65,28 @@ export function fullRoster(): FighterDef[] {
 /** Sanitise a fighter definition received from the network. */
 export function sanitizeDef(d: FighterDef): FighterDef {
   const str = (v: unknown, max: number, fb = '') => (typeof v === 'string' ? v.slice(0, max) : fb);
-  const col = (v: unknown, fb: string) => (typeof v === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(v) ? v : fb);
+  const isCol = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(v);
+  const col = (v: unknown, fb: string) => (isCol(v) ? v : fb);
+  const optCol = (v: unknown) => (isCol(v) ? v : undefined);
   const face = typeof d.face === 'string' && (d.face.startsWith('data:image/') || /^faces\/[\w.-]+$/.test(d.face)) ? d.face.slice(0, 200000) : '';
   const o = d.outfit ?? ({} as FighterDef['outfit']);
   const tops = ['tank', 'tshirt', 'tracksuit', 'shirtless', 'hoodie'] as const;
-  const hairs = ['spiky', 'short', 'buzz', 'bald', 'afro', 'long', 'mohawk'] as const;
+  const mouths = ['neutral', 'smile', 'smirk', 'frown', 'grin'] as const;
   const num = (v: unknown, lo: number, hi: number, fb: number) => (typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fb);
+  const lines = (v: unknown, n: number, max: number) => (Array.isArray(v) ? v : []).slice(0, n).map((l) => str(l, max)).filter(Boolean);
+  const obj = <T extends object>(v: T | undefined): T | null => (v && typeof v === 'object' ? v : null);
+  const fg = obj(d.faceGen);
+  const acc = obj(d.accessories);
+  const superLines = lines(d.superLines, 3, 60);
   return {
     id: str(d.id, 40, 'remote'),
     name: str(d.name, 16, '???').toUpperCase(),
     title: str(d.title, 40),
     face,
+    photoPending: d.photoPending === true ? true : undefined,
     skin: d.skin ? col(d.skin, '#c89070') : undefined,
     hair: {
-      style: hairs.includes(d.hair?.style as (typeof hairs)[number]) ? d.hair.style : 'short',
+      style: HAIR_STYLES.includes(d.hair?.style) ? d.hair.style : 'short',
       color: col(d.hair?.color, '#302010'),
     },
     outfit: {
@@ -88,15 +96,39 @@ export function sanitizeDef(d: FighterDef): FighterDef {
       pantsColor: col(o.pantsColor, '#335588'),
       shoesColor: col(o.shoesColor, '#111111'),
       beltColor: o.beltColor ? col(o.beltColor, '#442211') : undefined,
+      wristColor: optCol(o.wristColor),
+      stains: optCol(o.stains),
+      baggy: o.baggy === true ? true : undefined,
     },
-    faceGen: d.faceGen
-      ? { beard: !!d.faceGen.beard, glasses: !!d.faceGen.glasses, wrinkles: !!d.faceGen.wrinkles, brows: col(d.faceGen.brows, '#222'), lips: col(d.faceGen.lips, '#a05050') }
+    accessories: acc ? { chain: acc.chain === true, whistle: acc.whistle === true, cap: optCol(acc.cap) } : undefined,
+    faceGen: fg
+      ? {
+          eyes: optCol(fg.eyes),
+          brows: optCol(fg.brows),
+          browSize: fg.browSize === undefined ? undefined : num(fg.browSize, 0.5, 2, 1),
+          beard: !!fg.beard,
+          goatee: !!fg.goatee,
+          moustache: !!fg.moustache,
+          stubble: !!fg.stubble,
+          beardColor: optCol(fg.beardColor),
+          glasses: !!fg.glasses,
+          sunglasses: !!fg.sunglasses,
+          lips: optCol(fg.lips),
+          wrinkles: !!fg.wrinkles,
+          freckles: !!fg.freckles,
+          scar: !!fg.scar,
+          blush: !!fg.blush,
+          mouth: mouths.includes(fg.mouth as (typeof mouths)[number]) ? fg.mouth : undefined,
+        }
       : undefined,
     build: num(d.build, 0.8, 1.3, 1),
+    body: d.body === 'fine' ? 'fine' : 'standard',
+    belly: num(d.belly, 0, 1, 0),
     headScale: num(d.headScale, 0.9, 1.4, 1.15),
     height: num(d.height, 0.85, 1.15, 1),
-    introLines: (Array.isArray(d.introLines) ? d.introLines : []).slice(0, 4).map((l) => str(l, 80)).filter(Boolean),
-    winLines: (Array.isArray(d.winLines) ? d.winLines : []).slice(0, 4).map((l) => str(l, 80)).filter(Boolean),
+    introLines: lines(d.introLines, 4, 80),
+    winLines: lines(d.winLines, 4, 80),
+    superLines: superLines.length ? superLines : undefined,
     voice: { lang: str(d.voice?.lang, 10, 'fr-FR'), pitch: num(d.voice?.pitch, 0.1, 2, 1), rate: num(d.voice?.rate, 0.5, 1.5, 1) },
     custom: true,
   };

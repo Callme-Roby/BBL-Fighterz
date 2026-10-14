@@ -1,6 +1,6 @@
 import { audio } from '../audio/audio';
 import type { App, Screen } from '../app';
-import type { FighterDef, HairStyle, TopStyle } from '../data/roster';
+import type { BodyType, FaceGen, FighterDef, HairStyle, TopStyle } from '../data/roster';
 import { loadCustoms, saveCustoms } from '../game/settings';
 import { input } from '../input/input';
 import { cropFileToDataUrl } from '../render/faceTexture';
@@ -18,9 +18,11 @@ function blank(): FighterDef {
     hair: { style: 'short', color: '#3a2618' },
     outfit: { top: 'tank', topColor: '#f2f0e8', trimColor: '#d0ccc0', pantsColor: '#3b5a8c', shoesColor: '#1d1d1f', beltColor: '#4a2f1c' },
     build: 1,
+    body: 'standard',
     headScale: 1.18,
     introLines: ['Je vais te tuer.'],
     winLines: ['Trop facile.'],
+    superLines: ['Prends ça… BBL BUSTER !'],
     voice: { lang: 'fr-FR', pitch: 1, rate: 1 },
     faceGen: {},
     custom: true,
@@ -139,6 +141,32 @@ export class LabScreen implements Screen {
       render();
       return wrap;
     };
+    /** several independent on/off buttons */
+    const toggles = (opts: [string, string, () => boolean, (on: boolean) => void][]) => {
+      const wrap = h('div', { class: 'chips' });
+      const render = () =>
+        wrap.replaceChildren(
+          ...opts.map(([, l, get, set]) => {
+            const b = h('button', { class: get() ? 'on' : '' }, l);
+            b.addEventListener('click', () => {
+              set(!get());
+              render();
+              this.preview();
+            });
+            return b;
+          }),
+        );
+      render();
+      return wrap;
+    };
+    const fgFlag = (key: 'glasses' | 'sunglasses' | 'moustache' | 'beard' | 'freckles', label: string): [string, string, () => boolean, (on: boolean) => void] => [
+      key,
+      label,
+      () => !!d.faceGen?.[key],
+      (on) => (d.faceGen = { ...d.faceGen, [key]: on } as FaceGen),
+    ];
+    const capColor = () => d.accessories?.cap ?? (d.hair.style === 'bandana' ? '#2a8a3a' : '#c83030');
+    const capInput = color(capColor(), (v) => (d.accessories = { ...d.accessories, cap: v }));
 
     // photo
     const file = h('input', { type: 'file', accept: 'image/*' });
@@ -203,13 +231,25 @@ export class LabScreen implements Screen {
             ['afro', 'AFRO'],
             ['long', 'LONGS'],
             ['mohawk', 'IROQUOIS'],
+            ['ponytail', 'QUEUE'],
+            ['bun', 'CHIGNON'],
+            ['cap', 'CASQUETTE'],
+            ['bandana', 'BANDANA'],
             ['bald', 'CHAUVE'],
           ],
           () => d.hair.style,
-          (v) => (d.hair.style = v),
+          (v) => {
+            d.hair.style = v;
+            // headwear gets its own colour so the hair still shows under it
+            if ((v === 'cap' || v === 'bandana') && !d.accessories?.cap) {
+              d.accessories = { ...d.accessories, cap: capColor() };
+              capInput.value = capColor();
+            }
+          },
         ),
         row(color(d.hair.color, (v) => (d.hair.color = v))),
       ),
+      field('COULEUR CASQUETTE / BANDANA', row(capInput)),
       field(
         'HAUT',
         chips<TopStyle>(
@@ -227,9 +267,38 @@ export class LabScreen implements Screen {
       ),
       field('PANTALON / CHAUSSURES', row(color(d.outfit.pantsColor, (v) => (d.outfit.pantsColor = v)), color(d.outfit.shoesColor, (v) => (d.outfit.shoesColor = v)))),
       field('CARRURE', range(0.85, 1.25, 0.01, d.build ?? 1, (v) => (d.build = v))),
+      field(
+        'SILHOUETTE',
+        chips<BodyType>(
+          [
+            ['standard', 'STANDARD'],
+            ['fine', 'FINE'],
+          ],
+          () => d.body ?? 'standard',
+          (v) => (d.body = v),
+        ),
+      ),
+      field('BIDON', range(0, 1, 0.05, d.belly ?? 0, (v) => (d.belly = v))),
+      field(
+        'ACCESSOIRES',
+        chips<'none' | 'chain' | 'whistle'>(
+          [
+            ['none', 'AUCUN'],
+            ['chain', 'CHAÎNE EN OR'],
+            ['whistle', 'CHAÎNE + SIFFLET'],
+          ],
+          () => (d.accessories?.chain ? (d.accessories.whistle ? 'whistle' : 'chain') : 'none'),
+          (v) => (d.accessories = { ...d.accessories, chain: v !== 'none', whistle: v === 'whistle' }),
+        ),
+      ),
+      field(
+        'VISAGE SANS PHOTO',
+        toggles([fgFlag('glasses', 'LUNETTES'), fgFlag('sunglasses', 'LUNETTES NOIRES'), fgFlag('moustache', 'MOUSTACHE'), fgFlag('beard', 'BARBE'), fgFlag('freckles', 'TACHES DE ROUSSEUR')]),
+      ),
       field('TAILLE DE LA TÊTE', range(1, 1.4, 0.01, d.headScale ?? 1.18, (v) => (d.headScale = v))),
       field('PHRASE D’ENTRÉE', text(d.introLines[0] ?? '', 60, (v) => (d.introLines = [v || 'Je vais te tuer.']))),
       field('PHRASE DE VICTOIRE', text(d.winLines[0] ?? '', 60, (v) => (d.winLines = [v || 'Trop facile.']))),
+      field('PHRASE DE L’ULTIME', text(d.superLines?.[0] ?? '', 50, (v) => (d.superLines = v ? [v] : undefined))),
       field('VOIX (GRAVE ↔ AIGUË)', range(0.3, 1.8, 0.05, d.voice?.pitch ?? 1, (v) => (d.voice = { ...d.voice, pitch: v }))),
       h('div', { class: 'row', style: 'display:flex;gap:8px;flex-wrap:wrap' }, save, testVoice, fresh, back),
       this.msg,

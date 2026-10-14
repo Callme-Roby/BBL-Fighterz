@@ -357,7 +357,7 @@ export const ROSTER: FighterDef[] = [
     title: '40 ans de ring',
     face: '',
     skin: '#d2a07c',
-    hair: { style: 'short', color: '#e6e6e2' },
+    hair: { style: 'short', color: '#cfcfca' },
     outfit: {
       top: 'tracksuit',
       topColor: '#c02828',

@@ -29,7 +29,7 @@ import { Showroom } from '../render/showroom';
 import { STAGES } from '../render/stages';
 import { backButton, h, Menu, uiRoot } from '../ui/dom';
 import { goMenu, goTournamentBracket, goTournamentChampion, startFight } from './flow';
-import { controlsText, noButtonFocus, portrait } from './tournamentShared';
+import { controlsEl, noButtonFocus, portrait } from './tournamentShared';
 
 /**
  * Records the result of match (r, m) and saves. Returns the message to flash
@@ -164,7 +164,7 @@ export class TournamentBracketScreen implements Screen {
       h('div', { class: 'tn-next-k' }, `PROCHAIN COMBAT : ${pa.name} vs ${pb.name}`),
       h('div', { class: 'tn-next-title' }, matchTitle(t, cur.r, cur.m)),
       h('div', { class: 'tn-vs' }, vsSide(a, 'l'), h('div', { class: 'tn-vs-word' }, 'VS'), vsSide(b, 'r')),
-      h('div', { class: 'tn-controls' }, ...controlsText(humans).map((l) => h('div', null, l))),
+      controlsEl(humans),
     );
     const items = [{ label: 'COMBATTRE !', sub: humans ? 'Entrée pour lancer le match' : 'Regarder le match', action: () => this.fight() }];
     if (humans === 0) items.push({ label: 'SIMULER', sub: 'Résultat instantané', action: () => this.simulate() });

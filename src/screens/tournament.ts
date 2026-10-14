@@ -98,6 +98,7 @@ export class TournamentSetupScreen implements Screen {
       ],
       () => audio.sfx('cursor'),
     );
+    this.root.classList.add('tn-center');
     this.root.replaceChildren(
       h('div', { class: 'h1' }, 'TOURNOI'),
       h('div', { class: 'status' }, 'Un tournoi est en cours sur cet appareil.'),
@@ -108,6 +109,7 @@ export class TournamentSetupScreen implements Screen {
   // ------------------------------------------------------------ form
   private showForm() {
     this.menu = null;
+    this.root.classList.remove('tn-center');
     const chips = h('div', { class: 'chips tn-count' });
     this.chipsEl = chips;
     for (const n of PARTICIPANT_CHOICES) {

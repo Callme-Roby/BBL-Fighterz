@@ -22,14 +22,26 @@ export class TournamentChampionScreen implements Screen {
   private poseTime = 0;
   private pose = 0;
   private ready = false;
+  private root!: HTMLElement;
+  /** layout mode: text on the left + champion on the right (landscape) or stacked */
+  private wide: boolean | null = null;
 
   constructor(
     private app: App,
     private t: Tournament,
   ) {
     centerShowroom(this.showroom);
-    this.showroom.cameraPos.set(0, 1.3, 3.9);
-    this.showroom.cameraLook.set(0, 1.05, 0);
+  }
+
+  /** Landscape: titles on the left, the champion stands on the right. Portrait: stacked. */
+  private layout() {
+    const wide = this.app.aspect >= 1.1;
+    if (wide === this.wide) return;
+    this.wide = wide;
+    this.root.classList.toggle('wide', wide);
+    const x = wide ? -0.95 : 0;
+    this.showroom.cameraPos.set(x, 1.3, 3.9);
+    this.showroom.cameraLook.set(x, 1.05, 0);
   }
 
   enter() {
@@ -72,22 +84,23 @@ export class TournamentChampionScreen implements Screen {
       ],
       () => audio.sfx('cursor'),
     );
-    const root = h(
+    this.root = h(
       'div',
       { class: 'screen tn-champ' },
       confetti,
       h(
         'div',
         { class: 'tn-champ-top' },
-        h('div', { class: 'tn-champ-title' }, 'CHAMPION DU TOURNOI'),
+        h('div', { class: 'tn-champ-title' }, 'CHAMPION', h('br'), 'DU TOURNOI'),
         h('div', { class: 'tn-champ-name' }, p.name),
         h('div', { class: 'tn-champ-fighter' }, `avec ${def.name}`, p.cpu ? h('span', { class: 'tn-cpu' }, 'CPU') : null),
         loser !== null ? h('div', { class: 'title-hint' }, `vainqueur de la finale contre ${t.participants[loser].name}`) : null,
       ),
       this.menu.el,
     );
-    noButtonFocus(root);
-    uiRoot().append(root);
+    noButtonFocus(this.root);
+    uiRoot().append(this.root);
+    this.layout();
   }
 
   exit() {
@@ -108,6 +121,7 @@ export class TournamentChampionScreen implements Screen {
         return;
       }
     }
+    this.layout();
     // cycle through the victory poses
     if (this.ready) {
       this.poseTime += dt;

@@ -197,7 +197,10 @@ export function createTournament(participants: Participant[], seed = (Math.rando
   const first: Match[] = [];
   for (let i = 0; i < size; i += 2) {
     const side = (seedNo: number): Side => (seedNo <= n ? seedNo - 1 : BYE);
-    first.push({ a: side(order[i]), b: side(order[i + 1]), winner: null, bye: false });
+    // better seed on the left (P1) side: 8 v 9, and a bye is always the right side
+    const hi = Math.min(order[i], order[i + 1]);
+    const lo = Math.max(order[i], order[i + 1]);
+    first.push({ a: side(hi), b: side(lo), winner: null, bye: false });
   }
   const rounds: Match[][] = [first];
   for (let len = size / 4; len >= 1; len /= 2) {
