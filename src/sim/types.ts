@@ -14,6 +14,8 @@ export const IN_RP = 32;
 export const IN_LK = 64;
 export const IN_RK = 128;
 export const IN_BUTTONS = IN_LP | IN_RP | IN_LK | IN_RK;
+/** dedicated "BBL MAX" (ultimate) button */
+export const IN_SUPER = 256;
 
 // ---- relative bits (B/F depend on which side the fighter faces) ----
 export const R_U = 1;
@@ -62,6 +64,9 @@ export type Action =
   | 'throwing'
   | 'thrown'
   | 'throwBreak'
+  | 'superFlash'
+  | 'superCombo'
+  | 'superVictim'
   | 'ko'
   | 'intro'
   | 'win'
@@ -114,6 +119,13 @@ export interface FighterState {
   /** grab partner bookkeeping */
   throwTimer: number;
   counterHit: boolean;
+  /** frames left to honour a BBL MAX button press */
+  superReq: number;
+  /** number of moves chained in the current string (cancel limit) */
+  chain: number;
+  /** last move of the current string and how many times in a row */
+  lastMove: MoveId | null;
+  repeat: number;
 }
 
 export type Phase = 'intro' | 'roundIntro' | 'fight' | 'ko' | 'roundOver' | 'matchOver';
@@ -127,6 +139,7 @@ export type SimEvent =
   | { t: 'throw'; p: number }
   | { t: 'throwBreak'; p: number }
   | { t: 'super'; p: number }
+  | { t: 'superCombo'; p: number }
   | { t: 'ko'; p: number }
   | { t: 'phase'; phase: Phase; round: number }
   | { t: 'fight' }
@@ -169,3 +182,8 @@ export const ROUND_INTRO_FRAMES = 105;
 export const FIGHT_CALL_FRAME = 62;
 export const KO_FRAMES = 170;
 export const ROUND_OVER_FRAMES = 160;
+
+/** BBL MAX: freeze + close-up before the dash strike */
+export const SUPER_FLASH_FRAMES = 96;
+/** length of the cinematic combo when the dash strike connects */
+export const SUPER_COMBO_FRAMES = 132;

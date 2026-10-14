@@ -20,7 +20,14 @@ export class Hud {
   private bars: HTMLDivElement;
   private meterRow: HTMLDivElement;
 
-  constructor(names: [string, string]) {
+  /**
+   * @param names fighter names
+   * @param superKeys key shown next to "BBL MAX !" for each side ('' = CPU / remote)
+   */
+  constructor(
+    names: [string, string],
+    private superKeys: [string, string] = ['E', 'P'],
+  ) {
     const side = (i: number) => {
       const fill = h('div', { class: 'fill' });
       const trail = h('div', { class: 'trail' });
@@ -113,7 +120,8 @@ export class Hud {
       const m = f.meter / MAX_METER;
       this.meters[i].fill.style.width = m * 100 + '%';
       this.meters[i].box.classList.toggle('full', f.meter >= MAX_METER);
-      (this.meters[i].box.firstChild as HTMLElement).textContent = f.meter >= MAX_METER ? 'BBL MAX ! (↓↘→ + POING)' : 'BBL';
+      const key = this.superKeys[i];
+      (this.meters[i].box.firstChild as HTMLElement).textContent = f.meter >= MAX_METER ? (key ? `BBL MAX ! APPUIE SUR ${key}` : 'BBL MAX !') : 'BBL';
 
       // combo counter shows on the attacker's side
       const victim = s.fighters[1 - i];

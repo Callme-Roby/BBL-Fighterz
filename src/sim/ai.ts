@@ -1,5 +1,5 @@
 import { MOVES } from './moves';
-import { IN_DOWN, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_RK, IN_RP, IN_UP, MAX_METER, type GameState } from './types';
+import { IN_DOWN, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_RK, IN_RP, IN_SUPER, IN_UP, MAX_METER, type GameState } from './types';
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
@@ -84,6 +84,9 @@ export class CpuBrain {
     const myTurn = f.action === 'idle' || f.action === 'walkF' || f.action === 'walkB' || f.action === 'crouch';
     if (!myTurn) {
       // chain follow-ups on hit
+      if (f.action === 'attack' && f.moveHit && f.meter >= MAX_METER && o.action === 'hitstun' && r() < this.t.comboSkill * 0.3) {
+        return IN_SUPER;
+      }
       if (f.action === 'attack' && f.moveHit && f.moveId && r() < this.t.comboSkill * 0.25) {
         const next = MOVES[f.moveId].cancels?.[0];
         if (next === 'cross') return IN_RP;
@@ -120,9 +123,9 @@ export class CpuBrain {
       return 0;
     }
 
-    // super when full meter and close
-    if (f.meter >= MAX_METER && dist < 1.8 && r() < 0.03 * this.t.aggression) {
-      this.queue.push(IN_DOWN, IN_DOWN, IN_DOWN | fwd, IN_DOWN | fwd, fwd, fwd | IN_RP);
+    // BBL MAX when the gauge is full and the opponent is close
+    if (f.meter >= MAX_METER && dist < 2.2 && r() < 0.04 * this.t.aggression) {
+      this.queue.push(IN_SUPER, 0);
       return 0;
     }
 

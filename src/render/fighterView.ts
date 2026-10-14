@@ -111,7 +111,8 @@ export class FighterView {
       case 'airAttack':
         clip = 'move:' + f.moveId;
         key += f.moveId;
-        blend = 2;
+        // chained moves start mid-windup: blend a little longer so strings flow
+        blend = f.chain > 1 ? 3 : 2;
         break;
       case 'hitstun': {
         clip = f.crouching ? 'crouchHit' : f.hitLevel === 'high' ? 'hitHigh' : f.hitLevel === 'low' ? 'hitLow' : 'hitMid';
@@ -144,6 +145,12 @@ export class FighterView {
         clip = f.action;
         blend = 3;
         break;
+      case 'superFlash':
+      case 'superCombo':
+      case 'superVictim':
+        clip = f.action;
+        blend = f.action === 'superFlash' ? 5 : 2;
+        break;
       case 'intro':
         clip = 'intro' + (f.variant % 2);
         break;
@@ -160,7 +167,7 @@ export class FighterView {
 
     // blob shadow
     const s = Math.max(0.35, 1 - f.y * 0.35);
-    const lying = f.action === 'knockdown' || f.action === 'ko' || f.action === 'juggle' || f.action === 'thrown';
+    const lying = f.action === 'knockdown' || f.action === 'ko' || f.action === 'juggle' || f.action === 'thrown' || (f.action === 'superVictim' && f.actionFrame > 56);
     this.shadow.position.set(f.x - (lying ? f.facing * 0.5 : 0), 0.015, 0);
     this.shadow.scale.set((lying ? 1.9 : 0.95) * s, 1, 0.75 * s);
     this.updateMaterials(dtFrames);

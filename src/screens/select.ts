@@ -238,7 +238,7 @@ export class SelectScreen implements Screen {
     }
     let msg = '';
     if (this.mode === 'cpu') msg = this.locked[0] ? "Choisis l'adversaire du CPU" : 'Choisis ton perso';
-    else if (this.mode === 'versus') msg = 'J1 : ZQSD/WASD + R/F · J2 : flèches + I/K · Échap = retour';
+    else if (this.mode === 'versus') msg = 'J1 : ZQSD/WASD + R T F G (E = BBL MAX) · J2 : flèches + I O K L (P = BBL MAX)';
     else msg = this.waitingStage ? "L'hôte choisit l'arène…" : this.locked[1 - this.me] ? "L'adversaire est prêt !" : "L'adversaire choisit…";
     this.status.textContent = msg;
   }

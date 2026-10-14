@@ -27,6 +27,19 @@ export interface FightSetup {
   link?: NetLink;
   localPlayer?: 0 | 1;
   skipIntro?: boolean;
+  /** local modes: which sides are played by the CPU (overrides the mode default) */
+  cpuSides?: [boolean, boolean];
+  /** set when the match is part of a tournament */
+  tournament?: TournamentHooks;
+}
+
+export interface TournamentHooks {
+  /** short label shown on the VS screen / HUD, e.g. "DEMI-FINALE" */
+  title: string;
+  /** called when the match is over and the players continue (2 = draw) */
+  onResult(winner: 0 | 1 | 2): void;
+  /** called when the players leave the match without a result (pause menu) */
+  onAbort(): void;
 }
 
 const STEP = 1 / 60;
@@ -62,14 +75,17 @@ export class FightScreen implements Screen {
     // deterministic variant choices for intro animations (same on both peers)
     this.state.fighters[0].variant = setup.seed % 2;
     this.state.fighters[1].variant = (setup.seed >> 1) % 2;
-    if (setup.mode === 'cpu') this.cpu[1] = new CpuBrain(setup.difficulty);
+    if (setup.mode !== 'online') {
+      const cpuSides = setup.cpuSides ?? (setup.mode === 'cpu' ? [false, true] : [false, false]);
+      for (const i of [0, 1] as const) if (cpuSides[i]) this.cpu[i] = new CpuBrain(setup.difficulty);
+    }
     if (setup.mode === 'online' && setup.link) {
       // created right away so no early input packet is lost
       this.session = new RollbackSession(this.state, setup.localPlayer ?? 0, setup.link);
       this.unsubs.push(setup.link.on((m) => this.onNet(m)));
       this.unsubs.push(setup.link.onClose((reason) => this.disconnected(reason)));
     }
-    this.hud = new Hud([setup.p1.name, setup.p2.name]);
+    this.hud = new Hud([setup.p1.name, setup.p2.name], this.superKeys());
     // console access for testing: open the game with ?debug
     if (location.search.includes('debug')) (window as unknown as { bblFight: unknown }).bblFight = this;
     FightWorld.create(setup.p1, setup.p2, setup.stageId).then((w) => {
@@ -108,7 +124,10 @@ export class FightScreen implements Screen {
       import('../render/faceTexture').then(({ loadFace }) => loadFace(def).then((f) => (ph.style.backgroundImage = `url(${f.portraitUrl})`)));
       return h('div', { class: 'side ' + cls }, ph, h('div', { class: 'pname ' + (cls === 'l' ? 'p1' : 'p2') }, def.name, h('span', { class: 'ttl' }, def.title)));
     };
-    this.vsEl = h('div', { class: 'vs' }, side(this.setup.p1, 'l'), h('div', { class: 'vsword' }, 'VS'), side(this.setup.p2, 'r'));
+    const mid = h('div', { style: 'display:flex;flex-direction:column;align-items:center;gap:10px' });
+    if (this.setup.tournament) mid.append(h('div', { class: 'title-hint', style: 'color:#fff;font-size:12px' }, this.setup.tournament.title));
+    mid.append(h('div', { class: 'vsword' }, 'VS'));
+    this.vsEl = h('div', { class: 'vs' }, side(this.setup.p1, 'l'), mid, side(this.setup.p2, 'r'));
     uiRoot().append(this.vsEl);
     this.vsUntil = performance.now() + 2600;
     audio.sfx('super');
@@ -143,9 +162,29 @@ export class FightScreen implements Screen {
   }
 
   // ---------------------------------------------------------------- input
+  private get humans(): number {
+    return (this.cpu[0] ? 0 : 1) + (this.cpu[1] ? 0 : 1);
+  }
+
   private localBits(player: 0 | 1): number {
-    if (this.setup.mode === 'versus') return input.bits(player, 'versus');
+    // two humans share the keyboard; a single human gets every key
+    if (this.setup.mode !== 'online' && this.humans >= 2) return input.bits(player, 'versus');
     return input.bits(0, 'solo');
+  }
+
+  /** key shown in the HUD next to "BBL MAX !" for each side */
+  private superKeys(): [string, string] {
+    if (this.setup.mode === 'online') return this.setup.localPlayer === 1 ? ['', 'E'] : ['E', ''];
+    if (this.humans >= 2) return ['E', 'P'];
+    return [this.cpu[0] ? '' : 'E', this.cpu[1] ? '' : 'E'];
+  }
+
+  /** side played by the human using the touch controls / solo keys (-1 = none) */
+  private get localSide(): number {
+    if (this.setup.mode === 'online') return this.setup.localPlayer ?? 0;
+    if (!this.cpu[0]) return 0;
+    if (!this.cpu[1]) return 1;
+    return -1;
   }
 
   private handleMenuInput() {
@@ -187,14 +226,22 @@ export class FightScreen implements Screen {
       return;
     }
     audio.duck(true);
+    const t = this.setup.tournament;
     this.menu = new Menu(
-      [
-        { label: 'REPRENDRE', action: () => this.togglePause() },
-        { label: 'RECOMMENCER', action: () => this.restart(false) },
-        { label: 'CHANGER DE PERSO', action: () => goSelect(this.setup.mode) },
-        { label: 'COMMANDES', action: () => this.showHelp() },
-        { label: 'MENU PRINCIPAL', action: () => goMenu() },
-      ],
+      t
+        ? [
+            { label: 'REPRENDRE', action: () => this.togglePause() },
+            { label: 'RECOMMENCER LE MATCH', action: () => this.restart(false) },
+            { label: 'COMMANDES', action: () => this.showHelp() },
+            { label: 'RETOUR AU TABLEAU', sub: 'Le match ne compte pas', action: () => t.onAbort() },
+          ]
+        : [
+            { label: 'REPRENDRE', action: () => this.togglePause() },
+            { label: 'RECOMMENCER', action: () => this.restart(false) },
+            { label: 'CHANGER DE PERSO', action: () => goSelect(this.setup.mode) },
+            { label: 'COMMANDES', action: () => this.showHelp() },
+            { label: 'MENU PRINCIPAL', action: () => goMenu() },
+          ],
       () => audio.sfx('cursor'),
     );
     this.overlay = h('div', { class: 'overlay' }, h('div', { class: 'h1' }, 'PAUSE'), this.menu.el);
@@ -204,7 +251,7 @@ export class FightScreen implements Screen {
   private showHelp() {
     this.closeOverlay();
     this.menu = new Menu([{ label: 'RETOUR', action: () => (this.togglePause(), this.togglePause()) }], () => audio.sfx('cursor'));
-    this.overlay = h('div', { class: 'overlay' }, h('div', { class: 'panel options' }, controlsHelp(this.setup.mode === 'versus')), this.menu.el);
+    this.overlay = h('div', { class: 'overlay' }, h('div', { class: 'panel options' }, controlsHelp(this.humans >= 2 && this.setup.mode !== 'online')), this.menu.el);
     uiRoot().append(this.overlay);
   }
 
@@ -251,11 +298,19 @@ export class FightScreen implements Screen {
           },
           { label: 'QUITTER', action: () => this.quitToMenu() },
         ]
-      : [
-          { label: 'REVANCHE', action: () => this.restart(true) },
-          { label: 'CHANGER DE PERSO', action: () => goSelect(this.setup.mode) },
-          { label: 'MENU PRINCIPAL', action: () => goMenu() },
-        ];
+      : this.setup.tournament
+        ? [
+            {
+              label: this.state.matchWinner === 2 ? 'REJOUER (MATCH NUL)' : 'CONTINUER LE TOURNOI',
+              action: () => this.setup.tournament!.onResult(this.state.matchWinner as 0 | 1 | 2),
+            },
+            { label: 'REJOUER LE MATCH', sub: 'Ce résultat ne compte pas', action: () => this.restart(true) },
+          ]
+        : [
+            { label: 'REVANCHE', action: () => this.restart(true) },
+            { label: 'CHANGER DE PERSO', action: () => goSelect(this.setup.mode) },
+            { label: 'MENU PRINCIPAL', action: () => goMenu() },
+          ];
     this.menu = new Menu(items, () => audio.sfx('cursor'));
     const w = this.state.matchWinner;
     const title = w === 2 ? 'MATCH NUL' : (w === 0 ? this.setup.p1.name : this.setup.p2.name) + ' GAGNE';
@@ -299,6 +354,8 @@ export class FightScreen implements Screen {
 
     this.world.render(this.app.pipeline, this.state, dt, this.app.aspect);
     this.hud.update(this.state, dt * 60);
+    const side = this.localSide;
+    this.app.touch.setSuperReady(side >= 0 && this.state.fighters[side].meter >= 100);
     if (online && this.session) {
       this.hud.setNetInfo(`${this.session.pingMs} ms${this.session.desynced ? ' · DESYNC!' : ''}`);
     }
@@ -372,10 +429,29 @@ export class FightScreen implements Screen {
           void audio.announcer('perfect');
         }, 1200);
         break;
-      case 'super':
-        this.app.pipeline.post.uFlash.value = 0.5;
+      case 'super': {
+        this.app.pipeline.post.uFlash.value = 0.6;
         this.app.pipeline.post.uFlashColor.value.setRGB(1, 0.6, 0.2);
         setTimeout(() => this.app.pipeline.post.uFlashColor.value.setRGB(1, 1, 1), 300);
+        // the fighter shouts their BBL MAX line during the close-up
+        const def = ev.p === 0 ? this.setup.p1 : this.setup.p2;
+        const lines = def.superLines?.length ? def.superLines : ['Prends ça… BBL MAX !'];
+        const line = lines[(this.setup.seed + this.state.frame) % lines.length];
+        this.hud.announce('BBL MAX', 'small super', 70);
+        this.hud.subtitle(def.name, this.world!.faces[ev.p].portraitUrl, line);
+        audio.duck(true);
+        void audio.say(line, { lang: def.voice?.lang, pitch: def.voice?.pitch, rate: (def.voice?.rate ?? 1) * 1.05 });
+        const myFrame = this.state.frame;
+        setTimeout(() => {
+          if (this.disposed) return;
+          this.hud.clearSubtitle();
+          audio.duck(false);
+          void myFrame;
+        }, 2600);
+        break;
+      }
+      case 'superCombo':
+        this.app.pipeline.post.uFlash.value = 0.55;
         break;
       case 'throwBreak':
         this.hud.announce('ÉCHAPPÉ !', 'small', 40);

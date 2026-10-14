@@ -43,6 +43,7 @@ Rien d'autre à configurer : pas de serveur, pas de base de données.
 | Poing droit | I | T | O (ou Num5) | △ / Y |
 | Pied gauche | J | F | K (ou Num1) | ✕ / A |
 | Pied droit | K | G | L (ou Num2) | ○ / B |
+| **BBL MAX** (jauge pleine) | E (ou O) | E | P (ou Num6) | R1 / R2 |
 | Pause | Échap | Échap | Échap | Start |
 
 Les touches sont lues par position physique : ZQSD sur AZERTY = WASD sur QWERTY.
@@ -50,10 +51,12 @@ Sur téléphone / tablette, un joystick et 4 boutons tactiles apparaissent.
 
 **Mécaniques** : garde en maintenant *arrière* (debout = bloque hauts et moyens, accroupi = bloque les bas,
 les coups hauts passent au-dessus des accroupis) · dash avant/arrière (double tape) · choppe
-(Poing G + Pied G, ou L1) avec échappement (appuyer sur un poing juste après) · chaînes
-(Poing G → Poing D → Pied D…) · launchers (bas + Poing D, avant + Pied G) et **juggles** ·
-coups contre (*counter hit*) · jauge **BBL** qui se remplit en tapant/encaissant :
-pleine, **↓ ↘ → + Poing** déclenche le super **BBL BUSTER**.
+(Poing G + Pied G, ou L1) avec échappement (appuyer sur un poing juste après) · **enchaînements
+libres** : tout coup qui touche (ou est bloqué) peut s'annuler dans n'importe quel autre, jusqu'à
+6 coups · launchers (bas + Poing D, avant + Pied G) et **juggles** · coups contre (*counter hit*) ·
+jauge **BBL** qui se remplit en tapant/encaissant : pleine, la touche **BBL MAX** déclenche l'ultime
+(gros plan sur le visage + réplique, puis ruée : si elle touche, combo cinématique en 6 coups),
+utilisable aussi en fin de combo.
 
 ## Ajouter tes potes
 

@@ -11,6 +11,7 @@ import {
   IN_RIGHT,
   IN_RK,
   IN_RP,
+  IN_SUPER,
   IN_UP,
   INTRO_FRAMES,
   KO_FRAMES,
@@ -27,6 +28,8 @@ import {
   ROUND_OVER_FRAMES,
   ROUND_TIME,
   START_X,
+  SUPER_COMBO_FRAMES,
+  SUPER_FLASH_FRAMES,
   type Action,
   type FighterState,
   type GameState,
@@ -41,13 +44,18 @@ const GRAVITY = 0.0088;
 const JUGGLE_GRAVITY = 0.0094;
 const JUMP_VY = 0.142;
 const JUMP_VX = 0.046;
-const WALK_F = 0.034;
-const WALK_B = 0.027;
+const WALK_F = 0.038;
+const WALK_B = 0.03;
 const DASH_F_FRAMES = 15;
 const DASH_B_FRAMES = 18;
 const PREJUMP_FRAMES = 4;
 const LAND_FRAMES = 4;
-const BUFFER_FRAMES = 6;
+const BUFFER_FRAMES = 8;
+/** frames after the active window during which a connecting move can be cancelled */
+const CHAIN_WINDOW = 12;
+/** max moves in one chained string */
+const MAX_CHAIN = 6;
+const SUPER_BUFFER = 8;
 const DOUBLE_TAP_FRAMES = 12;
 const KNOCKDOWN_MIN = 26;
 const KNOCKDOWN_MAX = 62;
@@ -99,6 +107,10 @@ export function createFighter(side: 0 | 1): FighterState {
     variant: 0,
     throwTimer: 0,
     counterHit: false,
+    superReq: 0,
+    chain: 0,
+    lastMove: null,
+    repeat: 0,
   };
 }
 
@@ -150,7 +162,7 @@ function toRel(input: number, facing: 1 | -1): number {
   if (input & back) r |= R_B;
   // left+right together cancel out
   if ((r & R_F) && (r & R_B)) r &= ~(R_F | R_B);
-  return r | (input & IN_BUTTONS);
+  return r | (input & (IN_BUTTONS | IN_SUPER));
 }
 
 function isAirborne(f: FighterState): boolean {
@@ -184,7 +196,8 @@ function detectQcf(hist: number[]): boolean {
 function chooseGroundMove(f: FighterState, btn: number, dir: number, qcf: boolean): MoveId | null {
   // throw: LP + LK together
   if ((btn & IN_LP) && (btn & IN_LK)) return 'throw';
-  if (qcf && (btn & (IN_RP | IN_LP)) && f.meter >= MAX_METER) return 'super';
+  void qcf;
+  void f;
   const down = (dir & R_D) !== 0;
   const fwd = (dir & R_F) !== 0;
   if (down) {
@@ -212,14 +225,21 @@ function chooseAirMove(btn: number): MoveId | null {
   return null;
 }
 
-function startMove(s: GameState, f: FighterState, o: FighterState, id: MoveId, idx: number) {
+/**
+ * @param skip  frames of startup skipped (chained moves come out faster and blend from the previous one)
+ * @param chained true when the move cancels a previous one in a string
+ */
+function startMove(s: GameState, f: FighterState, o: FighterState, id: MoveId, idx: number, skip = 0, chained = false) {
   const m = MOVES[id];
   if (m.meterCost) {
     if (f.meter < m.meterCost) return;
     f.meter -= m.meterCost;
   }
+  f.chain = chained ? f.chain + 1 : 1;
+  f.repeat = f.lastMove === id ? f.repeat + 1 : 1;
+  f.lastMove = id;
   f.action = m.air ? 'airAttack' : 'attack';
-  f.actionFrame = 1;
+  f.actionFrame = 1 + Math.max(0, Math.min(skip, m.startup - 2));
   f.moveId = id;
   f.moveHit = false;
   f.crouching = !!m.crouching;
@@ -253,6 +273,9 @@ function processInput(s: GameState, f: FighterState, input: number) {
   const dir = f.rel & R_DIRS;
   f.dirHist.push(dir);
   if (f.dirHist.length > 20) f.dirHist.shift();
+
+  if (f.rel & IN_SUPER && !(f.prevRel & IN_SUPER)) f.superReq = SUPER_BUFFER;
+  else if (f.superReq > 0) f.superReq--;
 
   const pressed = f.rel & ~f.prevRel & IN_BUTTONS;
   if (pressed) {
@@ -329,10 +352,25 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
       break;
 
     case 'land':
+      if (tryStartSuper(s, f, o, idx)) break;
       if (f.actionFrame >= LAND_FRAMES) toNeutral(f);
       break;
 
+    case 'superFlash':
+      // close-up & shout, then the dash strike
+      if (f.actionFrame >= SUPER_FLASH_FRAMES) startMove(s, f, o, 'super', idx);
+      break;
+
+    case 'superCombo':
+      runSuperCombo(s, f, o, idx);
+      break;
+
+    case 'superVictim':
+      // driven by the attacker's script
+      break;
+
     case 'dashF':
+      if (tryStartSuper(s, f, o, idx)) break;
       f.x += f.facing * 0.105 * (1 - f.actionFrame / (DASH_F_FRAMES + 4));
       if (f.actionFrame >= 5) {
         const b = consumeBuffer(f);
@@ -365,11 +403,19 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
         startMove(s, f, o, 'throw', idx);
         break;
       }
-      // chains
-      if (f.moveHit && m.cancels && f.actionFrame >= m.startup && f.actionFrame <= m.startup + m.active + 12) {
+      if (!m.throw && f.moveId !== 'super') {
+        const inWindow = f.actionFrame >= m.startup && f.actionFrame <= m.startup + m.active + CHAIN_WINDOW;
+        // BBL MAX can cancel any connecting move
+        if (f.moveHit && inWindow && tryStartSuper(s, f, o, idx)) break;
         if (f.bufBtn && f.bufAge <= BUFFER_FRAMES) {
-          const next = chooseGroundMove(f, f.bufBtn, f.bufDir, false);
-          if (next && m.cancels.includes(next)) {
+          const next = chooseGroundMove(f, f.bufBtn, f.bufDir | (f.rel & R_D), false);
+          // chains: any move that connected (hit or block) can flow into another one
+          if (next && next !== 'throw' && f.moveHit && inWindow && f.chain < MAX_CHAIN && !(next === f.moveId && f.repeat >= 2)) {
+            startMove(s, f, o, next, idx, Math.floor(MOVES[next].startup * 0.4), true);
+            break;
+          }
+          // whiffs: the second half of the recovery can be interrupted by the next attack
+          if (next && !f.moveHit && f.actionFrame >= m.startup + m.active + Math.ceil(m.recovery * 0.5)) {
             startMove(s, f, o, next, idx);
             break;
           }
@@ -481,6 +527,11 @@ function neutral(s: GameState, f: FighterState, o: FighterState, idx: number, di
   f.comboCount = 0;
   f.comboDamage = 0;
   f.juggleCount = 0;
+  f.chain = 0;
+  f.lastMove = null;
+  f.repeat = 0;
+
+  if (tryStartSuper(s, f, o, idx)) return;
 
   const b = consumeBuffer(f);
   if (b) {
@@ -526,10 +577,130 @@ function neutral(s: GameState, f: FighterState, o: FighterState, idx: number, di
 }
 
 // ---------------------------------------------------------------------------
+// BBL MAX (ultimate)
+// ---------------------------------------------------------------------------
+function isSuperAction(a: Action) {
+  return a === 'superFlash' || a === 'superCombo' || a === 'superVictim';
+}
+
+/** Start the BBL MAX if the button was pressed with a full gauge. */
+function tryStartSuper(s: GameState, f: FighterState, o: FighterState, idx: number): boolean {
+  if (f.superReq <= 0 || f.meter < MAX_METER || f.y > 0.001) return false;
+  if (isSuperAction(o.action) || o.action === 'thrown' || o.action === 'throwing') return false;
+  f.superReq = 0;
+  f.meter = 0;
+  setAction(f, 'superFlash');
+  f.vx = 0;
+  f.crouching = false;
+  f.invuln = SUPER_FLASH_FRAMES + 18;
+  f.facing = o.x >= f.x ? 1 : -1;
+  // the whole world stops while the fighter powers up
+  o.frozen = Math.max(o.frozen, SUPER_FLASH_FRAMES);
+  s.events.push({ t: 'super', p: idx });
+  return true;
+}
+
+/** [frame, damage, strength, impact height (-1 = victim's body)] of the cinematic combo */
+const SUPER_HITS: [number, number, 'light' | 'medium' | 'heavy', number][] = [
+  [8, 6, 'light', 1.55],
+  [18, 7, 'medium', 1.6],
+  [30, 8, 'medium', 1.15],
+  [44, 8, 'medium', 1.5],
+  [58, 12, 'heavy', 1.4],
+  [92, 19, 'heavy', -1],
+];
+const SUPER_FINAL_HIT = 92;
+
+function superVictimY(k: number): number {
+  if (k < 58) return 0;
+  if (k < 80) {
+    const t = (k - 58) / 22;
+    return 1.5 * t * (2 - t);
+  }
+  if (k < 92) return 1.5 + (k - 80) * 0.01;
+  if (k < 102) return Math.max(0, 1.62 * (1 - (k - 92) / 10));
+  return 0;
+}
+
+function superAttackerY(k: number): number {
+  if (k < 66) return 0;
+  if (k < 84) {
+    const t = (k - 66) / 18;
+    return 1.8 * t * (2 - t);
+  }
+  if (k < 92) return 1.8;
+  if (k < 106) return Math.max(0, 1.8 * (1 - (k - 92) / 14));
+  return 0;
+}
+
+function superDist(k: number): number {
+  if (k < 58) return 0.7;
+  if (k < 92) return 0.7 + (k - 58) * 0.006;
+  return 0.9;
+}
+
+function startSuperCombo(s: GameState, a: FighterState, v: FighterState, idx: number) {
+  setAction(a, 'superCombo');
+  setAction(v, 'superVictim');
+  a.actionFrame = 1;
+  v.actionFrame = 1;
+  v.facing = (a.facing * -1) as 1 | -1;
+  v.crouching = false;
+  v.frozen = 0;
+  s.events.push({ t: 'superCombo', p: idx });
+}
+
+/** Scripted cinematic combo: positions and hits are a pure function of the frame. */
+function runSuperCombo(s: GameState, a: FighterState, v: FighterState, idx: number) {
+  const k = a.actionFrame;
+  v.actionFrame = k;
+  a.vx = a.vy = v.vx = v.vy = 0;
+  a.y = superAttackerY(k);
+  v.y = superVictimY(k);
+  const d = superDist(k);
+  let vx = a.x + a.facing * d;
+  if (vx > ARENA_HALF_WIDTH || vx < -ARENA_HALF_WIDTH) {
+    vx = vx > 0 ? ARENA_HALF_WIDTH : -ARENA_HALF_WIDTH;
+    a.x = vx - a.facing * d;
+  }
+  v.x = vx;
+  for (const [hf, dmg, strength, hy] of SUPER_HITS) {
+    if (k !== hf) continue;
+    const last = hf === SUPER_FINAL_HIT;
+    // the victim can only be finished by the last blow (the cinematic always plays out)
+    v.hp = last ? Math.max(0, v.hp - dmg) : Math.max(1, v.hp - dmg);
+    v.comboCount++;
+    v.comboDamage += dmg;
+    s.hitstop = Math.max(s.hitstop, last ? 16 : strength === 'heavy' ? 10 : 5);
+    s.events.push({
+      t: 'hit',
+      p: idx,
+      x: (a.x + v.x) / 2 + a.facing * 0.12,
+      y: hy < 0 ? v.y + 0.9 : hy,
+      strength,
+      counter: last,
+      dmg,
+    });
+  }
+  if (k === 102) s.events.push({ t: 'fall', p: 1 - idx });
+  if (k >= SUPER_COMBO_FRAMES) {
+    toNeutral(a);
+    a.y = 0;
+    v.y = 0;
+    if (v.hp <= 0) {
+      v.koed = true;
+      setAction(v, 'ko');
+    } else {
+      setAction(v, 'knockdown');
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // physics
 // ---------------------------------------------------------------------------
 function physics(s: GameState, f: FighterState, idx: number) {
-  if (f.frozen > 0) return;
+  if (f.frozen > 0 || f.action === 'superCombo' || f.action === 'superVictim') return;
   const airborne = f.action === 'jump' || f.action === 'airAttack' || f.action === 'juggle' || f.y > 0;
   if (airborne) {
     f.x += f.vx;
@@ -567,7 +738,7 @@ function resolvePositions(s: GameState) {
     if (f.x > lim) f.x = lim;
   }
   // push boxes (only when both are close to the ground, so jumps can cross a little)
-  const thrown = a.action === 'thrown' || b.action === 'thrown';
+  const thrown = a.action === 'thrown' || b.action === 'thrown' || a.action === 'superVictim' || b.action === 'superVictim';
   if (!thrown) {
     const dx = b.x - a.x;
     const dist = Math.abs(dx);
@@ -642,6 +813,9 @@ function checkHit(a: FighterState, d: FighterState, ai: number): PendingHit | nu
     case 'thrown':
     case 'throwing':
     case 'throwBreak':
+    case 'superFlash':
+    case 'superCombo':
+    case 'superVictim':
     case 'win':
     case 'lose':
       return null;
@@ -680,6 +854,8 @@ function checkHit(a: FighterState, d: FighterState, ai: number): PendingHit | nu
 function applyHit(s: GameState, h: PendingHit) {
   const a = s.fighters[h.a];
   const d = s.fighters[h.d];
+  // the other fighter's BBL MAX cinematic started on this very frame
+  if (a.action === 'superVictim' || d.action === 'superCombo') return;
   const m = h.move;
   a.moveHit = true;
   const hx = a.x + a.facing * Math.min(m.reach, Math.abs(d.x - a.x) - 0.1);
@@ -757,6 +933,9 @@ function applyHit(s: GameState, h: PendingHit) {
 
   s.hitstop = Math.max(s.hitstop, HITSTOP[m.strength] + (h.counter ? 3 : 0));
   s.events.push({ t: 'hit', p: h.a, x: hx, y: hy, strength: m.strength, counter: h.counter, dmg });
+
+  // BBL MAX dash strike connected: cinematic combo
+  if (m.id === 'super' && d.hp > 0) startSuperCombo(s, a, d, h.a);
 }
 
 // ---------------------------------------------------------------------------
@@ -958,6 +1137,8 @@ function runFight(s: GameState, inputs: readonly [number, number]) {
     if (h2) applyHit(s, h2);
   }
 
+  // the clock and KOs wait for the BBL MAX cinematic to finish
+  if (isSuperAction(a.action) || isSuperAction(b.action)) return;
   s.timer--;
 
   // KO / time up

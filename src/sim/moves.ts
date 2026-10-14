@@ -45,57 +45,57 @@ const M = (m: MoveDef) => m;
 
 export const MOVES: Record<MoveId, MoveDef> = {
   jab: M({
-    id: 'jab', name: 'Jab', startup: 8, active: 3, recovery: 11, damage: 8, level: 'high',
-    reach: 0.72, hitY: 1.6, hitstun: 16, blockstun: 10, pushHit: 0.035, pushBlock: 0.04,
+    id: 'jab', name: 'Jab', startup: 7, active: 3, recovery: 9, damage: 8, level: 'high',
+    reach: 0.74, hitY: 1.6, hitstun: 18, blockstun: 10, pushHit: 0.035, pushBlock: 0.04,
     strength: 'light', cancels: ['cross', 'jab', 'powerPunch'],
   }),
   cross: M({
-    id: 'cross', name: 'Direct', startup: 10, active: 3, recovery: 15, damage: 12, level: 'high',
-    reach: 0.82, hitY: 1.6, hitstun: 19, blockstun: 12, pushHit: 0.05, pushBlock: 0.05,
+    id: 'cross', name: 'Direct', startup: 9, active: 3, recovery: 13, damage: 12, level: 'high',
+    reach: 0.84, hitY: 1.6, hitstun: 21, blockstun: 12, pushHit: 0.05, pushBlock: 0.05,
     strength: 'medium', cancels: ['roundhouse', 'frontKick'], advance: 0.08,
   }),
   frontKick: M({
-    id: 'frontKick', name: 'Front kick', startup: 13, active: 4, recovery: 18, damage: 15, level: 'mid',
+    id: 'frontKick', name: 'Front kick', startup: 12, active: 4, recovery: 15, damage: 15, level: 'mid',
     reach: 0.98, hitY: 1.15, hitstun: 20, blockstun: 12, pushHit: 0.07, pushBlock: 0.06,
     strength: 'medium', cancels: ['roundhouse'], advance: 0.06,
   }),
   roundhouse: M({
-    id: 'roundhouse', name: 'Roundhouse', startup: 17, active: 4, recovery: 23, damage: 22, level: 'high',
+    id: 'roundhouse', name: 'Roundhouse', startup: 15, active: 4, recovery: 20, damage: 22, level: 'high',
     reach: 1.02, hitY: 1.65, hitstun: 22, blockstun: 14, pushHit: 0.08, pushBlock: 0.07,
     strength: 'heavy', knockdown: true, advance: 0.08,
   }),
   elbow: M({
-    id: 'elbow', name: 'Coude', startup: 12, active: 3, recovery: 14, damage: 14, level: 'mid',
+    id: 'elbow', name: 'Coude', startup: 11, active: 3, recovery: 12, damage: 14, level: 'mid',
     reach: 0.7, hitY: 1.3, hitstun: 20, blockstun: 11, pushHit: 0.06, pushBlock: 0.05,
     strength: 'medium', cancels: ['powerPunch'], advance: 0.18,
   }),
   powerPunch: M({
-    id: 'powerPunch', name: 'Grosse patate', startup: 18, active: 4, recovery: 22, damage: 24, level: 'mid',
+    id: 'powerPunch', name: 'Grosse patate', startup: 16, active: 4, recovery: 20, damage: 24, level: 'mid',
     reach: 0.92, hitY: 1.35, hitstun: 26, blockstun: 16, pushHit: 0.16, pushBlock: 0.1,
     strength: 'heavy', knockdown: true, advance: 0.3,
   }),
   knee: M({
-    id: 'knee', name: 'Genou', startup: 14, active: 4, recovery: 22, damage: 16, level: 'mid',
+    id: 'knee', name: 'Genou', startup: 13, active: 4, recovery: 19, damage: 16, level: 'mid',
     reach: 0.62, hitY: 1.1, hitstun: 20, blockstun: 12, pushHit: 0.02, pushBlock: 0.05,
     strength: 'heavy', launch: 0.15, advance: 0.32,
   }),
   crouchJab: M({
-    id: 'crouchJab', name: 'Jab bas', startup: 9, active: 3, recovery: 11, damage: 7, level: 'low',
-    reach: 0.72, hitY: 0.55, hitstun: 14, blockstun: 9, pushHit: 0.03, pushBlock: 0.035,
+    id: 'crouchJab', name: 'Jab bas', startup: 8, active: 3, recovery: 9, damage: 7, level: 'low',
+    reach: 0.74, hitY: 0.55, hitstun: 16, blockstun: 9, pushHit: 0.03, pushBlock: 0.035,
     strength: 'light', crouching: true, cancels: ['crouchJab', 'lowKick', 'uppercut'],
   }),
   uppercut: M({
-    id: 'uppercut', name: 'Uppercut', startup: 14, active: 4, recovery: 24, damage: 18, level: 'mid',
+    id: 'uppercut', name: 'Uppercut', startup: 13, active: 4, recovery: 21, damage: 18, level: 'mid',
     reach: 0.72, hitY: 1.45, hitstun: 22, blockstun: 14, pushHit: 0.02, pushBlock: 0.05,
     strength: 'heavy', launch: 0.165, advance: 0.12,
   }),
   lowKick: M({
-    id: 'lowKick', name: 'Low kick', startup: 11, active: 3, recovery: 15, damage: 10, level: 'low',
+    id: 'lowKick', name: 'Low kick', startup: 10, active: 3, recovery: 13, damage: 10, level: 'low',
     reach: 0.92, hitY: 0.25, hitstun: 16, blockstun: 10, pushHit: 0.04, pushBlock: 0.04,
     strength: 'medium', crouching: true, cancels: ['sweep'],
   }),
   sweep: M({
-    id: 'sweep', name: 'Balayette', startup: 16, active: 5, recovery: 26, damage: 16, level: 'low',
+    id: 'sweep', name: 'Balayette', startup: 15, active: 5, recovery: 23, damage: 16, level: 'low',
     reach: 1.05, hitY: 0.2, hitstun: 20, blockstun: 14, pushHit: 0.04, pushBlock: 0.05,
     strength: 'heavy', crouching: true, knockdown: true,
   }),
@@ -115,9 +115,9 @@ export const MOVES: Record<MoveId, MoveDef> = {
     strength: 'heavy', throw: true,
   }),
   super: M({
-    id: 'super', name: 'BBL BUSTER', startup: 14, active: 5, recovery: 32, damage: 50, level: 'mid',
-    reach: 1.0, hitY: 1.35, hitstun: 30, blockstun: 22, pushHit: 0.2, pushBlock: 0.16,
-    strength: 'heavy', launch: 0.2, advance: 0.9, meterCost: 100, invulnFrames: 20, freezeOpponent: 36,
+    id: 'super', name: 'BBL MAX', startup: 10, active: 6, recovery: 34, damage: 6, level: 'mid',
+    reach: 1.05, hitY: 1.35, hitstun: 30, blockstun: 24, pushHit: 0.2, pushBlock: 0.17,
+    strength: 'heavy', advance: 1.5, invulnFrames: 16,
   }),
 };
 

@@ -1,4 +1,4 @@
-import { IN_DOWN, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_RK, IN_RP, IN_UP } from '../sim/types';
+import { IN_DOWN, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_RK, IN_RP, IN_SUPER, IN_UP } from '../sim/types';
 
 /**
  * Keyboard (physical key codes, so AZERTY & QWERTY both work), gamepads and
@@ -7,9 +7,9 @@ import { IN_DOWN, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_RK, IN_RP, IN_UP } from '.
 
 export type ControlMode = 'solo' | 'versus';
 
-type Binding = Record<'up' | 'down' | 'left' | 'right' | 'lp' | 'rp' | 'lk' | 'rk', string[]>;
+type Binding = Record<'up' | 'down' | 'left' | 'right' | 'lp' | 'rp' | 'lk' | 'rk' | 'super', string[]>;
 
-/** P1 when two players share the keyboard: ZQSD/WASD + R T F G */
+/** P1 when two players share the keyboard: ZQSD/WASD + R T F G, E = BBL MAX */
 export const P1_KEYS: Binding = {
   up: ['KeyW'],
   down: ['KeyS'],
@@ -19,8 +19,9 @@ export const P1_KEYS: Binding = {
   rp: ['KeyT'],
   lk: ['KeyF'],
   rk: ['KeyG'],
+  super: ['KeyE'],
 };
-/** P2 when two players share the keyboard: arrows + I O K L (or numpad 4 5 1 2) */
+/** P2 when two players share the keyboard: arrows + I O K L (or numpad 4 5 1 2), P = BBL MAX */
 export const P2_KEYS: Binding = {
   up: ['ArrowUp'],
   down: ['ArrowDown'],
@@ -30,8 +31,9 @@ export const P2_KEYS: Binding = {
   rp: ['KeyO', 'Numpad5'],
   lk: ['KeyK', 'Numpad1'],
   rk: ['KeyL', 'Numpad2'],
+  super: ['KeyP', 'Numpad6'],
 };
-/** Solo player: everything (WASD or arrows, U I J K or R T F G) */
+/** Solo player: everything (WASD or arrows, U I J K or R T F G, E or O = BBL MAX) */
 export const SOLO_KEYS: Binding = {
   up: ['KeyW', 'ArrowUp', 'Space'],
   down: ['KeyS', 'ArrowDown'],
@@ -41,6 +43,7 @@ export const SOLO_KEYS: Binding = {
   rp: ['KeyI', 'KeyT', 'Numpad5'],
   lk: ['KeyJ', 'KeyF', 'Numpad1'],
   rk: ['KeyK', 'KeyG', 'Numpad2'],
+  super: ['KeyE', 'KeyO', 'Numpad6'],
 };
 
 const BIT: Record<keyof Binding, number> = {
@@ -52,6 +55,7 @@ const BIT: Record<keyof Binding, number> = {
   rp: IN_RP,
   lk: IN_LK,
   rk: IN_RK,
+  super: IN_SUPER,
 };
 
 export type MenuAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'back' | 'start';
@@ -87,7 +91,6 @@ const MENU_KEYS: Record<string, [MenuAction, number]> = {
   KeyJ: ['confirm', -1],
   Escape: ['back', -1],
   Backspace: ['back', -1],
-  KeyP: ['start', -1],
 };
 
 class InputManager {
@@ -153,7 +156,7 @@ class InputManager {
     if (b(0)) bits |= IN_LK;
     if (b(1)) bits |= IN_RK;
     if (b(4)) bits |= IN_LP | IN_LK; // LB = throw
-    if (b(5)) bits |= IN_RP | IN_RK;
+    if (b(5) || b(7)) bits |= IN_SUPER; // RB / RT = BBL MAX
     return bits;
   }
 

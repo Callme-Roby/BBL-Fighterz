@@ -9,14 +9,17 @@ export function controlsHelp(versus: boolean): HTMLElement {
   if (versus) {
     rows.push(['J1 bouger', k([...P1_KEYS.up, ...P1_KEYS.left, ...P1_KEYS.down, ...P1_KEYS.right])]);
     rows.push(['J1 poings / pieds', [...k(P1_KEYS.lp), ' ', ...k(P1_KEYS.rp), ' / ', ...k(P1_KEYS.lk), ' ', ...k(P1_KEYS.rk)]]);
+    rows.push(['J1 BBL MAX (jauge pleine)', k(P1_KEYS.super)]);
     rows.push(['J2 bouger', k([...P2_KEYS.up, ...P2_KEYS.left, ...P2_KEYS.down, ...P2_KEYS.right])]);
     rows.push(['J2 poings / pieds', [...k([P2_KEYS.lp[0]]), ' ', ...k([P2_KEYS.rp[0]]), ' / ', ...k([P2_KEYS.lk[0]]), ' ', ...k([P2_KEYS.rk[0]])]]);
+    rows.push(['J2 BBL MAX (jauge pleine)', k([P2_KEYS.super[0]])]);
   } else {
     rows.push(['Bouger', [...k(['KeyW', 'KeyA', 'KeyS', 'KeyD']), ' ou flèches']]);
     rows.push(['Poing gauche / droit', [...k([SOLO_KEYS.lp[0]]), ' ', ...k([SOLO_KEYS.rp[0]])]]);
     rows.push(['Pied gauche / droit', [...k([SOLO_KEYS.lk[0]]), ' ', ...k([SOLO_KEYS.rk[0]])]]);
+    rows.push(['BBL MAX (jauge pleine)', [...k([SOLO_KEYS.super[0]]), ' ou ', ...k([SOLO_KEYS.super[1]])]]);
   }
-  rows.push(['Manette', ['□ △ = poings · ✕ ○ = pieds · L1 = choppe']]);
+  rows.push(['Manette', ['□ △ = poings · ✕ ○ = pieds · L1 = choppe · R1 / R2 = BBL MAX']]);
   rows.push(['Garde', ['maintenir ARRIÈRE (debout) / BAS-ARRIÈRE (accroupi)']]);
   rows.push(['Dash', ['avant-avant / arrière-arrière']]);
   rows.push(['Choppe', ['Poing G + Pied G (ou L1)']]);
@@ -24,8 +27,8 @@ export function controlsHelp(versus: boolean): HTMLElement {
   rows.push(['Genou (lance en l’air)', ['avant + Pied G']]);
   rows.push(['Balayette', ['bas + Pied D']]);
   rows.push(['Grosse patate', ['avant + Poing D']]);
-  rows.push(['Combos', ['Poing G → Poing D → Pied D …']]);
-  rows.push(['SUPER « BBL BUSTER »', ['jauge pleine : ↓ ↘ → + Poing']]);
+  rows.push(['Combos', ['tout coup qui touche s’enchaîne avec le suivant (jusqu’à 6)']]);
+  rows.push(['BBL MAX', ['jauge pleine + touche BBL MAX, même en plein combo']]);
   rows.push(['Pause', [...k(['Escape']), ' / Start']]);
   return h(
     'table',

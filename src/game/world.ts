@@ -46,8 +46,10 @@ export class FightWorld {
   private camPos = new THREE.Vector3(0, 2.4, 10);
   private camLook = new THREE.Vector3(0, 1, 0);
   private shake = 0;
-  private superCam = 0;
-  private superWho = 0;
+  /** current camera segment of the BBL MAX cinematic (-1 = none) */
+  private superSeg = -1;
+  /** 1 = normal lighting, lower = darkened stage (BBL MAX) */
+  private dim = 1;
   private time = 0;
   private stageTime = 0;
   private played = new Map<string, number>();
@@ -76,9 +78,9 @@ export class FightWorld {
   applyLighting() {
     const s = this.stage;
     PS1Globals.uLightDir.value.copy(s.lightDir).normalize();
-    PS1Globals.uLightColor.value.copy(s.lightColor);
-    PS1Globals.uAmbient.value.copy(s.ambient);
-    PS1Globals.uFogColor.value.copy(s.fogColor);
+    PS1Globals.uLightColor.value.copy(s.lightColor).multiplyScalar(this.dim);
+    PS1Globals.uAmbient.value.copy(s.ambient).multiplyScalar(0.25 + 0.75 * this.dim);
+    PS1Globals.uFogColor.value.copy(s.fogColor).multiplyScalar(this.dim);
     PS1Globals.uFogNear.value = s.fogNear;
     PS1Globals.uFogFar.value = s.fogFar;
   }
@@ -105,7 +107,9 @@ export class FightWorld {
   private onEvent(ev: SimEvent, s: GameState) {
     switch (ev.t) {
       case 'hit': {
-        this.effects.hit(ev.x, ev.y, ev.strength, ev.counter);
+        // close-up cinematic cameras: smaller sparks, centred between the fighters
+        const cine = s.fighters.some((f) => f.action === 'superCombo');
+        this.effects.hit(ev.x, ev.y, ev.strength, ev.counter, cine ? 0.45 : 1, cine ? 0.05 : 0.35);
         this.sfx(ev.strength === 'heavy' ? 'hitHeavy' : ev.strength === 'medium' ? 'hitMedium' : 'hitLight', ev.x);
         this.views[1 - ev.p].hitFlash(ev.counter ? 0xff3030 : 0xffffff, ev.strength === 'heavy' ? 0.85 : 0.6);
         this.shake = Math.max(this.shake, ev.strength === 'heavy' ? 0.09 : ev.strength === 'medium' ? 0.04 : 0.015);
@@ -136,8 +140,10 @@ export class FightWorld {
         break;
       case 'super':
         this.sfx('super', s.fighters[ev.p].x);
-        this.superCam = 40;
-        this.superWho = ev.p;
+        break;
+      case 'superCombo':
+        this.sfx('super', s.fighters[ev.p].x, 0.8);
+        this.shake = 0.12;
         break;
       case 'ko':
         this.sfx('ko', s.fighters[ev.p].x);
@@ -157,12 +163,17 @@ export class FightWorld {
     this.stageTime += dt;
     this.stage.update(this.stageTime, dt);
     for (let i = 0; i < 2; i++) this.views[i].sync(s.fighters[i], s.frame, dtFrames, this.time);
-    // super aura
-    const sw = s.fighters[this.superWho];
-    if (this.superCam > 0 || (sw.action === 'attack' && sw.moveId === 'super')) {
-      this.views[this.superWho].setGlow(0.25 + 0.15 * Math.sin(this.time * 40));
-      this.effects.aura(this.views[this.superWho].root.position);
-    } else this.views[this.superWho].setGlow(0);
+    // BBL MAX: glowing aura on the fighter, darkened stage
+    const sup = s.fighters.findIndex(
+      (f) => f.action === 'superFlash' || f.action === 'superCombo' || (f.action === 'attack' && f.moveId === 'super'),
+    );
+    for (let i = 0; i < 2; i++) this.views[i].setGlow(i === sup ? 0.22 + 0.14 * Math.sin(this.time * 40) : 0);
+    if (sup >= 0 && (s.fighters[sup].action !== 'superCombo' || s.fighters[sup].actionFrame < 100)) {
+      this.effects.aura(this.views[sup].root.position);
+      if (s.fighters[sup].action === 'superFlash') this.effects.aura(this.views[sup].root.position);
+    }
+    const dimTarget = sup >= 0 && !(s.fighters[sup].action === 'superCombo' && s.fighters[sup].actionFrame > 112) ? 0.4 : 1;
+    this.dim += (dimTarget - this.dim) * (1 - Math.exp(-dt * 8));
     this.effects.update(dtFrames);
     this.updateCamera(s, dt, aspect);
     this.applyLighting();
@@ -187,11 +198,52 @@ export class FightWorld {
     let snap = 1 - Math.exp(-dt * 6);
     const pf = s.phaseFrame;
 
-    if (this.superCam > 0) {
-      this.superCam -= dt * 60;
-      this.faceShot(this.superWho, targetPos, targetLook, 1.9, 0.9, 0.0);
-      targetLook.y -= 0.35;
-      snap = 1 - Math.exp(-dt * 10);
+    const sf = s.fighters.findIndex((f) => f.action === 'superFlash');
+    const sc = s.fighters.findIndex((f) => f.action === 'superCombo');
+    if (sc < 0) this.superSeg = -1;
+
+    if (sf >= 0 && s.fighters[sf].actionFrame < 80) {
+      // BBL MAX power-up: slow push-in on the face
+      const k = s.fighters[sf].actionFrame;
+      const t = Math.min(1, k / 45);
+      this.faceShot(sf, targetPos, targetLook, 2.3 - t * t * 1.35, 0.8 + k * 0.005, 0.03);
+      targetLook.y -= 0.06 * (1 - t);
+      if (k < 2) {
+        this.camPos.copy(targetPos);
+        this.camLook.copy(targetLook);
+      }
+      snap = 1 - Math.exp(-dt * 7);
+    } else if (sc >= 0) {
+      // BBL MAX cinematic combo: hard camera cuts
+      const A = s.fighters[sc];
+      const V = s.fighters[1 - sc];
+      const k = A.actionFrame;
+      const fa = A.facing;
+      const mid = (A.x + V.x) / 2;
+      let seg: number;
+      if (k < 26) {
+        seg = 0;
+        targetPos.set(A.x - fa * 0.95, 1.55, 1.5);
+        targetLook.set(V.x, 1.35, 0);
+      } else if (k < 56) {
+        seg = 1;
+        targetPos.set(V.x + fa * 1.45, 0.8, 1.8);
+        targetLook.set(A.x, 1.25, 0);
+      } else if (k < 92) {
+        seg = 2;
+        targetPos.set(mid - fa * 0.4, 0.35, 3.3);
+        targetLook.set(mid, 1.4 + V.y * 0.45, 0);
+      } else {
+        seg = 3;
+        targetPos.set(mid + fa * 0.6, 2.9, 4.8);
+        targetLook.set(V.x, 0.45, 0);
+      }
+      if (seg !== this.superSeg) {
+        this.superSeg = seg;
+        this.camPos.copy(targetPos);
+        this.camLook.copy(targetLook);
+      }
+      snap = 1 - Math.exp(-dt * 5);
     } else if (s.phase === 'intro') {
       const who = pf < INTRO_SPLIT ? 0 : 1;
       const local = who === 0 ? pf : pf - INTRO_SPLIT;

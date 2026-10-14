@@ -87,10 +87,10 @@ export class Effects {
     this.parts.push({ sprite, vel, life, max: life, grow: opts.grow ?? 0, gravity: opts.gravity ?? 0, baseScale: scale });
   }
 
-  hit(x: number, y: number, strength: 'light' | 'medium' | 'heavy', counter: boolean) {
+  hit(x: number, y: number, strength: 'light' | 'medium' | 'heavy', counter: boolean, scale = 1, z = 0.35) {
     const t = tex();
-    const p = new THREE.Vector3(x, y, 0.35);
-    const big = strength === 'heavy' ? 1.6 : strength === 'medium' ? 1.2 : 0.9;
+    const p = new THREE.Vector3(x, y, z);
+    const big = (strength === 'heavy' ? 1.6 : strength === 'medium' ? 1.2 : 0.9) * scale;
     const col = counter ? 0xff4030 : strength === 'heavy' ? 0xffa020 : strength === 'medium' ? 0xffd040 : 0xfff0a0;
     this.spawn(t.star, 0xffffff, p.clone(), new THREE.Vector3(), 0.55 * big, 7, { grow: 0.09 * big });
     this.spawn(t.star, col, p.clone(), new THREE.Vector3(), 0.8 * big, 9, { grow: 0.06 * big });

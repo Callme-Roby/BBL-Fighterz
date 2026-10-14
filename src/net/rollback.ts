@@ -96,7 +96,8 @@ export class RollbackSession {
   private inputsFor(f: number): [number, number] {
     const l = this.local[f % RING];
     let r = this.remote[f % RING];
-    if (f > this.remoteConfirmed || r < 0) r = this.lastRemoteInput;
+    // use the real input whenever it already arrived (even out of order), otherwise predict
+    if (r < 0) r = this.lastRemoteInput;
     this.usedRemote[f % RING] = r;
     const li = l < 0 ? 0 : l;
     return this.localPlayer === 0 ? [li, r] : [r, li];

@@ -1,6 +1,6 @@
 import { input } from '../input/input';
 import { settings } from '../game/settings';
-import { IN_DOWN, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_RK, IN_RP, IN_UP } from '../sim/types';
+import { IN_DOWN, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_RK, IN_RP, IN_SUPER, IN_UP } from '../sim/types';
 import { h } from './dom';
 
 /** On-screen stick + 4 buttons for phones/tablets (drives player 1). */
@@ -23,9 +23,10 @@ export class TouchControls {
       ['RP', IN_RP, 92, 0],
       ['LK', IN_LK, 8, 104],
       ['RK', IN_RK, 92, 76],
+      ['BBL', IN_SUPER, -66, 60],
     ];
     for (const [label, bit, left, top] of layout) {
-      const b = h('b', { style: `left:${left}px;top:${top}px` }, label);
+      const b = h('b', { class: label === 'BBL' ? 'super' : '', style: `left:${left}px;top:${top}px` }, label);
       const on = (e: PointerEvent) => {
         e.preventDefault();
         b.setPointerCapture(e.pointerId);
@@ -107,6 +108,11 @@ export class TouchControls {
     if (settings.touch === 'on') return true;
     if (settings.touch === 'off') return false;
     return !!window.matchMedia?.('(pointer: coarse)').matches;
+  }
+
+  /** Light up the BBL button when the local player's gauge is full. */
+  setSuperReady(on: boolean) {
+    this.root.classList.toggle('full', on);
   }
 
   setGameplay(on: boolean) {

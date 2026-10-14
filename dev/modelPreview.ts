@@ -1,9 +1,14 @@
 // Dev harness: renders roster fighters in a given clip/frame.
-// /dev/model-preview.html?clip=idle&frame=0&cam=front&ids=blaze,tacchini&lines=270
+// /dev/model-preview.html?clip=idle&frame=0&cam=front&ids=dylan,clement&lines=270
+//   ids=a,b,c        fighters (default: whole roster)
+//   clip / clips     one clip for all, or one per slot (clip=bind = bind pose, no animation)
+//   frame / frames   frame(s) to sample
+//   cam=front|face|faces|game|back   (faces = row of head close-ups)
+//   spacing, mirror=1, lines, labels=1 (name + triangle count under each fighter)
 import * as THREE from 'three';
 import { ROSTER } from '../src/data/roster';
 import { loadFace } from '../src/render/faceTexture';
-import { buildCharacter } from '../src/render/characterModel';
+import { buildCharacter, countTriangles, type CharacterModel } from '../src/render/characterModel';
 import { Animator } from '../src/render/animator';
 import { RetroPipeline } from '../src/render/pipeline';
 import { createPS1Material, PS1Globals } from '../src/render/ps1Material';
@@ -15,6 +20,7 @@ const cam = q.get('cam') ?? 'front';
 const ids = (q.get('ids') ?? ROSTER.map((r) => r.id).join(',')).split(',');
 const lines = Number(q.get('lines') ?? 270);
 const mirror = q.get('mirror') === '1';
+const labels = q.get('labels') === '1';
 
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 const pipe = new RetroPipeline(canvas);
@@ -32,12 +38,16 @@ const clips = (q.get('clips') ?? '').split(',').filter(Boolean);
 const frames = (q.get('frames') ?? '').split(',').filter(Boolean).map(Number);
 const defs0 = ids.map((id) => ROSTER.find((r) => r.id === id)!).filter(Boolean).map((d) => ({ ...d, face: d.face ? '../' + d.face : '' }));
 const defs = clips.length ? clips.map((_, i) => defs0[i % defs0.length]) : defs0;
-const spacing = Number(q.get('spacing') ?? 1.1);
+const spacing = Number(q.get('spacing') ?? (cam === 'faces' ? 0.42 : 1.1));
+const stats: { id: string; tris: number }[] = [];
 (async () => {
   let i = 0;
+  const models: CharacterModel[] = [];
   for (const def of defs) {
     const face = await loadFace(def);
     const m = buildCharacter(def, face);
+    models.push(m);
+    stats.push({ id: def.id, tris: countTriangles(m) });
     const x = (i - (defs.length - 1) / 2) * spacing;
     m.root.position.x = x;
     if (cam === 'side' || cam === 'game') {
@@ -47,8 +57,11 @@ const spacing = Number(q.get('spacing') ?? 1.1);
       m.body.scale.x = facing === 1 ? 1 : -1;
     }
     scene.add(m.root);
-    const an = new Animator(m);
-    an.update('k', clips[i] ?? clip, frames[i] ?? frame, 100, 0);
+    const c = clips[i] ?? clip;
+    if (c !== 'bind') {
+      const an = new Animator(m);
+      an.update('k', c, frames[i] ?? frame, 100, 0);
+    }
     i++;
   }
   if (cam === 'front') {
@@ -57,6 +70,12 @@ const spacing = Number(q.get('spacing') ?? 1.1);
   } else if (cam === 'face') {
     camera.position.set((0 - (defs.length - 1) / 2) * spacing, 1.75, 0.9);
     camera.lookAt((0 - (defs.length - 1) / 2) * spacing, 1.72, 0);
+  } else if (cam === 'faces') {
+    const hy = models.reduce((a, m) => a + m.headY, 0) / Math.max(1, models.length);
+    const half = Math.tan(THREE.MathUtils.degToRad(18)) * camera.aspect;
+    const dist = (defs.length * spacing) / 2 / half + 0.25;
+    camera.position.set(0, hy + 0.02, dist);
+    camera.lookAt(0, hy - 0.01, 0);
   } else if (cam === 'back') {
     camera.position.set(0, 1.3, -4.5);
     camera.lookAt(0, 1.0, 0);
@@ -65,5 +84,17 @@ const spacing = Number(q.get('spacing') ?? 1.1);
     camera.lookAt(0, 1.0, 0);
   }
   pipe.render(scene, camera, new THREE.Color(0x30343c));
+  if (labels) {
+    camera.updateMatrixWorld();
+    models.forEach((m, j) => {
+      const p = new THREE.Vector3(m.root.position.x, cam === 'faces' ? m.headY - 0.2 : 0, 0).project(camera);
+      const el = document.createElement('div');
+      el.textContent = `${defs[j].id} ${stats[j].tris}`;
+      el.style.cssText = `position:absolute;left:${((p.x + 1) / 2) * 960}px;top:${Math.min(526, ((1 - p.y) / 2) * 540)}px;transform:translateX(-50%);font:11px monospace;color:#ff0;background:#000a;padding:1px 3px`;
+      document.body.append(el);
+    });
+  }
+  console.log('TRIS ' + JSON.stringify(stats));
+  (window as unknown as { __ready: boolean; __stats: unknown }).__stats = stats;
   (window as unknown as { __ready: boolean }).__ready = true;
 })();

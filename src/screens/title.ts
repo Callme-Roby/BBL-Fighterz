@@ -9,7 +9,7 @@ import { CpuBrain } from '../sim/ai';
 import { createGame, step } from '../sim/sim';
 import type { GameState } from '../sim/types';
 import { h, Menu, uiRoot } from '../ui/dom';
-import { goLab, goOnline, goOptions, goSelect } from './flow';
+import { goLab, goOnline, goOptions, goSelect, goTournament } from './flow';
 
 /** CPU vs CPU match playing behind the title menu. */
 class Attract {
@@ -116,6 +116,7 @@ export class TitleScreen implements Screen {
       [
         { label: 'ARCADE', sub: "Contre l'ordinateur", action: () => goSelect('cpu') },
         { label: 'VERSUS', sub: '2 joueurs sur le même écran', action: () => goSelect('versus') },
+        { label: 'TOURNOI', sub: "Jusqu'à 16 potes, élimination directe", action: () => goTournament() },
         { label: 'EN LIGNE', sub: 'Envoie un lien à un pote', action: () => goOnline() },
         { label: 'LABO', sub: 'Crée ton perso avec ta photo', action: () => goLab() },
         { label: 'OPTIONS', sub: 'Son, difficulté, graphismes, commandes', action: () => goOptions() },
