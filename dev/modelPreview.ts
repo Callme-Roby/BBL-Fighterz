@@ -3,7 +3,7 @@
 //   ids=a,b,c        fighters (default: whole roster; cinematic CAST ids work too, e.g. babyelies,spiderpote)
 //   clip / clips     one clip for all, or one per slot (clip=bind = bind pose, no animation)
 //   frame / frames   frame(s) to sample
-//   cam=front|face|faces|game|back   (faces = row of head close-ups; camy = camera height offset)
+//   cam=front|face|faces|game|back   (faces = row of head close-ups; camy = camera height offset; camz = front camera distance)
 //   hairs=cap,bun,...  one copy of the (first) fighter per hair style; body=fine; belly=0..1; muscles=0..1; height=0.5..1.2
 //   skins=8c5e4c,-,...  per-slot skin override ('-' = sampled from the photo)
 //   spacing, mirror=1, lines, yaw=deg (extra body rotation), labels=1 (name + triangle count under each fighter)
@@ -81,7 +81,8 @@ const stats: { id: string; tris: number; skin: string }[] = [];
     i++;
   }
   if (cam === 'front') {
-    camera.position.set(0, 1.3, 4.2 + defs.length * 0.3);
+    // camz = camera distance override (closer group shots)
+    camera.position.set(0, 1.3, Number(q.get('camz') ?? 4.2 + defs.length * 0.3));
     camera.lookAt(0, 1.0, 0);
   } else if (cam === 'face') {
     camera.position.set((0 - (defs.length - 1) / 2) * spacing, 1.75, 0.9);

@@ -310,7 +310,7 @@ export const ROSTER: FighterDef[] = [
     },
     // shorter, semi-thick
     height: 0.93,
-    build: 1.12,
+    build: 1.15,
     belly: 0.12,
     headScale: 1.18,
     introLines: ['Je vais te tuer.', 'Tu vas regretter ce combat.', 'Échauffement terminé.'],
@@ -356,7 +356,7 @@ export const ROSTER: FighterDef[] = [
     },
     // medium height, semi-thick
     height: 1,
-    build: 1.12,
+    build: 1.15,
     headScale: 1.18,
     introLines: ['Je vais te tuer.', 'Prépare tes excuses.', 'Ça va piquer.'],
     winLines: ['Bisous, au revoir.', 'Pas de quartier !', 'Une revanche ? Non merci.'],
