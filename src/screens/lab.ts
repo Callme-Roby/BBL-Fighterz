@@ -1,0 +1,292 @@
+import { audio } from '../audio/audio';
+import type { App, Screen } from '../app';
+import type { FighterDef, HairStyle, TopStyle } from '../data/roster';
+import { loadCustoms, saveCustoms } from '../game/settings';
+import { input } from '../input/input';
+import { cropFileToDataUrl } from '../render/faceTexture';
+import { Showroom } from '../render/showroom';
+import { h, uiRoot } from '../ui/dom';
+import { goMenu } from './flow';
+
+function blank(): FighterDef {
+  return {
+    id: 'custom-' + Date.now().toString(36),
+    name: 'NOUVEAU',
+    title: 'Fait maison',
+    face: '',
+    skin: '#c8906c',
+    hair: { style: 'short', color: '#3a2618' },
+    outfit: { top: 'tank', topColor: '#f2f0e8', trimColor: '#d0ccc0', pantsColor: '#3b5a8c', shoesColor: '#1d1d1f', beltColor: '#4a2f1c' },
+    build: 1,
+    headScale: 1.18,
+    introLines: ['Je vais te tuer.'],
+    winLines: ['Trop facile.'],
+    voice: { lang: 'fr-FR', pitch: 1, rate: 1 },
+    faceGen: {},
+    custom: true,
+  };
+}
+
+/** Fighter creator: upload a photo, crop the face, pick hair & clothes. */
+export class LabScreen implements Screen {
+  private def: FighterDef = blank();
+  private showroom = new Showroom();
+  private src: string | null = null;
+  private crop = { cx: 0.5, cy: 0.42, zoom: 1.6 };
+  private cropCanvas!: HTMLCanvasElement;
+  private img: HTMLImageElement | null = null;
+  private form!: HTMLDivElement;
+  private listEl!: HTMLDivElement;
+  private rebuildTimer = 0;
+  private msg!: HTMLDivElement;
+
+  constructor(private app: App) {
+    this.showroom.positions = [0, 1.15];
+    const wide = window.innerWidth > 720;
+    this.showroom.cameraPos.set(wide ? -0.6 : 0, wide ? 1.45 : 1.6, wide ? 2.9 : 2.2);
+    this.showroom.cameraLook.set(wide ? -0.6 : 0, wide ? 1.15 : 1.25, 0);
+  }
+
+  enter() {
+    audio.playMusic('select');
+    this.form = h('div', { class: 'form' });
+    this.listEl = h('div', { class: 'customs' });
+    this.msg = h('div', { class: 'status' });
+    uiRoot().append(h('div', { class: 'lab' }, this.form, h('div', { class: 'preview passthrough' })));
+    this.renderForm();
+    this.preview();
+  }
+
+  exit() {
+    this.showroom.dispose();
+    window.clearTimeout(this.rebuildTimer);
+  }
+
+  private preview() {
+    window.clearTimeout(this.rebuildTimer);
+    this.rebuildTimer = window.setTimeout(() => {
+      this.showroom.invalidate();
+      void this.showroom.show(0, { ...this.def });
+    }, 120);
+  }
+
+  private async updateFace() {
+    if (!this.src) return;
+    this.def.face = await cropFileToDataUrl(this.src, this.crop, 150, 200);
+    this.def.skin = undefined; // sample it from the photo
+    this.drawCrop();
+    this.preview();
+  }
+
+  private drawCrop() {
+    const c = this.cropCanvas;
+    const ctx = c.getContext('2d')!;
+    ctx.fillStyle = '#222';
+    ctx.fillRect(0, 0, c.width, c.height);
+    if (!this.def.face) {
+      ctx.fillStyle = '#888';
+      ctx.font = '10px monospace';
+      ctx.fillText('pas de photo', 40, 120);
+      return;
+    }
+    const im = new Image();
+    im.onload = () => ctx.drawImage(im, 0, 0, c.width, c.height);
+    im.src = this.def.face;
+  }
+
+  private renderForm() {
+    const d = this.def;
+    const field = (label: string, ...els: (HTMLElement | string)[]) => h('div', { class: 'field' }, label, ...els);
+    const row = (...els: HTMLElement[]) => h('div', { class: 'row' }, ...els);
+    const text = (value: string, max: number, set: (v: string) => void) => {
+      const i = h('input', { value, maxLength: max });
+      i.addEventListener('input', () => {
+        set(i.value);
+        this.preview();
+      });
+      return i;
+    };
+    const color = (value: string, set: (v: string) => void) => {
+      const i = h('input', { type: 'color', value });
+      i.addEventListener('input', () => {
+        set(i.value);
+        this.preview();
+      });
+      return i;
+    };
+    const range = (min: number, max: number, stepv: number, value: number, set: (v: number) => void) => {
+      const i = h('input', { type: 'range', min: String(min), max: String(max), step: String(stepv), value: String(value) });
+      i.addEventListener('input', () => {
+        set(Number(i.value));
+        this.preview();
+      });
+      return i;
+    };
+    const chips = <T extends string>(opts: [T, string][], get: () => T, set: (v: T) => void) => {
+      const wrap = h('div', { class: 'chips' });
+      const render = () =>
+        wrap.replaceChildren(
+          ...opts.map(([v, l]) => {
+            const b = h('button', { class: get() === v ? 'on' : '' }, l);
+            b.addEventListener('click', () => {
+              set(v);
+              render();
+              this.preview();
+            });
+            return b;
+          }),
+        );
+      render();
+      return wrap;
+    };
+
+    // photo
+    const file = h('input', { type: 'file', accept: 'image/*' });
+    file.addEventListener('change', () => {
+      const f = file.files?.[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        this.src = String(reader.result);
+        this.img = new Image();
+        this.img.src = this.src;
+        this.crop = { cx: 0.5, cy: 0.42, zoom: 1.6 };
+        this.renderForm();
+        void this.updateFace();
+      };
+      reader.readAsDataURL(f);
+    });
+    this.cropCanvas = h('canvas', { class: 'crop', width: 150, height: 200 });
+    const cropRange = (label: string, key: 'cx' | 'cy' | 'zoom', min: number, max: number) => {
+      const i = h('input', { type: 'range', min: String(min), max: String(max), step: '0.01', value: String(this.crop[key]) });
+      i.addEventListener('input', () => {
+        this.crop[key] = Number(i.value);
+        void this.updateFace();
+      });
+      return field(label, i);
+    };
+
+    const save = h('button', { class: 'btn primary' }, 'ENREGISTRER');
+    save.addEventListener('click', () => this.save());
+    const fresh = h('button', { class: 'btn' }, 'NOUVEAU');
+    fresh.addEventListener('click', () => {
+      this.def = blank();
+      this.src = null;
+      this.renderForm();
+      this.preview();
+    });
+    const testVoice = h('button', { class: 'btn' }, 'TESTER LA VOIX');
+    testVoice.addEventListener('click', () => {
+      audio.unlock();
+      void audio.say(d.introLines[0] || 'Je vais te tuer.', { lang: 'fr-FR', pitch: d.voice?.pitch, rate: d.voice?.rate });
+    });
+    const back = h('button', { class: 'btn' }, 'RETOUR');
+    back.addEventListener('click', () => goMenu());
+
+    this.form.replaceChildren(
+      h('div', { class: 'h1', style: 'font-size:26px' }, 'LABO'),
+      field('1. PHOTO DU VISAGE (de face, bien éclairée)', file),
+      this.cropCanvas,
+      this.src ? cropRange('ZOOM', 'zoom', 1, 4) : '',
+      this.src ? cropRange('CADRAGE HORIZONTAL', 'cx', 0, 1) : '',
+      this.src ? cropRange('CADRAGE VERTICAL', 'cy', 0, 1) : '',
+      h('div', { class: 'status', style: 'font-size:9px;text-align:left' }, 'Cadre le visage dans l’ovale : du haut du front au menton.'),
+      field('2. NOM', text(d.name, 12, (v) => (d.name = v.toUpperCase() || 'NOUVEAU'))),
+      field('SURNOM', text(d.title, 32, (v) => (d.title = v))),
+      field(
+        'CHEVEUX',
+        chips<HairStyle>(
+          [
+            ['short', 'COURTS'],
+            ['spiky', 'PIQUES'],
+            ['buzz', 'RASÉS'],
+            ['afro', 'AFRO'],
+            ['long', 'LONGS'],
+            ['mohawk', 'IROQUOIS'],
+            ['bald', 'CHAUVE'],
+          ],
+          () => d.hair.style,
+          (v) => (d.hair.style = v),
+        ),
+        row(color(d.hair.color, (v) => (d.hair.color = v))),
+      ),
+      field(
+        'HAUT',
+        chips<TopStyle>(
+          [
+            ['tank', 'DÉBARDEUR'],
+            ['tshirt', 'T-SHIRT'],
+            ['tracksuit', 'SURVÊT'],
+            ['hoodie', 'SWEAT'],
+            ['shirtless', 'TORSE NU'],
+          ],
+          () => d.outfit.top,
+          (v) => (d.outfit.top = v),
+        ),
+        row(color(d.outfit.topColor, (v) => (d.outfit.topColor = v)), color(d.outfit.trimColor, (v) => (d.outfit.trimColor = v))),
+      ),
+      field('PANTALON / CHAUSSURES', row(color(d.outfit.pantsColor, (v) => (d.outfit.pantsColor = v)), color(d.outfit.shoesColor, (v) => (d.outfit.shoesColor = v)))),
+      field('CARRURE', range(0.85, 1.25, 0.01, d.build ?? 1, (v) => (d.build = v))),
+      field('TAILLE DE LA TÊTE', range(1, 1.4, 0.01, d.headScale ?? 1.18, (v) => (d.headScale = v))),
+      field('PHRASE D’ENTRÉE', text(d.introLines[0] ?? '', 60, (v) => (d.introLines = [v || 'Je vais te tuer.']))),
+      field('PHRASE DE VICTOIRE', text(d.winLines[0] ?? '', 60, (v) => (d.winLines = [v || 'Trop facile.']))),
+      field('VOIX (GRAVE ↔ AIGUË)', range(0.3, 1.8, 0.05, d.voice?.pitch ?? 1, (v) => (d.voice = { ...d.voice, pitch: v }))),
+      h('div', { class: 'row', style: 'display:flex;gap:8px;flex-wrap:wrap' }, save, testVoice, fresh, back),
+      this.msg,
+      field('MES PERSOS'),
+      this.listEl,
+    );
+    this.drawCrop();
+    this.renderList();
+  }
+
+  private renderList() {
+    const list = loadCustoms();
+    if (!list.length) {
+      this.listEl.replaceChildren(h('div', { class: 'status', style: 'font-size:9px' }, 'Aucun perso perso pour l’instant.'));
+      return;
+    }
+    this.listEl.replaceChildren(
+      ...list.map((c) => {
+        const edit = h('button', { class: 'btn', style: 'padding:6px 8px;font-size:9px' }, 'MODIFIER');
+        edit.addEventListener('click', () => {
+          this.def = structuredClone(c);
+          this.src = null;
+          this.renderForm();
+          this.preview();
+        });
+        const del = h('button', { class: 'btn', style: 'padding:6px 8px;font-size:9px' }, 'X');
+        del.addEventListener('click', () => {
+          if (!confirm(`Supprimer ${c.name} ?`)) return;
+          saveCustoms(loadCustoms().filter((x) => x.id !== c.id));
+          this.renderList();
+        });
+        return h('div', { class: 'it' }, h('div', { class: 'ph', style: c.face ? `background-image:url(${c.face})` : '' }), h('span', null, c.name), edit, del);
+      }),
+    );
+  }
+
+  private save() {
+    const list = loadCustoms().filter((x) => x.id !== this.def.id);
+    list.push(structuredClone(this.def));
+    if (saveCustoms(list)) {
+      this.msg.textContent = `${this.def.name} est prêt au combat ! Il apparaît dans la sélection.`;
+      this.msg.classList.remove('err');
+      audio.sfx('confirm');
+    } else {
+      this.msg.textContent = 'Stockage plein : supprime un perso.';
+      this.msg.classList.add('err');
+    }
+    this.renderList();
+  }
+
+  frame(dt: number) {
+    for (const e of input.menuEvents()) {
+      if (e.action === 'back' && !(document.activeElement instanceof HTMLInputElement)) {
+        goMenu();
+        return;
+      }
+    }
+    this.showroom.render(this.app.pipeline, dt, this.app.aspect);
+  }
+}

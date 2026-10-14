@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stage Preview</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #000;
+        overflow: hidden;
+      }
+      #c {
+        display: block;
+        width: 960px;
+        height: 540px;
+        image-rendering: pixelated;
+      }
+      #info {
+        position: fixed;
+        left: 6px;
+        top: 4px;
+        color: #8f8;
+        font: 11px monospace;
+        text-shadow: 1px 1px #000;
+        pointer-events: none;
+        white-space: pre;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <div id="info"></div>
+    <script type="module" src="./stagePreview.ts"></script>
+  </body>
+</html>

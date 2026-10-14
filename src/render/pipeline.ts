@@ -1,0 +1,150 @@
+import * as THREE from 'three';
+import { PS1Globals } from './ps1Material';
+
+/**
+ * Low-resolution render target + "PS1 output" post pass:
+ * nearest upscale, 15-bit colour with ordered dithering, light scanlines.
+ */
+export class RetroPipeline {
+  readonly renderer: THREE.WebGLRenderer;
+  private rt: THREE.WebGLRenderTarget;
+  private postScene = new THREE.Scene();
+  private postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  private postMat: THREE.ShaderMaterial;
+  lowW = 480;
+  lowH = 270;
+  /** number of vertical pixels of the internal image */
+  lines = 270;
+  dither = true;
+
+  constructor(canvas: HTMLCanvasElement) {
+    THREE.ColorManagement.enabled = false;
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: false });
+    this.renderer.setPixelRatio(1);
+    this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+    this.renderer.autoClear = true;
+    this.rt = new THREE.WebGLRenderTarget(this.lowW, this.lowH, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      depthBuffer: true,
+    });
+    this.postMat = new THREE.ShaderMaterial({
+      uniforms: {
+        tDiffuse: { value: this.rt.texture },
+        uLow: { value: new THREE.Vector2(this.lowW, this.lowH) },
+        uDither: { value: 1 },
+        uFlash: { value: 0 },
+        uFlashColor: { value: new THREE.Color(1, 1, 1) },
+        uFade: { value: 0 },
+      },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D tDiffuse;
+        uniform vec2 uLow;
+        uniform float uDither;
+        uniform float uFlash;
+        uniform vec3 uFlashColor;
+        uniform float uFade;
+        varying vec2 vUv;
+        float bayer4(vec2 p) {
+          int x = int(mod(p.x, 4.0));
+          int y = int(mod(p.y, 4.0));
+          int i = x + y * 4;
+          float m[16];
+          m[0]=0.0; m[1]=8.0; m[2]=2.0; m[3]=10.0;
+          m[4]=12.0; m[5]=4.0; m[6]=14.0; m[7]=6.0;
+          m[8]=3.0; m[9]=11.0; m[10]=1.0; m[11]=9.0;
+          m[12]=15.0; m[13]=7.0; m[14]=13.0; m[15]=5.0;
+          for (int k = 0; k < 16; k++) { if (k == i) return m[k] / 16.0; }
+          return 0.0;
+        }
+        void main() {
+          vec2 px = floor(vUv * uLow);
+          vec3 c = texture2D(tDiffuse, (px + 0.5) / uLow).rgb;
+          if (uDither > 0.5) {
+            float d = (bayer4(px) - 0.5) / 32.0;
+            c = floor((c + d) * 32.0 + 0.5) / 32.0;
+          }
+          c = mix(c, uFlashColor, uFlash);
+          c *= 1.0 - uFade;
+          // subtle scanline darkening on odd low-res rows
+          float scan = mod(px.y, 2.0) < 1.0 ? 1.0 : 0.94;
+          gl_FragColor = vec4(c * scan, 1.0);
+        }
+      `,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.postMat);
+    quad.frustumCulled = false;
+    this.postScene.add(quad);
+  }
+
+  get post() {
+    return this.postMat.uniforms as {
+      uFlash: { value: number };
+      uFlashColor: { value: THREE.Color };
+      uFade: { value: number };
+      uDither: { value: number };
+    };
+  }
+
+  setSize(w: number, h: number) {
+    this.renderer.setSize(w, h, false);
+    const lowH = this.lines;
+    const lowW = Math.max(160, Math.round((lowH * w) / Math.max(1, h)));
+    if (lowW !== this.lowW || lowH !== this.lowH) {
+      this.lowW = lowW;
+      this.lowH = lowH;
+      this.rt.setSize(lowW, lowH);
+      (this.postMat.uniforms.uLow.value as THREE.Vector2).set(lowW, lowH);
+    }
+    PS1Globals.uSnapRes.value.set(this.lowW / 2, this.lowH / 2);
+  }
+
+  render(scene: THREE.Scene, camera: THREE.Camera, clearColor: THREE.Color) {
+    this.postMat.uniforms.uDither.value = this.dither ? 1 : 0;
+    this.renderer.setClearColor(clearColor, 1);
+    this.renderer.setRenderTarget(this.rt);
+    this.renderer.clear();
+    this.renderer.render(scene, camera);
+    this.renderer.setRenderTarget(null);
+    this.renderer.render(this.postScene, this.postCam);
+  }
+
+  /** Render directly at low res into an offscreen canvas (thumbnails). */
+  snapshot(scene: THREE.Scene, camera: THREE.Camera, clearColor: THREE.Color, w: number, h: number): string {
+    const rt = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+    const prevSnap = PS1Globals.uSnapRes.value.clone();
+    PS1Globals.uSnapRes.value.set(w / 2, h / 2);
+    this.renderer.setClearColor(clearColor, 1);
+    this.renderer.setRenderTarget(rt);
+    this.renderer.clear();
+    this.renderer.render(scene, camera);
+    const buf = new Uint8Array(w * h * 4);
+    this.renderer.readRenderTargetPixels(rt, 0, 0, w, h, buf);
+    this.renderer.setRenderTarget(null);
+    rt.dispose();
+    PS1Globals.uSnapRes.value.copy(prevSnap);
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d')!;
+    const img = ctx.createImageData(w, h);
+    for (let y = 0; y < h; y++) {
+      const src = (h - 1 - y) * w * 4;
+      img.data.set(buf.subarray(src, src + w * 4), y * w * 4);
+    }
+    ctx.putImageData(img, 0, 0);
+    return c.toDataURL();
+  }
+
+  dispose() {
+    this.rt.dispose();
+    this.postMat.dispose();
+    this.renderer.dispose();
+  }
+}
