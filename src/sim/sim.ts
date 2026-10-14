@@ -12,6 +12,9 @@ import {
   IN_RIGHT,
   IN_RK,
   IN_RP,
+  IN_EXTRA,
+  IN_GRAB,
+  IN_GUARD,
   IN_SUPER,
   IN_UP,
   INTRO_FRAMES,
@@ -56,6 +59,13 @@ const CHAIN_WINDOW = 12;
 /** max moves in one chained string */
 const MAX_CHAIN = 6;
 const SUPER_BUFFER = 8;
+/** a guard tap parries attacks landing within this many frames */
+const PARRY_WINDOW = 7;
+/** a missed parry tap locks new parry windows for a while (no mashing) */
+const PARRY_COOLDOWN = 24;
+/** recovery of a fighter whose attack got parried */
+const PARRIED_STUN = 26;
+const PARRY_RECOVERY = 10;
 const DOUBLE_TAP_FRAMES = 12;
 const KNOCKDOWN_MIN = 26;
 const KNOCKDOWN_MAX = 62;
@@ -114,6 +124,8 @@ export function createFighter(side: 0 | 1): FighterState {
     ult: 'rush',
     ultOrigin: 0,
     ultBy: 'rush',
+    parryTimer: 0,
+    parryCooldown: 0,
   };
 }
 
@@ -171,7 +183,7 @@ function toRel(input: number, facing: 1 | -1): number {
   if (input & back) r |= R_B;
   // left+right together cancel out
   if ((r & R_F) && (r & R_B)) r &= ~(R_F | R_B);
-  return r | (input & (IN_BUTTONS | IN_SUPER));
+  return r | (input & (IN_BUTTONS | IN_EXTRA));
 }
 
 function isAirborne(f: FighterState): boolean {
@@ -180,13 +192,14 @@ function isAirborne(f: FighterState): boolean {
 
 function isCrouching(f: FighterState): boolean {
   if (f.action === 'crouch') return true;
+  if (f.action === 'guard' && f.crouching) return true;
   if ((f.action === 'hitstun' || f.action === 'blockstun') && f.crouching) return true;
   if (f.action === 'attack' && f.moveId && MOVES[f.moveId].crouching) return true;
   return false;
 }
 
 function isNeutral(f: FighterState): boolean {
-  return f.action === 'idle' || f.action === 'walkF' || f.action === 'walkB' || f.action === 'crouch';
+  return f.action === 'idle' || f.action === 'walkF' || f.action === 'walkB' || f.action === 'crouch' || f.action === 'guard';
 }
 
 /** Detect a quarter-circle-forward (D, DF, F) in the recent direction history. */
@@ -286,7 +299,17 @@ function processInput(s: GameState, f: FighterState, input: number) {
   if (f.rel & IN_SUPER && !(f.prevRel & IN_SUPER)) f.superReq = SUPER_BUFFER;
   else if (f.superReq > 0) f.superReq--;
 
-  const pressed = f.rel & ~f.prevRel & IN_BUTTONS;
+  // guard tap = parry window (with an anti-mash cooldown)
+  if (f.parryTimer > 0) f.parryTimer--;
+  if (f.parryCooldown > 0) f.parryCooldown--;
+  if (f.rel & IN_GUARD && !(f.prevRel & IN_GUARD) && f.parryCooldown === 0) {
+    f.parryTimer = PARRY_WINDOW;
+    f.parryCooldown = PARRY_COOLDOWN;
+  }
+
+  let pressed = f.rel & ~f.prevRel & IN_BUTTONS;
+  // the grab button is a shortcut for LP + LK (throw)
+  if (f.rel & IN_GRAB && !(f.prevRel & IN_GRAB)) pressed |= IN_LP | IN_LK;
   if (pressed) {
     // presses within 2 frames are merged (for LP+LK throws)
     f.bufBtn = (f.bufAge <= 2 ? f.bufBtn : 0) | pressed;
@@ -331,7 +354,28 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
     case 'walkF':
     case 'walkB':
     case 'crouch':
+    case 'guard':
       neutral(s, f, o, idx, dir);
+      break;
+
+    case 'parry':
+      // deflected an attack: short recovery, can attack right away to punish
+      if (f.actionFrame >= 4) {
+        const b = consumeBuffer(f);
+        if (b) {
+          const id = chooseGroundMove(f, b.btn, b.dir, b.qcf);
+          if (id) {
+            startMove(s, f, o, id, idx);
+            break;
+          }
+        }
+      }
+      if (f.actionFrame >= PARRY_RECOVERY) toNeutral(f);
+      break;
+
+    case 'parried':
+      f.stun--;
+      if (f.stun <= 0) toNeutral(f);
       break;
 
     case 'prejump':
@@ -478,7 +522,7 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
 
     case 'thrown': {
       // throw escape: press a punch right after being grabbed
-      const pressed = f.rel & ~f.prevRel & (IN_LP | IN_RP);
+      const pressed = f.rel & ~f.prevRel & (IN_LP | IN_RP | IN_GRAB);
       if (f.actionFrame <= THROW_BREAK_WINDOW && pressed && o.action === 'throwing') {
         setAction(f, 'throwBreak');
         setAction(o, 'throwBreak');
@@ -560,6 +604,13 @@ function neutral(s: GameState, f: FighterState, o: FighterState, idx: number, di
       setAction(f, req > 0 ? 'dashF' : 'dashB');
       return;
     }
+  }
+
+  // guard button held: stay in place, guarding (crouched with down)
+  if (f.rel & IN_GUARD) {
+    if (f.action !== 'guard') setAction(f, 'guard');
+    f.crouching = (dir & R_D) !== 0;
+    return;
   }
 
   if (dir & R_U) {
@@ -779,6 +830,8 @@ interface PendingHit {
   blocked: boolean;
   counter: boolean;
   grab: boolean;
+  /** deflected by a well-timed guard tap */
+  parried?: boolean;
 }
 
 function checkHit(a: FighterState, d: FighterState, ai: number): PendingHit | null {
@@ -821,18 +874,28 @@ function checkHit(a: FighterState, d: FighterState, ai: number): PendingHit | nu
   // vertical distance for juggles
   if (dAir && d.y > 1.6 && !m.air) return null;
 
-  const holdingBack = (d.rel & R_B) !== 0;
+  // guard: hold back (or the guard button). Standing guard stops highs & mids, crouching guard stops lows
+  const holdingBack = (d.rel & (R_B | IN_GUARD)) !== 0;
   const canBlock =
     !dAir &&
-    (d.action === 'idle' || d.action === 'walkB' || d.action === 'crouch' || d.action === 'blockstun' || d.action === 'land');
-  let blocked = false;
-  if (canBlock && holdingBack) {
-    const crouchBlock = dCrouch || (d.rel & R_D) !== 0;
-    if (m.level === 'low') blocked = crouchBlock;
-    else blocked = !crouchBlock;
+    (d.action === 'idle' ||
+      d.action === 'walkB' ||
+      d.action === 'crouch' ||
+      d.action === 'guard' ||
+      d.action === 'blockstun' ||
+      d.action === 'parry' ||
+      d.action === 'land');
+  const crouchBlock = dCrouch || (d.rel & R_D) !== 0;
+  const rightHeight = m.level === 'low' ? crouchBlock : !crouchBlock;
+  // parry: guard tapped just before the hit, at the right height
+  const canParry = canBlock || d.action === 'walkF' || d.action === 'dashB';
+  if (d.parryTimer > 0 && canParry && rightHeight) {
+    return { a: ai, d: 1 - ai, move: m, blocked: false, counter: false, grab: false, parried: true };
   }
+  const blocked = canBlock && holdingBack && rightHeight;
   const counter =
-    !blocked && (d.action === 'attack' || d.action === 'airAttack') && !!d.moveId && d.actionFrame < MOVES[d.moveId].startup;
+    !blocked &&
+    (((d.action === 'attack' || d.action === 'airAttack') && !!d.moveId && d.actionFrame < MOVES[d.moveId].startup) || d.action === 'parried');
   return { a: ai, d: 1 - ai, move: m, blocked, counter, grab: false };
 }
 
@@ -846,7 +909,25 @@ function applyHit(s: GameState, h: PendingHit) {
   const hx = a.x + a.facing * Math.min(m.reach, Math.abs(d.x - a.x) - 0.1);
   const hy = isAirborne(d) ? d.y + 0.9 : m.hitY;
 
+  if (h.parried) {
+    // the attacker is thrown off balance, the defender can punish
+    setAction(a, 'parried');
+    a.stun = PARRIED_STUN;
+    a.stunTotal = PARRIED_STUN;
+    a.vx = -a.facing * 0.05;
+    a.crouching = false;
+    setAction(d, 'parry');
+    d.vx = 0;
+    d.parryTimer = 0;
+    d.parryCooldown = 0;
+    d.meter = Math.min(MAX_METER, d.meter + 8);
+    s.hitstop = Math.max(s.hitstop, 10);
+    s.events.push({ t: 'parry', p: h.d, x: hx, y: hy });
+    return;
+  }
+
   if (h.grab) {
+    s.events.push({ t: 'grab', p: h.a });
     setAction(a, 'throwing');
     setAction(d, 'thrown');
     d.facing = (a.facing * -1) as 1 | -1;

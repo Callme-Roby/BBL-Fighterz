@@ -116,6 +116,19 @@ export class Effects {
     }
   }
 
+  /** Parry: big cyan ring + sparks */
+  parry(x: number, y: number) {
+    const t = tex();
+    const p = new THREE.Vector3(x, y, 0.35);
+    this.spawn(t.ring, 0x60e0ff, p.clone(), new THREE.Vector3(), 0.2, 14, { grow: 0.12 });
+    this.spawn(t.ring, 0xffffff, p.clone(), new THREE.Vector3(), 0.1, 10, { grow: 0.08 });
+    this.spawn(t.star, 0xa0f0ff, p.clone(), new THREE.Vector3(), 0.9, 8, { grow: 0.05 });
+    for (let i = 0; i < 12; i++) {
+      const a = Math.random() * Math.PI * 2;
+      this.spawn(t.dot, 0x9ff0ff, p.clone(), new THREE.Vector3(Math.cos(a) * 0.06, Math.sin(a) * 0.06, 0), 0.06, 16, { gravity: 0.002 });
+    }
+  }
+
   dust(x: number, big = false) {
     const t = tex();
     const n = big ? 10 : 5;

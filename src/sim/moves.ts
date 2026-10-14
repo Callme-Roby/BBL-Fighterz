@@ -111,8 +111,8 @@ export const MOVES: Record<MoveId, MoveDef> = {
   }),
   throw: M({
     id: 'throw', name: 'Choppe', startup: 10, active: 3, recovery: 26, damage: 30, level: 'high',
-    reach: 0.55, hitY: 1.3, hitstun: 0, blockstun: 0, pushHit: 0, pushBlock: 0,
-    strength: 'heavy', throw: true,
+    reach: 0.68, hitY: 1.3, hitstun: 0, blockstun: 0, pushHit: 0, pushBlock: 0,
+    strength: 'heavy', throw: true, advance: 0.12,
   }),
   super: M({
     id: 'super', name: 'BBL MAX', startup: 10, active: 6, recovery: 34, damage: 6, level: 'mid',

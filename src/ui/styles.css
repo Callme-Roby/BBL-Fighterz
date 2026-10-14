@@ -983,6 +983,12 @@ kbd {
   background: rgba(255, 138, 28, 0.6);
 }
 
+#touch .btns b.small {
+  width: 54px;
+  height: 54px;
+  font-size: 7px;
+}
+
 #touch .btns b.super {
   width: 54px;
   height: 54px;

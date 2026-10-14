@@ -100,9 +100,9 @@ export class FightWorld {
     }
   }
 
-  private sfx(id: SfxId, x = 0, volume = 1) {
+  private sfx(id: SfxId, x = 0, volume = 1, pitch = 1) {
     if (!this.sound) return;
-    audio.sfx(id, { pan: Math.max(-1, Math.min(1, (x - this.camLook.x) / 4)), volume });
+    audio.sfx(id, { pan: Math.max(-1, Math.min(1, (x - this.camLook.x) / 4)), volume, pitch });
   }
 
   private onEvent(ev: SimEvent, s: GameState) {
@@ -138,6 +138,16 @@ export class FightWorld {
         break;
       case 'throwBreak':
         this.sfx('block', s.fighters[ev.p].x);
+        break;
+      case 'parry':
+        this.effects.parry(ev.x, ev.y);
+        this.sfx('block', ev.x, 1, 1.5);
+        this.sfx('confirm', ev.x, 0.8, 1.2);
+        this.views[ev.p].hitFlash(0x60d8ff, 0.7);
+        this.shake = Math.max(this.shake, 0.04);
+        break;
+      case 'grab':
+        this.sfx('whiffHeavy', s.fighters[ev.p].x, 0.8, 0.8);
         break;
       case 'super':
         this.sfx('super', s.fighters[ev.p].x);

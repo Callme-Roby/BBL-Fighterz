@@ -1,4 +1,4 @@
-import { IN_DOWN, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_RK, IN_RP, IN_SUPER, IN_UP } from '../sim/types';
+import { IN_DOWN, IN_GRAB, IN_GUARD, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_RK, IN_RP, IN_SUPER, IN_UP } from '../sim/types';
 
 /**
  * Keyboard (physical key codes, so AZERTY & QWERTY both work), gamepads and
@@ -7,7 +7,7 @@ import { IN_DOWN, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_RK, IN_RP, IN_SUPER, IN_UP
 
 export type ControlMode = 'solo' | 'versus';
 
-type Binding = Record<'up' | 'down' | 'left' | 'right' | 'lp' | 'rp' | 'lk' | 'rk' | 'super', string[]>;
+type Binding = Record<'up' | 'down' | 'left' | 'right' | 'lp' | 'rp' | 'lk' | 'rk' | 'super' | 'guard' | 'grab', string[]>;
 
 /** P1 when two players share the keyboard: ZQSD/WASD + R T F G, E = BBL MAX */
 export const P1_KEYS: Binding = {
@@ -20,6 +20,8 @@ export const P1_KEYS: Binding = {
   lk: ['KeyF'],
   rk: ['KeyG'],
   super: ['KeyE'],
+  guard: ['ShiftLeft'],
+  grab: ['KeyQ'],
 };
 /** P2 when two players share the keyboard: arrows + I O K L (or numpad 4 5 1 2), P = BBL MAX */
 export const P2_KEYS: Binding = {
@@ -32,6 +34,8 @@ export const P2_KEYS: Binding = {
   lk: ['KeyK', 'Numpad1'],
   rk: ['KeyL', 'Numpad2'],
   super: ['KeyP', 'Numpad6'],
+  guard: ['ShiftRight', 'Numpad0'],
+  grab: ['Slash', 'Numpad3'],
 };
 /** Solo player: everything (WASD or arrows, U I J K or R T F G, E or O = BBL MAX) */
 export const SOLO_KEYS: Binding = {
@@ -44,6 +48,8 @@ export const SOLO_KEYS: Binding = {
   lk: ['KeyJ', 'KeyF', 'Numpad1'],
   rk: ['KeyK', 'KeyG', 'Numpad2'],
   super: ['KeyE', 'KeyO', 'Numpad6'],
+  guard: ['ShiftLeft', 'KeyL', 'Numpad0'],
+  grab: ['KeyQ', 'KeyH', 'Numpad3'],
 };
 
 const BIT: Record<keyof Binding, number> = {
@@ -56,6 +62,8 @@ const BIT: Record<keyof Binding, number> = {
   lk: IN_LK,
   rk: IN_RK,
   super: IN_SUPER,
+  guard: IN_GUARD,
+  grab: IN_GRAB,
 };
 
 export type MenuAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'back' | 'start';
@@ -155,7 +163,8 @@ class InputManager {
     if (b(3)) bits |= IN_RP;
     if (b(0)) bits |= IN_LK;
     if (b(1)) bits |= IN_RK;
-    if (b(4)) bits |= IN_LP | IN_LK; // LB = throw
+    if (b(4)) bits |= IN_GRAB; // LB = grab
+    if (b(6)) bits |= IN_GUARD; // LT = guard / parry
     if (b(5) || b(7)) bits |= IN_SUPER; // RB / RT = BBL MAX
     return bits;
   }
@@ -240,6 +249,8 @@ export function keyLabel(code: string): string {
     ArrowLeft: '←',
     ArrowRight: '→',
     Space: 'Espace',
+    ShiftLeft: 'Maj gauche',
+    ShiftRight: 'Maj droite',
     Numpad4: 'Num4',
     Numpad5: 'Num5',
     Numpad1: 'Num1',

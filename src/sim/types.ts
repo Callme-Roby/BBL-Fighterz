@@ -16,6 +16,12 @@ export const IN_RK = 128;
 export const IN_BUTTONS = IN_LP | IN_RP | IN_LK | IN_RK;
 /** dedicated "BBL MAX" (ultimate) button */
 export const IN_SUPER = 256;
+/** guard button: hold to block, tap right before a hit to PARRY */
+export const IN_GUARD = 512;
+/** grab button (throw) */
+export const IN_GRAB = 1024;
+/** buttons that are forwarded to the relative input */
+export const IN_EXTRA = IN_SUPER | IN_GUARD | IN_GRAB;
 
 // ---- relative bits (B/F depend on which side the fighter faces) ----
 export const R_U = 1;
@@ -67,6 +73,9 @@ export type Action =
   | 'superFlash'
   | 'superCombo'
   | 'superVictim'
+  | 'guard'
+  | 'parry'
+  | 'parried'
   | 'ko'
   | 'intro'
   | 'win'
@@ -132,6 +141,10 @@ export interface FighterState {
   ultOrigin: number;
   /** script id of the cinematic this fighter is the victim of */
   ultBy: string;
+  /** frames left in the parry window opened by a guard tap */
+  parryTimer: number;
+  /** anti-mash: frames before another parry window can open */
+  parryCooldown: number;
 }
 
 export type Phase = 'intro' | 'roundIntro' | 'fight' | 'ko' | 'roundOver' | 'matchOver';
@@ -144,6 +157,8 @@ export type SimEvent =
   | { t: 'fall'; p: number }
   | { t: 'throw'; p: number }
   | { t: 'throwBreak'; p: number }
+  | { t: 'grab'; p: number }
+  | { t: 'parry'; p: number; x: number; y: number }
   | { t: 'super'; p: number }
   | { t: 'superCombo'; p: number }
   | { t: 'ko'; p: number }

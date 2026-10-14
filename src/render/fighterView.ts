@@ -100,6 +100,20 @@ export class FighterView {
         clip = 'crouch';
         blend = 4;
         break;
+      case 'guard':
+        clip = f.crouching ? 'crouchGuard' : 'guard';
+        key = 'guard' + (f.crouching ? 'c' : 's');
+        blend = 4;
+        break;
+      case 'parry':
+        clip = 'parry';
+        blend = 2;
+        break;
+      case 'parried':
+        clip = 'parried';
+        frame = (f.actionFrame / Math.max(1, f.stunTotal)) * CLIPS.parried.length;
+        blend = 2;
+        break;
       case 'prejump':
       case 'jump':
       case 'land':

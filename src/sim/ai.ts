@@ -1,5 +1,5 @@
 import { MOVES } from './moves';
-import { IN_DOWN, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_RK, IN_RP, IN_SUPER, IN_UP, MAX_METER, type GameState } from './types';
+import { IN_DOWN, IN_GRAB, IN_GUARD, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_RK, IN_RP, IN_SUPER, IN_UP, MAX_METER, type GameState } from './types';
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
@@ -9,12 +9,14 @@ interface Tuning {
   aggression: number; // 0..1
   comboSkill: number; // 0..1
   antiAirChance: number;
+  /** chance to try a parry instead of a plain block */
+  parryChance: number;
 }
 
 const TUNING: Record<Difficulty, Tuning> = {
-  easy: { reaction: 24, blockChance: 0.2, aggression: 0.28, comboSkill: 0.15, antiAirChance: 0.1 },
-  normal: { reaction: 14, blockChance: 0.55, aggression: 0.55, comboSkill: 0.55, antiAirChance: 0.35 },
-  hard: { reaction: 8, blockChance: 0.72, aggression: 0.8, comboSkill: 0.9, antiAirChance: 0.7 },
+  easy: { reaction: 24, blockChance: 0.2, aggression: 0.28, comboSkill: 0.15, antiAirChance: 0.1, parryChance: 0 },
+  normal: { reaction: 14, blockChance: 0.55, aggression: 0.55, comboSkill: 0.55, antiAirChance: 0.35, parryChance: 0.12 },
+  hard: { reaction: 8, blockChance: 0.72, aggression: 0.8, comboSkill: 0.9, antiAirChance: 0.7, parryChance: 0.3 },
 };
 
 /**
@@ -67,6 +69,15 @@ export class CpuBrain {
         if (willBlock && canSee && dist < m.reach + 1.0) {
           this.blocking = m.startup + m.active + 4;
           this.hold = m.level === 'low' ? back | IN_DOWN : back;
+          // sometimes go for the parry: tap guard a few frames before the impact
+          const until = m.startup - o.actionFrame - 3;
+          if (until >= 0 && r() < this.t.parryChance) {
+            const low = m.level === 'low' ? IN_DOWN : 0;
+            this.queue.length = 0;
+            for (let i = 0; i < until; i++) this.queue.push(low);
+            this.queue.push(IN_GUARD | low, IN_GUARD | low, IN_GUARD | low, low, low, low);
+            this.blocking = 0;
+          }
         }
       }
     }
@@ -111,7 +122,7 @@ export class CpuBrain {
     }
 
     // punish an opponent stuck in recovery / getting up
-    const oRecovering = o.action === 'attack' && o.moveId && o.actionFrame > MOVES[o.moveId].startup + MOVES[o.moveId].active && !o.moveHit;
+    const oRecovering = o.action === 'parried' || (o.action === 'attack' && o.moveId && o.actionFrame > MOVES[o.moveId].startup + MOVES[o.moveId].active && !o.moveHit);
     if (oRecovering && dist < 1.2 && r() < this.t.comboSkill) {
       this.queue.push(IN_DOWN | fwd, IN_DOWN | fwd | IN_RP); // uppercut launcher
       return 0;
@@ -162,7 +173,7 @@ export class CpuBrain {
         [IN_DOWN, IN_DOWN | IN_RK],
         [fwd | IN_RP],
         [IN_LK],
-        [IN_LP | IN_LK],
+        [IN_GRAB],
         [fwd | IN_LP],
         [IN_DOWN, IN_DOWN | IN_RP],
         [fwd | IN_LK],

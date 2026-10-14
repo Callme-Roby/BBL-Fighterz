@@ -479,6 +479,12 @@ export class FightScreen implements Screen {
       case 'throwBreak':
         this.hud.announce('ÉCHAPPÉ !', 'small', 40);
         break;
+      case 'parry':
+        this.hud.announce('PARADE !', 'small', 45);
+        break;
+      case 'grab':
+        this.hud.announce('SAISIE !', 'small', 35);
+        break;
       default:
         break;
     }

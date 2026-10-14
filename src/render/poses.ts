@@ -731,6 +731,65 @@ const DASH_F = merge(STANCE, { root: [0, -0.1, 0.06], spine: [16, 0, 0], thighL:
 const DASH_B = merge(STANCE, { root: [0, -0.02, -0.06], spine: [-10, 0, 0], thighL: [-10, 0, 6], shinL: [20, 0, 0], thighR: [20, 0, -6], shinR: [60, 0, 0], footR: [-60, 0, 0] });
 
 // ---------------------------------------------------------------------------
+// parry
+// ---------------------------------------------------------------------------
+/** The defender sweeps the attack aside with the lead arm. */
+function parry(): Clip {
+  const deflect = merge(STANCE, {
+    root: [0, -0.07, -0.03],
+    hips: [0, -48, 0],
+    spine: [4, -10, 0],
+    chest: [2, -14, 0],
+    head: [-6, 18, 0],
+    upperArmL: [-95, 0, 70],
+    foreArmL: [-55, 0, 0],
+    handL: [-20, 0, 0],
+    upperArmR: [-50, 0, -20],
+    foreArmR: [-125, 0, 0],
+  });
+  return {
+    length: 10,
+    keys: [
+      { f: 0, p: BLOCK },
+      { f: 3, p: deflect, ease: 'out' },
+      { f: 7, p: deflect },
+      { f: 10, p: STANCE, ease: 'smooth' },
+    ],
+  };
+}
+
+/** The attacker is thrown off balance: arms flung wide, stumbling back. */
+function parried(): Clip {
+  const stagger = merge(STANCE, {
+    root: [0, -0.04, -0.12],
+    hips: [-8, -10, 0],
+    spine: [-14, 0, 0],
+    chest: [-12, 0, 0],
+    neck: [-10, 0, 0],
+    head: [-16, 0, 0],
+    upperArmL: [-30, 0, 85],
+    foreArmL: [-30, 0, 0],
+    upperArmR: [-20, 0, -80],
+    foreArmR: [-35, 0, 0],
+    thighL: [-35, 0, 8],
+    shinL: [30, 0, 0],
+    thighR: [25, 0, -8],
+    shinR: [35, 0, 0],
+    footR: [-40, 0, 0],
+  });
+  const wobble = merge(stagger, { root: [0, -0.07, -0.1], chest: [-6, 8, 0], head: [-6, -10, 0], upperArmL: [-40, 0, 60], upperArmR: [-35, 0, -55] });
+  return {
+    length: 26,
+    keys: [
+      { f: 0, p: STANCE },
+      { f: 4, p: stagger, ease: 'out' },
+      { f: 14, p: wobble, ease: 'smooth' },
+      { f: 26, p: STANCE, ease: 'smooth' },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // BBL MAX (ultimate)
 // ---------------------------------------------------------------------------
 function superFlash(): Clip {
@@ -910,6 +969,10 @@ function buildLibrary(): Record<ClipId, Clip> {
     win2: win(2),
     lose: { length: 30, keys: [{ f: 0, p: STANCE }, { f: 30, p: LOSE, ease: 'smooth' }] },
     stance: single(STANCE),
+    guard: { length: 1, keys: [{ f: 0, p: BLOCK }] },
+    crouchGuard: { length: 1, keys: [{ f: 0, p: CROUCH_BLOCK }] },
+    parry: parry(),
+    parried: parried(),
     superFlash: superFlash(),
     superCombo: superCombo(),
     superVictim: superVictim(),
