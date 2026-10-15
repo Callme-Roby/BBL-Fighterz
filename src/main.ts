@@ -1,7 +1,10 @@
 import './ui/styles.css';
+import './ui/mobile-menus.css';
+import './ui/mobile-game.css';
 import { App } from './app';
 import { initKeyLabels } from './input/input';
 import { roomFromUrl, tournamentFromUrl } from './net/peer';
+import * as flow from './screens/flow';
 import { goOnline, goTitle, goTournamentHome, initFlow, startFight } from './screens/flow';
 import { ROSTER } from './data/roster';
 import { STAGES } from './render/stages';
@@ -20,6 +23,9 @@ function boot() {
   if (location.search.includes('debug')) {
     // kept when a join link cleans the address bar
     (window as unknown as { bblDebug: boolean }).bblDebug = true;
+    // ?debug: jump to any screen from the console / tests, e.g. bblFlow.goSelect('cpu')
+    (window as unknown as { bblFlow: typeof flow }).bblFlow = flow;
+    (window as unknown as { bblRoster: typeof ROSTER }).bblRoster = ROSTER;
     // ?debug: start a CPU fight straight away, e.g. bblStart('zia', 'thomas')
     (window as unknown as { bblStart: unknown }).bblStart = (a: string, b: string, stage?: string) => {
       const find = (id: string) => ROSTER.find((f) => f.id === id) ?? ROSTER[0];
