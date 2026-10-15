@@ -167,6 +167,23 @@ export class RollbackSession {
     return out;
   }
 
+  /**
+   * Final inputs (both players known for sure) from frame `from` on, in player
+   * order: calls `out(frame, p1, p2)` for each and returns the next frame to ask for.
+   * Used to stream the match to spectators.
+   */
+  confirmedInputs(from: number, out: (f: number, i0: number, i1: number) => void): number {
+    const upTo = Math.min(this.remoteConfirmed, this.localSentUpTo);
+    let f = from;
+    for (; f <= upTo; f++) {
+      const l = Math.max(0, this.local[f % RING]);
+      const r = Math.max(0, this.remote[f % RING]);
+      if (this.localPlayer === 0) out(f, l, r);
+      else out(f, r, l);
+    }
+    return f;
+  }
+
   private localSentUpTo = INPUT_DELAY - 1;
   private nextSumFrame = 120;
 

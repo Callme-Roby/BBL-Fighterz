@@ -5,6 +5,7 @@
 import '../ui/tournament.css';
 import * as THREE from 'three';
 import type { FighterDef } from '../data/roster';
+import { BYE, fighterOf, roundName, type Match, type Side, type Tournament } from '../game/tournament';
 import { loadFace } from '../render/faceTexture';
 import type { Showroom } from '../render/showroom';
 import { h, type Menu } from '../ui/dom';
@@ -88,4 +89,58 @@ export function controlsEl(humans: number): HTMLElement {
       ),
     ),
   );
+}
+
+export interface BracketOptions {
+  /** participant index of this browser (online: "TOI") */
+  me?: number;
+  /** participants currently disconnected (online) */
+  offline?: boolean[];
+  /** match being played right now (online) */
+  live?: { r: number; m: number } | null;
+}
+
+/** The whole single-elimination tree (columns of rounds joined by connectors). */
+export function bracketTree(t: Tournament, roster: FighterDef[], o: BracketOptions = {}): HTMLElement {
+  const sideEl = (s: Side, m: Match): HTMLElement => {
+    if (s === BYE) return h('div', { class: 'tn-side byeside' }, h('span', { class: 'tn-name' }, '—'));
+    if (s === null) return h('div', { class: 'tn-side tbd' }, h('div', { class: 'tn-ph unknown' }, '?'), h('span', { class: 'tn-name' }, '…'));
+    const p = t.participants[s];
+    const def = fighterOf(t, s, roster);
+    const cls = ['tn-side'];
+    if (m.winner !== null) cls.push(m.winner === s ? (m.bye ? 'adv' : 'win') : 'lose');
+    if (o.me === s) cls.push('me');
+    if (o.offline?.[s]) cls.push('off');
+    return h(
+      'div',
+      { class: cls.join(' '), title: `${p.name} (${def.name})` },
+      portrait(def),
+      h('div', { class: 'tn-info' }, h('span', { class: 'tn-name' }, p.name), h('span', { class: 'tn-fighter' }, def.name)),
+      p.cpu ? h('span', { class: 'tn-cpu' }, 'CPU') : null,
+      o.me === s ? h('span', { class: 'tn-you' }, 'TOI') : null,
+    );
+  };
+  const matchEl = (m: Match, r: number, i: number): HTMLElement => {
+    const cur = t.current;
+    const cls = ['tn-match'];
+    if (cur && cur.r === r && cur.m === i) cls.push('next');
+    if (o.live && o.live.r === r && o.live.m === i) cls.push('live');
+    if (m.bye) cls.push('bye');
+    else if (m.winner !== null) cls.push('done');
+    return h('div', { class: cls.join(' ') }, sideEl(m.a, m), sideEl(m.b, m));
+  };
+  const bracket = h('div', { class: 'tn-bracket', style: `--rounds:${t.rounds.length}` });
+  t.rounds.forEach((round, r) => {
+    const body = h('div', { class: 'tn-round-body' });
+    round.forEach((m, i) => body.append(h('div', { class: 'tn-slot' + (i % 2 ? ' odd' : ' even') }, matchEl(m, r, i))));
+    bracket.append(
+      h(
+        'div',
+        { class: 'tn-round' + (r === t.rounds.length - 1 ? ' last' : '') + (r === 0 ? ' first' : '') },
+        h('div', { class: 'tn-round-title' }, roundName(t, r)),
+        body,
+      ),
+    );
+  });
+  return bracket;
 }

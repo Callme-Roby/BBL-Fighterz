@@ -15,7 +15,15 @@ import { Hud } from '../ui/hud';
 import { controlsHelp } from './help';
 import { goMenu, goSelect, startFight } from './flow';
 
-export type FightMode = 'cpu' | 'versus' | 'online';
+export type FightMode = 'cpu' | 'versus' | 'online' | 'spectate';
+
+/** Input stream of a match watched as a spectator (online tournament). */
+export interface SpectatorFeed {
+  /** inputs [p1, p2] of frame f, or null while they have not arrived */
+  get(f: number): [number, number] | null;
+  /** number of frames received so far */
+  readonly length: number;
+}
 
 export interface FightSetup {
   mode: FightMode;
@@ -34,6 +42,10 @@ export interface FightSetup {
   cpuSides?: [boolean, boolean];
   /** set when the match is part of a tournament */
   tournament?: TournamentHooks;
+  /** called with the final inputs of every frame, in order (streams the match to spectators) */
+  tv?: (frame: number, i0: number, i1: number) => void;
+  /** spectator mode: where the inputs come from */
+  feed?: SpectatorFeed;
 }
 
 export interface TournamentHooks {
@@ -43,6 +55,10 @@ export interface TournamentHooks {
   onResult(winner: 0 | 1 | 2): void;
   /** called when the players leave the match without a result (pause menu) */
   onAbort(): void;
+  /** online tournament: called once, as soon as the match is decided (before any click) */
+  onMatchEnd?(winner: 0 | 1 | 2): void;
+  /** online tournament: no restart / rematch, the result screen leads back to the bracket */
+  online?: boolean;
 }
 
 const STEP = 1 / 60;
@@ -69,6 +85,11 @@ export class FightScreen implements Screen {
   private vsUntil = 0;
   private readySent = false;
   private disposed = false;
+  /** next frame whose final inputs are streamed (online runner) */
+  private tvNext = 0;
+  private endReported = false;
+  /** spectator: playback started (a small buffer is filled first) */
+  private spectating = false;
 
   constructor(
     private app: App,
@@ -82,7 +103,7 @@ export class FightScreen implements Screen {
     // deterministic variant choices for intro animations (same on both peers)
     this.state.fighters[0].variant = setup.seed % 2;
     this.state.fighters[1].variant = (setup.seed >> 1) % 2;
-    if (setup.mode !== 'online') {
+    if (setup.mode !== 'online' && setup.mode !== 'spectate') {
       const cpuSides = setup.cpuSides ?? (setup.mode === 'cpu' ? [false, true] : [false, false]);
       for (const i of [0, 1] as const) if (cpuSides[i]) this.cpu[i] = new CpuBrain(setup.difficulty);
     }
@@ -94,7 +115,7 @@ export class FightScreen implements Screen {
     }
     this.hud = new Hud(this.labels(), this.superKeys());
     // console access for testing: open the game with ?debug
-    if (location.search.includes('debug')) (window as unknown as { bblFight: unknown }).bblFight = this;
+    if (location.search.includes('debug') || (window as unknown as { bblDebug?: boolean }).bblDebug) (window as unknown as { bblFight: unknown }).bblFight = this;
     FightWorld.create(setup.p1, setup.p2, setup.stageId).then((w) => {
       if (this.disposed) {
         w.dispose();
@@ -185,16 +206,23 @@ export class FightScreen implements Screen {
 
   private disconnected(reason: string) {
     if (this.disposed) return;
+    // online tournament: the opponent going back to the bracket after the result is not a problem
+    if (this.setup.tournament?.online && this.state.phase === 'matchOver') return;
     this.paused = true;
     this.closeOverlay();
-    this.menu = new Menu([{ label: 'RETOUR AU MENU', action: () => this.quitToMenu() }], () => audio.sfx('cursor'));
+    const t = this.setup.tournament;
+    this.menu = new Menu(
+      [t ? { label: 'RETOUR AU TABLEAU', action: () => this.quitToMenu() } : { label: 'RETOUR AU MENU', action: () => this.quitToMenu() }],
+      () => audio.sfx('cursor'),
+    );
     this.overlay = h('div', { class: 'overlay' }, h('div', { class: 'h1' }, 'DÉCONNEXION'), h('div', { class: 'status err' }, reason), this.menu.el);
     uiRoot().append(this.overlay);
   }
 
   private quitToMenu() {
     this.setup.link?.close();
-    goMenu();
+    if (this.setup.tournament) this.setup.tournament.onAbort();
+    else goMenu();
   }
 
   /** HUD / result labels: participant names when given, otherwise fighter names */
@@ -206,6 +234,7 @@ export class FightScreen implements Screen {
 
   // ---------------------------------------------------------------- input
   private get humans(): number {
+    if (this.setup.mode === 'spectate') return 0;
     return (this.cpu[0] ? 0 : 1) + (this.cpu[1] ? 0 : 1);
   }
 
@@ -217,6 +246,7 @@ export class FightScreen implements Screen {
 
   /** key shown in the HUD next to "BBL MAX !" for each side */
   private superKeys(): [string, string] {
+    if (this.setup.mode === 'spectate') return ['', ''];
     if (this.setup.mode === 'online') return this.setup.localPlayer === 1 ? ['', 'E'] : ['E', ''];
     if (this.humans >= 2) return ['E', 'P'];
     return [this.cpu[0] ? '' : 'E', this.cpu[1] ? '' : 'E'];
@@ -224,6 +254,7 @@ export class FightScreen implements Screen {
 
   /** side played by the human using the touch controls / solo keys (-1 = none) */
   private get localSide(): number {
+    if (this.setup.mode === 'spectate') return -1;
     if (this.setup.mode === 'online') return this.setup.localPlayer ?? 0;
     if (!this.cpu[0]) return 0;
     if (!this.cpu[1]) return 1;
@@ -247,6 +278,21 @@ export class FightScreen implements Screen {
 
   private togglePause() {
     if (this.resultsShown) return;
+    if (this.setup.mode === 'spectate') {
+      if (this.overlay) this.closeOverlay();
+      else {
+        this.menu = new Menu(
+          [
+            { label: 'CONTINUER À REGARDER', action: () => this.closeOverlay() },
+            { label: 'RETOUR AU TABLEAU', action: () => this.setup.tournament?.onAbort() },
+          ],
+          () => audio.sfx('cursor'),
+        );
+        this.overlay = h('div', { class: 'overlay' }, h('div', { class: 'h1' }, 'SPECTATEUR'), this.menu.el);
+        uiRoot().append(this.overlay);
+      }
+      return;
+    }
     if (this.setup.mode === 'online') {
       if (this.overlay) this.closeOverlay();
       else {
@@ -271,7 +317,13 @@ export class FightScreen implements Screen {
     audio.duck(true);
     const t = this.setup.tournament;
     this.menu = new Menu(
-      t
+      t?.online
+        ? [
+            { label: 'REPRENDRE', sub: 'Les spectateurs attendent !', action: () => this.togglePause() },
+            { label: 'COMMANDES', action: () => this.showHelp() },
+            { label: 'ABANDONNER LE COMBAT', sub: 'Il sera rejoué plus tard', action: () => t.onAbort() },
+          ]
+        : t
         ? [
             { label: 'REPRENDRE', action: () => this.togglePause() },
             { label: 'RECOMMENCER LE MATCH', action: () => this.restart(false) },
@@ -320,7 +372,15 @@ export class FightScreen implements Screen {
     this.resultsShown = true;
     this.closeOverlay();
     const online = this.setup.mode === 'online';
-    const items = online
+    const tn = this.setup.tournament;
+    const items = tn?.online
+      ? [
+          {
+            label: this.state.matchWinner === 2 ? 'MATCH NUL : RETOUR AU TABLEAU' : 'RETOUR AU TABLEAU',
+            action: () => tn.onResult(this.state.matchWinner as 0 | 1 | 2),
+          },
+        ]
+      : online
       ? [
           {
             label: this.rematchMine ? 'EN ATTENTE…' : this.rematchTheirs ? 'REVANCHE ! (ACCEPTER)' : 'REVANCHE',
@@ -383,16 +443,32 @@ export class FightScreen implements Screen {
       this.world.render(this.app.pipeline, this.state, dt, this.app.aspect);
       return;
     }
+    let maxSteps = 5;
+    const feed = this.setup.mode === 'spectate' ? this.setup.feed : undefined;
+    if (feed) {
+      // play a little behind the stream so network hiccups don't freeze the picture
+      const ahead = feed.length - this.state.frame;
+      if (!this.spectating && (ahead >= 30 || (ahead > 0 && this.state.phase === 'matchOver'))) this.spectating = true;
+      const over = this.state.phase === 'matchOver';
+      this.hud.setNetInfo(over ? 'SPECTATEUR' : this.spectating && ahead > 0 ? 'SPECTATEUR · EN DIRECT' : 'SPECTATEUR · EN ATTENTE DU DIRECT…');
+      if (!this.spectating) {
+        this.world.render(this.app.pipeline, this.state, dt, this.app.aspect);
+        return;
+      }
+      // far behind (joined late, tab in the background): catch up faster
+      if (ahead > 120) maxSteps = 12;
+    }
 
-    if (!this.paused || online) {
+    if (!this.paused || online || feed) {
       this.acc += dt;
       let steps = 0;
-      while (this.acc >= STEP && steps < 5) {
+      if (feed && maxSteps > 5) this.acc = Math.max(this.acc, STEP * maxSteps);
+      while (this.acc >= STEP && steps < maxSteps) {
         this.acc -= STEP;
         steps++;
         this.tick();
       }
-      if (steps >= 5) this.acc = 0;
+      if (steps >= maxSteps) this.acc = 0;
     }
 
     this.world.render(this.app.pipeline, this.state, dt, this.app.aspect);
@@ -414,12 +490,22 @@ export class FightScreen implements Screen {
     if (this.session) {
       const evs = this.session.tick(this.localBits(0));
       this.state = this.session.state;
+      if (this.setup.tv) this.tvNext = this.session.confirmedInputs(this.tvNext, this.setup.tv);
       this.world!.handleEvents(evs, this.state, { onEvent: (e) => this.onEvent(e) });
       return;
     }
     const s = this.state;
+    if (this.setup.mode === 'spectate') {
+      const inp = this.setup.feed?.get(s.frame);
+      if (!inp) return; // waiting for the stream
+      step(s, inp);
+      const evs: TimedEvent[] = s.events.map((ev) => ({ frame: s.frame, ev }));
+      this.world!.handleEvents(evs, s, { onEvent: (e) => this.onEvent(e) });
+      return;
+    }
     const i0 = this.cpu[0] ? this.cpu[0].think(s, 0) : this.localBits(0);
     const i1 = this.cpu[1] ? this.cpu[1].think(s, 1) : this.localBits(1);
+    this.setup.tv?.(s.frame, i0, i1);
     step(s, [i0, i1]);
     const evs: TimedEvent[] = s.events.map((ev) => ({ frame: s.frame, ev }));
     this.world!.handleEvents(evs, s, { onEvent: (e) => this.onEvent(e) });
@@ -529,6 +615,12 @@ export class FightScreen implements Screen {
       if (s.phase !== 'roundIntro' || s.phaseFrame > 2) {
         // keep flags; subtitles are cleared at round start
       }
+    }
+
+    // online tournament: report as soon as the result is certain (no rollback can change it by then)
+    if (s.phase === 'matchOver' && s.phaseFrame > 30 && !this.endReported && this.setup.mode !== 'spectate') {
+      this.endReported = true;
+      this.setup.tournament?.onMatchEnd?.(s.matchWinner as 0 | 1 | 2);
     }
 
     if (s.phase === 'matchOver') {

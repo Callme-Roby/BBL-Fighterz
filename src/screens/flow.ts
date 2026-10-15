@@ -13,6 +13,7 @@ import { TournamentSetupScreen } from './tournament';
 import { TournamentBracketScreen } from './tournamentBracket';
 import { TournamentChampionScreen } from './tournamentChampion';
 import { TournamentPickScreen } from './tournamentPick';
+import { MessageScreen, TournamentHomeScreen, TournamentOnlineScreen } from './tournamentOnline';
 
 /** Central navigation between screens. */
 let app: App;
@@ -75,4 +76,25 @@ export function goTournamentBracket(t: Tournament, flash?: string) {
 
 export function goTournamentChampion(t: Tournament) {
   app.go(new TournamentChampionScreen(app, t));
+}
+
+// ---------------------------------------------------------------- online tournament
+
+/** TOURNOI menu: on this browser / online (create, join). `joinCode` = from a ?tournoi= link */
+export function goTournamentHome(joinCode?: string) {
+  app.go(new TournamentHomeScreen(app, joinCode));
+}
+
+/** Lobby or bracket of the running online tournament. */
+export function goTournamentOnline() {
+  app.go(new TournamentOnlineScreen(app));
+}
+
+export function goTournamentChampionOnline(t: Tournament) {
+  app.go(new TournamentChampionScreen(app, t, true));
+}
+
+/** A message (tournament over, connection lost…) then the main menu. */
+export function goMenuWithMessage(title: string, message: string) {
+  app.go(new MessageScreen(app, title, message));
 }

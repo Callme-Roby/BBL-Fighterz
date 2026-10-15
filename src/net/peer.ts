@@ -1,5 +1,6 @@
 import Peer, { type DataConnection, type PeerOptions } from 'peerjs';
 import type { FighterDef } from '../data/roster';
+import type { Tournament } from '../game/tournament';
 
 /**
  * Peer-to-peer link between two browsers (WebRTC data channel via PeerJS).
@@ -7,8 +8,43 @@ import type { FighterDef } from '../data/roster';
  * game traffic then goes directly between the two players.
  */
 
-export const NET_VERSION = 'bbl-1';
+export const NET_VERSION = 'bbl-2';
 const ID_PREFIX = 'bblfighterz-';
+/** online tournaments: the organiser's peer id is ID_PREFIX + TN_TAG + code */
+const TN_TAG = 't';
+
+/** A participant as seen in the online tournament lobby. */
+export interface TnEntry {
+  name: string;
+  cpu: boolean;
+  /** chosen fighter (a built-in roster id, or a full custom definition) */
+  fighterId: string;
+  def?: FighterDef;
+  /** connected right now (CPU entries are always "online") */
+  online: boolean;
+}
+
+/** Everything needed to play / watch one tournament match (identical on every browser). */
+export interface TnMatch {
+  /** unique per attempt: "round.match.replays" */
+  key: string;
+  r: number;
+  m: number;
+  /** participant indices (left / right) */
+  a: number;
+  b: number;
+  p1: FighterDef;
+  p2: FighterDef;
+  stageId: string;
+  rounds: number;
+  difficulty: 'easy' | 'normal' | 'hard';
+  seed: number;
+  title: string;
+  names: [string, string];
+  cpu: [boolean, boolean];
+  /** participant index of the browser that runs the fight and streams it (-1 = the organiser, CPU vs CPU) */
+  runner: number;
+}
 
 export type NetMsg =
   | { t: 'hello'; version: string; name: string }
@@ -22,7 +58,30 @@ export type NetMsg =
   | { t: 'toSelect' }
   | { t: 'leave' }
   | { t: 'ping'; ts: number }
-  | { t: 'pong'; ts: number };
+  | { t: 'pong'; ts: number }
+  // ---- online tournament (organiser = hub, everybody else connects to it)
+  /** guest → organiser: who I am (`token` lets a refreshed page get its slot back) */
+  | { t: 'tnHello'; version: string; name: string; token: string }
+  /** organiser → guest: refused (wrong version, full…) */
+  | { t: 'tnError'; reason: string }
+  /** organiser → guest: lobby / tournament state. `you` = participant index of the receiver (-1 = spectator) */
+  | { t: 'tnLobby'; entries: TnEntry[]; you: number; started: boolean }
+  /** guest → organiser: name / fighter choice */
+  | { t: 'tnMe'; name: string; fighterId: string; def?: FighterDef }
+  /** organiser → all: the bracket (after the start) */
+  | { t: 'tnState'; tour: Tournament; live: TnMatch | null; flash: string }
+  /** organiser → all: a match starts (its two players fight, the others watch) */
+  | { t: 'tnMatch'; match: TnMatch }
+  /** left player → organiser → right player: code of the room of their online fight */
+  | { t: 'tnRoom'; key: string; code: string }
+  /** runner → organiser → spectators: final inputs from frame f (pairs p1, p2 flattened) */
+  | { t: 'tnTv'; key: string; f: number; b: number[] }
+  /** runner → organiser: match result (2 = draw) */
+  | { t: 'tnResult'; key: string; w: 0 | 1 | 2 }
+  /** player → organiser: the match could not be played (disconnection...) */
+  | { t: 'tnAbort'; key: string; reason: string }
+  /** organiser → all: the tournament is over / cancelled */
+  | { t: 'tnEnd'; reason: string };
 
 export type NetListener = (m: NetMsg) => void;
 
@@ -48,7 +107,16 @@ export class NetLink {
     private peer: Peer,
     readonly code: string,
     readonly isHost: boolean,
+    /** false for the links of a hub: closing one must not destroy the shared peer */
+    private ownsPeer = true,
   ) {}
+
+  /** Wraps a connection accepted by a hub (the hub owns the peer). */
+  static fromConnection(peer: Peer, c: DataConnection): NetLink {
+    const link = new NetLink(peer, '', true, false);
+    link.attach(c);
+    return link;
+  }
 
   /** Create a room. Resolves once the Peer is registered (the opponent connects later via `waitForGuest`). */
   static async host(onStatus?: (s: string) => void): Promise<NetLink> {
@@ -72,13 +140,13 @@ export class NetLink {
     });
   }
 
-  static async join(code: string, onStatus?: (s: string) => void): Promise<NetLink> {
+  static async join(code: string, onStatus?: (s: string) => void, tournament = false): Promise<NetLink> {
     onStatus?.('Connexion au serveur de mise en relation…');
     const peer = await openPeer();
     const link = new NetLink(peer, code, false);
-    onStatus?.("Recherche de l'adversaire…");
+    onStatus?.(tournament ? "Recherche du tournoi…" : "Recherche de l'adversaire…");
     await new Promise<void>((resolve, reject) => {
-      const c = peer.connect(ID_PREFIX + code, { reliable: true, serialization: 'json' });
+      const c = peer.connect(ID_PREFIX + (tournament ? TN_TAG : '') + code, { reliable: true, serialization: 'json' });
       const timer = window.setTimeout(() => reject(new Error('Délai dépassé : la partie est introuvable.')), 15000);
       c.on('open', () => {
         window.clearTimeout(timer);
@@ -156,11 +224,58 @@ export class NetLink {
     setTimeout(() => {
       try {
         this.conn?.close();
-        this.peer.destroy();
+        if (this.ownsPeer) this.peer.destroy();
       } catch {
         /* ignore */
       }
     }, 100);
+  }
+}
+
+/**
+ * Online tournament organiser: one peer that accepts every participant's
+ * connection (star network). Each guest gets its own NetLink.
+ */
+export class NetHub {
+  private closed = false;
+  private constructor(
+    private peer: Peer,
+    readonly code: string,
+  ) {}
+
+  static async host(onStatus?: (s: string) => void): Promise<NetHub> {
+    const code = randomCode();
+    onStatus?.('Connexion au serveur de mise en relation…');
+    const peer = await openPeer(ID_PREFIX + TN_TAG + code);
+    return new NetHub(peer, code);
+  }
+
+  /** Called for every guest once its connection is open. */
+  onGuest(cb: (link: NetLink) => void) {
+    this.peer.on('connection', (c) => {
+      if (this.closed) {
+        c.close();
+        return;
+      }
+      const link = NetLink.fromConnection(this.peer, c);
+      c.on('open', () => cb(link));
+    });
+  }
+
+  /** The broker connection dropped (guests already connected stay connected). */
+  onError(cb: (e: unknown) => void) {
+    this.peer.on('error', cb);
+  }
+
+  close() {
+    this.closed = true;
+    setTimeout(() => {
+      try {
+        this.peer.destroy();
+      } catch {
+        /* ignore */
+      }
+    }, 300);
   }
 }
 
@@ -200,6 +315,21 @@ export function roomFromUrl(): string | null {
   const q = new URLSearchParams(location.search);
   const r = q.get('room');
   return r && /^[a-z0-9]{4,12}$/.test(r) ? r : null;
+}
+
+/** `?tournoi=<code>` invitation of an online tournament */
+export function tournamentFromUrl(): string | null {
+  const q = new URLSearchParams(location.search);
+  const r = q.get('tournoi');
+  return r && /^[a-z0-9]{4,12}$/.test(r) ? r : null;
+}
+
+export function tournamentInviteUrl(code: string): string {
+  const u = new URL(location.href);
+  u.search = '';
+  u.hash = '';
+  u.searchParams.set('tournoi', code);
+  return u.toString();
 }
 
 export function inviteUrl(code: string): string {

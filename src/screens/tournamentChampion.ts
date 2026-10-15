@@ -10,6 +10,7 @@ import { input } from '../input/input';
 import { Showroom } from '../render/showroom';
 import { h, Menu, uiRoot } from '../ui/dom';
 import { goMenu, goTournament } from './flow';
+import { OnlineTournament } from '../game/onlineTournament';
 import { centerShowroom, guardButtons, syncMenuFocus } from './tournamentShared';
 
 const CONFETTI_COLORS = ['#ffd23a', '#ff8a1c', '#d8202a', '#29d7c4', '#7cc4ff', '#ffffff', '#c040ff'];
@@ -29,6 +30,8 @@ export class TournamentChampionScreen implements Screen {
   constructor(
     private app: App,
     private t: Tournament,
+    /** online tournament: nothing saved locally, no "new tournament" with the same players */
+    private online = false,
   ) {
     centerShowroom(this.showroom);
   }
@@ -45,8 +48,8 @@ export class TournamentChampionScreen implements Screen {
   }
 
   enter() {
-    // the tournament is over: nothing left to resume
-    clearTournament();
+    // the tournament is over: nothing left to resume (an online one is not saved here)
+    if (!this.online) clearTournament();
     audio.playMusic('victory', { loop: false });
     void audio.announcer('youWin');
 
@@ -78,10 +81,24 @@ export class TournamentChampionScreen implements Screen {
     }
 
     this.menu = new Menu(
-      [
-        { label: 'NOUVEAU TOURNOI', sub: 'Mêmes participants, nouveaux choix', action: () => (audio.sfx('confirm'), goTournament(t.participants)) },
-        { label: 'MENU PRINCIPAL', action: () => (audio.sfx('confirm'), goMenu()) },
-      ],
+      this.online
+        ? [
+            {
+              label: 'MENU PRINCIPAL',
+              sub: 'Fin du tournoi en ligne',
+              action: () => {
+                audio.sfx('confirm');
+                const ot = OnlineTournament.current;
+                if (ot?.isHost) ot.endForAll();
+                else ot?.close();
+                goMenu();
+              },
+            },
+          ]
+        : [
+            { label: 'NOUVEAU TOURNOI', sub: 'Mêmes participants, nouveaux choix', action: () => (audio.sfx('confirm'), goTournament(t.participants)) },
+            { label: 'MENU PRINCIPAL', action: () => (audio.sfx('confirm'), goMenu()) },
+          ],
       () => audio.sfx('cursor'),
     );
     syncMenuFocus(this.menu);

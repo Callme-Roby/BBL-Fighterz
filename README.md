@@ -8,6 +8,14 @@ leurs photos sont plaquées sur le visage des combattants par un shader.
 - **VERSUS** : 2 joueurs sur le même écran (clavier partagé et/ou manettes)
 - **EN LIGNE** : tu crées une partie, tu envoies le lien, ton pote clique et vous vous battez
   (pair-à-pair WebRTC + netcode *rollback* comme les vrais jeux de baston)
+- **TOURNOI** : élimination directe jusqu'à 16 participants (humains ou CPU), avec tableau, demi-finales,
+  finale et champion. Deux façons de jouer :
+  - **sur ce navigateur** : tout le monde joue sur le même écran (clavier / manettes) ;
+  - **en ligne** : l'organisateur crée le tournoi et envoie le lien, chacun le rejoint depuis chez soi,
+    met son nom et choisit son perso. L'organisateur lance les combats un par un : les deux joueurs
+    concernés s'affrontent en ligne, **tous les autres regardent le combat en direct**. Un joueur qui
+    recharge sa page retrouve sa place ; si quelqu'un est déconnecté, l'organisateur peut lui donner
+    le combat perdu par forfait ou le remplacer par le CPU. L'organisateur doit garder sa page ouverte.
 - **LABO** : crée un perso dans le navigateur avec une photo (recadrage, cheveux, fringues, voix, répliques)
 - Sélection des persos avec aperçu 3D, choix de l'arène, écran VS, intro de chaque perso
   (« Je vais te tuer. »), ROUND 1… FIGHT !, K.O. au ralenti, poses de victoire
@@ -120,6 +128,14 @@ automatiquement à l'adversaire en ligne.
   un autre réseau (les relais TURN publics de PeerJS sont utilisés en secours).
 - Option : ton propre serveur PeerJS (`npx peerjs --port 9000`) via les variables d'environnement
   Vercel `VITE_PEER_HOST`, `VITE_PEER_PORT`, `VITE_PEER_PATH`, `VITE_PEER_SECURE`.
+
+### Tournoi en ligne
+
+Réseau en étoile : la page de l'organisateur est le point central (`src/game/onlineTournament.ts`).
+Les deux joueurs d'un combat ouvrent leur propre salle pair-à-pair (même netcode rollback qu'en
+mode EN LIGNE). Le navigateur qui fait tourner le combat envoie les entrées définitives de chaque
+image à l'organisateur, qui les relaie aux spectateurs : la simulation étant déterministe, ils
+rejouent exactement le même combat, avec environ une demi-seconde de décalage.
 
 ## Structure
 

@@ -37,6 +37,8 @@ export interface Participant {
   cpu: boolean;
   /** id of the chosen fighter (resolved against `fullRoster()` when used) */
   fighterId: string;
+  /** online tournaments: full definition of a custom fighter created on another browser */
+  def?: FighterDef;
 }
 
 /** participant index, BYE, or null = not known yet */
@@ -353,8 +355,9 @@ export function simulateCpuMatch(roundsToWin: number, difficulty: Difficulty, ma
 
 /** Fighter of participant i (unknown ids fall back to the first roster fighter). */
 export function fighterOf(t: Tournament, i: number, roster: FighterDef[] = fullRoster()): FighterDef {
-  const id = t.participants[i]?.fighterId;
-  return roster.find((d) => d.id === id) ?? roster[0];
+  const p = t.participants[i];
+  if (p?.def) return p.def;
+  return roster.find((d) => d.id === p?.fighterId) ?? roster[0];
 }
 
 /** Roster index of the fighter whose name matches the participant's name, or -1. */

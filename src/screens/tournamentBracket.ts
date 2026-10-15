@@ -7,7 +7,6 @@ import type { App, Screen } from '../app';
 import type { FighterDef } from '../data/roster';
 import { fullRoster, settings } from '../game/settings';
 import {
-  BYE,
   champion,
   clearTournament,
   fighterOf,
@@ -15,13 +14,10 @@ import {
   humansIn,
   matchTitle,
   recordResult,
-  roundName,
   saveTournament,
   simulateCpuMatch,
   stageFor,
   totalMatches,
-  type Match,
-  type Side,
   type Tournament,
 } from '../game/tournament';
 import { input } from '../input/input';
@@ -29,7 +25,7 @@ import { Showroom } from '../render/showroom';
 import { STAGES } from '../render/stages';
 import { backButton, h, Menu, uiRoot } from '../ui/dom';
 import { goMenu, goTournamentBracket, goTournamentChampion, startFight } from './flow';
-import { controlsEl, guardButtons, portrait, syncMenuFocus } from './tournamentShared';
+import { bracketTree, controlsEl, guardButtons, portrait, syncMenuFocus } from './tournamentShared';
 
 /**
  * Records the result of match (r, m) and saves. Returns the message to flash
@@ -92,43 +88,12 @@ export class TournamentBracketScreen implements Screen {
       h('div', { class: 'h1' }, 'TOURNOI'),
       h('div', { class: 'tn-progress' }, `${t.played} / ${totalMatches(t)} COMBATS · ${t.participants.length} PARTICIPANTS`),
     );
-    const bracket = h('div', { class: 'tn-bracket', style: `--rounds:${t.rounds.length}` });
-    t.rounds.forEach((round, r) => {
-      const body = h('div', { class: 'tn-round-body' });
-      round.forEach((m, i) => body.append(h('div', { class: 'tn-slot' + (i % 2 ? ' odd' : ' even') }, this.matchEl(m, r, i))));
-      bracket.append(h('div', { class: 'tn-round' + (r === t.rounds.length - 1 ? ' last' : '') + (r === 0 ? ' first' : '') }, h('div', { class: 'tn-round-title' }, roundName(t, r)), body));
-    });
+    const bracket = bracketTree(t, this.roster);
     const wrap = h('div', { class: 'tn-bracket-wrap' }, head, bracket);
     this.root.replaceChildren(wrap, this.panel(), backButton(() => this.leave()));
     // keep the next match visible on small screens
     const next = this.root.querySelector('.tn-match.next') as HTMLElement | null;
     requestAnimationFrame(() => next?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }));
-  }
-
-  private matchEl(m: Match, r: number, i: number): HTMLElement {
-    const cur = this.t.current;
-    const isNext = !!cur && cur.r === r && cur.m === i;
-    const cls = ['tn-match'];
-    if (isNext) cls.push('next');
-    if (m.bye) cls.push('bye');
-    else if (m.winner !== null) cls.push('done');
-    return h('div', { class: cls.join(' ') }, this.sideEl(m.a, m), this.sideEl(m.b, m));
-  }
-
-  private sideEl(s: Side, m: Match): HTMLElement {
-    if (s === BYE) return h('div', { class: 'tn-side byeside' }, h('span', { class: 'tn-name' }, '—'));
-    if (s === null) return h('div', { class: 'tn-side tbd' }, h('div', { class: 'tn-ph unknown' }, '?'), h('span', { class: 'tn-name' }, '…'));
-    const p = this.t.participants[s];
-    const def = fighterOf(this.t, s, this.roster);
-    const cls = ['tn-side'];
-    if (m.winner !== null) cls.push(m.winner === s ? (m.bye ? 'adv' : 'win') : 'lose');
-    return h(
-      'div',
-      { class: cls.join(' '), title: `${p.name} (${def.name})` },
-      portrait(def),
-      h('div', { class: 'tn-info' }, h('span', { class: 'tn-name' }, p.name), h('span', { class: 'tn-fighter' }, def.name)),
-      p.cpu ? h('span', { class: 'tn-cpu' }, 'CPU') : null,
-    );
   }
 
   /** Side panel: flash message, next match, controls, buttons. */

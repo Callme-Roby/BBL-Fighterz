@@ -1,8 +1,8 @@
 import './ui/styles.css';
 import { App } from './app';
 import { initKeyLabels } from './input/input';
-import { roomFromUrl } from './net/peer';
-import { goOnline, goTitle, initFlow, startFight } from './screens/flow';
+import { roomFromUrl, tournamentFromUrl } from './net/peer';
+import { goOnline, goTitle, goTournamentHome, initFlow, startFight } from './screens/flow';
 import { ROSTER } from './data/roster';
 import { STAGES } from './render/stages';
 
@@ -11,11 +11,15 @@ function boot() {
   initFlow(app);
   void initKeyLabels();
   const room = roomFromUrl();
+  const tournoi = tournamentFromUrl();
   if (room) goOnline(room);
+  else if (tournoi) goTournamentHome(tournoi);
   else goTitle();
   // handy for debugging from the console
   (window as unknown as { bbl: App }).bbl = app;
   if (location.search.includes('debug')) {
+    // kept when a join link cleans the address bar
+    (window as unknown as { bblDebug: boolean }).bblDebug = true;
     // ?debug: start a CPU fight straight away, e.g. bblStart('zia', 'thomas')
     (window as unknown as { bblStart: unknown }).bblStart = (a: string, b: string, stage?: string) => {
       const find = (id: string) => ROSTER.find((f) => f.id === id) ?? ROSTER[0];
