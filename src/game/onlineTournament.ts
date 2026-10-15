@@ -17,7 +17,7 @@
  */
 import { audio } from '../audio/audio';
 import type { FighterDef } from '../data/roster';
-import { NET_VERSION, NetHub, NetLink, type NetMsg, type TnEntry, type TnMatch } from '../net/peer';
+import { NET_VERSION, NetError, NetHub, NetLink, type NetMsg, type TnEntry, type TnMatch } from '../net/peer';
 import { STAGES } from '../render/stages';
 import type { FightSetup, SpectatorFeed } from '../screens/fight';
 import { goMenuWithMessage, goTournamentChampionOnline, goTournamentOnline, startFight } from '../screens/flow';
@@ -112,6 +112,8 @@ export class OnlineTournament {
   me = -1;
   /** last error / connection message (lobby) */
   status = '';
+  /** organiser: the broker knows the tournament (false: new guests can't come in, it reconnects) */
+  brokerOk = true;
 
   // ---- organiser only
   private hub: NetHub | null = null;
@@ -167,6 +169,10 @@ export class OnlineTournament {
     ot.me = 0;
     hub.onGuest((link) => ot.onGuestLink(link));
     hub.onError((e) => console.warn('[tournoi] broker', e));
+    hub.onBroker((ok) => {
+      ot.brokerOk = ok;
+      ot.changed();
+    });
     // closing the organiser's page ends the tournament for everybody
     window.addEventListener('beforeunload', ot.unloadGuard);
     OnlineTournament.current = ot;
@@ -715,7 +721,8 @@ export class OnlineTournament {
         else this.link?.send({ t: 'tnRoom', key: match.key, code: link.code });
         await Promise.race([
           link.waitForGuest(),
-          new Promise<never>((_, rej) => window.setTimeout(() => rej(new Error("Ton adversaire n'a pas rejoint le combat.")), 30000)),
+          // the other player keeps trying for up to 90 s (see NetLink.join)
+          new Promise<never>((_, rej) => window.setTimeout(() => rej(new Error("Ton adversaire n'a pas rejoint le combat.")), 95000)),
         ]);
       } else {
         const code = await this.waitRoom(match.key);
@@ -743,7 +750,14 @@ export class OnlineTournament {
       console.warn('[tournoi] match room', e);
       this.status = '';
       this.closeMatchLink();
-      if (this.live?.key === match.key) this.reportAbort(match.key, 'Connexion impossible entre les deux joueurs : le combat sera relancé');
+      const blocked = e instanceof NetError && e.kind === 'blocked';
+      if (this.live?.key === match.key)
+        this.reportAbort(
+          match.key,
+          blocked
+            ? `Vos réseaux bloquent la connexion entre ${this.myName()} et son adversaire (4G ?) : passez en wifi, le combat sera relancé`
+            : 'Connexion impossible entre les deux joueurs : le combat sera relancé',
+        );
       this.changed();
     }
   }

@@ -171,8 +171,14 @@ automatiquement à l'adversaire en ligne.
   chaque combat d'après le ping.
 - Pendant l'écran VS, tout ce que le combat peut afficher (assists, effets, accessoires des
   BBL MAX) est préparé à l'avance : pas de micro-gel la première fois qu'un effet apparaît.
-- Si la connexion échoue derrière certains réseaux d'entreprise / 4G très filtrés, réessaie sur
-  un autre réseau (les relais TURN publics de PeerJS sont utilisés en secours).
+- La page qui crée la partie / le tournoi doit rester **affichée** : un téléphone endort les pages
+  en arrière-plan (pendant qu'on envoie le lien sur WhatsApp par exemple). Le jeu se reconnecte
+  tout seul au serveur dès qu'on revient sur la page, et celui qui rejoint réessaie pendant 90 s.
+- Si la connexion échoue derrière certains réseaux d'entreprise / 4G très filtrés, le jeu le dit
+  (« vos deux réseaux bloquent la connexion directe ») : réessaie en wifi. Les relais TURN publics
+  de PeerJS sont utilisés en secours ; pour un relais plus fiable (ex. compte gratuit Metered ou
+  Cloudflare), renseigne `VITE_TURN_URLS` (séparées par des virgules), `VITE_TURN_USERNAME` et
+  `VITE_TURN_CREDENTIAL` dans les variables d'environnement Vercel.
 - Option : ton propre serveur PeerJS (`npx peerjs --port 9000`) via les variables d'environnement
   Vercel `VITE_PEER_HOST`, `VITE_PEER_PORT`, `VITE_PEER_PATH`, `VITE_PEER_SECURE`.
 

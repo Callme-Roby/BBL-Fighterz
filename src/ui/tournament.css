@@ -912,6 +912,12 @@
 
 .tn-ltop {
   text-align: center;
+  /* the lobby scrolls: the header keeps its height (title, code, organiser hint) */
+  flex-shrink: 0;
+}
+
+.tn-keep {
+  color: var(--orange2);
 }
 
 .tn-code {

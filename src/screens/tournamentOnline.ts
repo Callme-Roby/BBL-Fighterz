@@ -394,7 +394,14 @@ export class TournamentOnlineScreen implements Screen {
     const url = tournamentInviteUrl(ot.code);
     this.root.className = 'tn-online lobby';
     this.root.replaceChildren(
-      h('div', { class: 'tn-ltop' }, h('div', { class: 'h1' }, 'TOURNOI EN LIGNE'), h('div', { class: 'title-hint' }, 'CODE : ', h('b', { class: 'tn-code' }, ot.code.toUpperCase()))),
+      h(
+        'div',
+        { class: 'tn-ltop' },
+        h('div', { class: 'h1' }, 'TOURNOI EN LIGNE'),
+        h('div', { class: 'title-hint' }, 'CODE : ', h('b', { class: 'tn-code' }, ot.code.toUpperCase())),
+        // phones put background pages to sleep: nobody can join while WhatsApp is in front
+        ot.isHost ? h('div', { class: 'title-hint tn-keep' }, 'Garde cette page à l’écran pendant que tes potes entrent.') : null,
+      ),
       shareBox(url),
       h(
         'div',
@@ -416,6 +423,7 @@ export class TournamentOnlineScreen implements Screen {
       ),
       h('div', { class: 'tn-lactions' }, this.menu!.el),
       ...(ot.status ? [h('div', { class: 'status' }, ot.status)] : []),
+      ...(ot.isHost && !ot.brokerOk ? [h('div', { class: 'status err blink' }, 'Connexion au serveur perdue, reconnexion… Personne ne peut entrer tant que ce message est là.')] : []),
     );
     this.root.append(backButton(() => this.askLeave()));
   }
@@ -493,6 +501,7 @@ export class TournamentOnlineScreen implements Screen {
     const panel = h('div', { class: 'panel tn-panel' });
     if (ot.flash) panel.append(h('div', { class: 'tn-flash' }, ot.flash));
     if (ot.status) panel.append(h('div', { class: 'status blink' }, ot.status));
+    if (ot.isHost && !ot.brokerOk) panel.append(h('div', { class: 'status err blink' }, 'Connexion au serveur perdue, reconnexion…'));
     const items: MenuItem[] = [];
     const live = ot.live;
     const cur = t.current;

@@ -84,11 +84,18 @@ export class OnlineScreen implements Screen {
       });
       const back = h('button', { class: 'btn' }, 'ANNULER');
       back.addEventListener('click', () => goMenu());
+      const waiting = h('div', { class: 'status blink' }, "En attente de l'adversaire…");
+      // the page was asleep (WhatsApp in front): the room is reachable again once reconnected
+      link.onBroker((ok) => {
+        waiting.textContent = ok ? "En attente de l'adversaire…" : 'Connexion au serveur perdue, reconnexion…';
+        waiting.classList.toggle('err', !ok);
+      });
       this.body.replaceChildren(
         h('div', { class: 'h1' }, 'ENVOIE CE LIEN'),
         h('div', { class: 'share' }, field, copy, typeof navigator.share === 'function' ? share : null),
         h('div', { class: 'title-hint' }, 'CODE : ', h('b', { style: 'color:var(--orange2);font-size:18px' }, link.code.toUpperCase())),
-        h('div', { class: 'status blink' }, "En attente de l'adversaire…"),
+        h('div', { class: 'title-hint' }, 'Garde cette page affichée : après avoir envoyé le lien, reviens ici tout de suite.'),
+        waiting,
         back,
       );
       await link.waitForGuest();

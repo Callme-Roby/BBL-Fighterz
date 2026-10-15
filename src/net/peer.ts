@@ -99,6 +99,33 @@ export type NetMsg =
 
 export type NetListener = (m: NetMsg) => void;
 
+/** A connection that failed, with a message for the players. */
+export class NetError extends Error {
+  constructor(
+    readonly kind: 'notFound' | 'blocked' | 'broker' | 'browser',
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+const MSG_BROKER = 'Le serveur de mise en relation ne répond pas : vérifie ta connexion internet et réessaie.';
+const MSG_BROWSER =
+  "Ce navigateur ne gère pas le jeu en ligne : ouvre le lien dans Chrome, Safari ou Firefox (pas dans le navigateur intégré d'une appli).";
+const MSG_BLOCKED =
+  'Vos deux réseaux bloquent la connexion directe (fréquent en 4G ou sur un wifi de travail / d’école). Réessayez en wifi à la maison, ou au moins l’un des deux en wifi.';
+const msgNotFound = (tournament: boolean) =>
+  tournament
+    ? "Tournoi introuvable. L'organisateur doit avoir la page du jeu affichée (pas WhatsApp devant) : réessaie dès qu'il y est revenu."
+    : 'Partie introuvable. Ton pote doit avoir la page du jeu affichée (pas WhatsApp devant) : réessaie dès qu’il y est revenu.';
+
+/** PeerJS error type of an error event */
+const errType = (e: unknown) => String((e as { type?: string })?.type ?? '');
+/** errors of the broker connection only (it reconnects by itself, see keepRegistered) */
+const TRANSIENT = new Set(['network', 'server-error', 'socket-error', 'socket-closed', 'disconnected']);
+
+const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms));
+
 function randomCode(): string {
   const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
   let s = '';
@@ -151,41 +178,67 @@ export class NetLink {
 
   waitForGuest(): Promise<void> {
     return new Promise((resolve, reject) => {
+      // adopted once open: a page waking up may still answer stale attempts that never open
       this.peer.on('connection', (c) => {
-        if (this.conn) {
-          c.close();
-          return;
-        }
-        this.attach(c);
-        c.on('open', () => resolve());
+        c.on('open', () => {
+          if (this.conn) {
+            c.close();
+            return;
+          }
+          this.attach(c);
+          resolve();
+        });
       });
-      this.peer.on('error', (e) => reject(e));
+      // a dropped broker connection comes back by itself (keepRegistered): keep waiting
+      this.peer.on('error', (e) => {
+        if (!TRANSIENT.has(errType(e))) reject(e);
+      });
     });
   }
 
+  /** Called when the room stops / starts being reachable through the broker (phone page put to sleep…). */
+  onBroker(cb: (ok: boolean) => void) {
+    watchBroker(this.peer, cb);
+  }
+
+  /**
+   * Joins a room / tournament. The other page may be asleep for a moment (the
+   * organiser is still in WhatsApp after sending the link): keeps trying for 90 s.
+   */
   static async join(code: string, onStatus?: (s: string) => void, tournament = false): Promise<NetLink> {
     onStatus?.('Connexion au serveur de mise en relation…');
     const peer = await openPeer();
-    const link = new NetLink(peer, code, false);
-    onStatus?.(tournament ? "Recherche du tournoi…" : "Recherche de l'adversaire…");
-    await new Promise<void>((resolve, reject) => {
-      const c = peer.connect(ID_PREFIX + (tournament ? TN_TAG : '') + code, { reliable: true, serialization: 'json' });
-      const timer = window.setTimeout(() => reject(new Error('Délai dépassé : la partie est introuvable.')), 15000);
-      c.on('open', () => {
-        window.clearTimeout(timer);
-        resolve();
-      });
-      c.on('error', (e) => {
-        window.clearTimeout(timer);
-        reject(e);
-      });
-      peer.on('error', (e) => {
-        window.clearTimeout(timer);
-        reject(e);
-      });
-      link.attach(c);
-    });
-    return link;
+    const target = ID_PREFIX + (tournament ? TN_TAG : '') + code;
+    const who = tournament ? "l'organisateur" : 'ton pote';
+    const giveUp = performance.now() + 90000;
+    let blocked = 0;
+    let last: 'notFound' | 'blocked' | null = null;
+    try {
+      for (;;) {
+        onStatus?.(
+          last === null
+            ? tournament
+              ? 'Recherche du tournoi…'
+              : "Recherche de l'adversaire…"
+            : last === 'blocked'
+              ? `${who[0].toUpperCase() + who.slice(1)} répond, mais vos réseaux n'arrivent pas à se relier… Nouvel essai…`
+              : `Pas encore de réponse de ${who}… Il doit avoir la page du jeu affichée. Nouvel essai…`,
+        );
+        const r = await connectOnce(peer, target);
+        if (typeof r !== 'string') {
+          const link = new NetLink(peer, code, false);
+          link.attach(r);
+          return link;
+        }
+        last = r;
+        if (r === 'blocked' && ++blocked >= 2) throw new NetError('blocked', MSG_BLOCKED);
+        if (performance.now() > giveUp) throw blocked ? new NetError('blocked', MSG_BLOCKED) : new NetError('notFound', msgNotFound(tournament));
+        await sleep(3000);
+      }
+    } catch (e) {
+      peer.destroy();
+      throw e;
+    }
   }
 
   private attach(c: DataConnection) {
@@ -348,14 +401,21 @@ export class NetHub {
         c.close();
         return;
       }
-      const link = NetLink.fromConnection(this.peer, c);
-      c.on('open', () => cb(link));
+      // a link only for connections that open (a page waking up may answer stale attempts)
+      c.on('open', () => {
+        if (!this.closed) cb(NetLink.fromConnection(this.peer, c));
+      });
     });
   }
 
   /** The broker connection dropped (guests already connected stay connected). */
   onError(cb: (e: unknown) => void) {
     this.peer.on('error', cb);
+  }
+
+  /** Called when new guests can / can't reach the tournament any more (phone page put to sleep…). */
+  onBroker(cb: (ok: boolean) => void) {
+    watchBroker(this.peer, cb);
   }
 
   close() {
@@ -377,7 +437,7 @@ export class NetHub {
  */
 function peerOptions(): PeerOptions {
   const env = import.meta.env;
-  const opts: PeerOptions = { debug: 1 };
+  const opts: PeerOptions = { debug: 1, config: { iceServers: iceServers() } };
   if (env.VITE_PEER_HOST) {
     opts.host = env.VITE_PEER_HOST;
     opts.port = Number(env.VITE_PEER_PORT ?? 443);
@@ -386,6 +446,122 @@ function peerOptions(): PeerOptions {
   }
   return opts;
 }
+
+/**
+ * STUN (find each other's public address) + TURN relays (when the networks don't
+ * allow a direct link, e.g. some 4G). PeerJS's free relays are kept; a dedicated
+ * one can be added at build time: VITE_TURN_URLS (comma separated),
+ * VITE_TURN_USERNAME, VITE_TURN_CREDENTIAL.
+ */
+function iceServers(): RTCIceServer[] {
+  const env = import.meta.env;
+  const list: RTCIceServer[] = [
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
+    { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
+  ];
+  const turn = String(env.VITE_TURN_URLS ?? '')
+    .split(',')
+    .map((u) => u.trim())
+    .filter(Boolean);
+  if (turn.length) list.unshift({ urls: turn, username: env.VITE_TURN_USERNAME ?? '', credential: env.VITE_TURN_CREDENTIAL ?? '' });
+  return list;
+}
+
+/**
+ * One connection attempt: the open connection, 'notFound' (nobody answered: no
+ * such room, or its page is asleep) or 'blocked' (it answered but no network path).
+ */
+function connectOnce(peer: Peer, target: string): Promise<DataConnection | 'notFound' | 'blocked'> {
+  return new Promise((resolve, reject) => {
+    const c = peer.connect(target, { reliable: true, serialization: 'json' });
+    let done = false;
+    const finish = (r: DataConnection | 'notFound' | 'blocked' | Error) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      peer.off('error', onPeerError);
+      if (r === c) return resolve(c);
+      try {
+        c.close();
+      } catch {
+        /* ignore */
+      }
+      if (r instanceof Error) reject(r);
+      else resolve(r as 'notFound' | 'blocked');
+    };
+    const onPeerError = (e: unknown) => {
+      const t = errType(e);
+      if (t === 'peer-unavailable') finish('notFound');
+      else if (t === 'browser-incompatible') finish(new NetError('browser', MSG_BROWSER));
+      // broker hiccups: it reconnects by itself, this attempt ends with the timeout
+    };
+    peer.on('error', onPeerError);
+    c.on('open', () => finish(c));
+    // ICE failed: the other side answered but no direct / relayed path was found
+    c.on('error', (e) => finish(errType(e) === 'negotiation-failed' ? 'blocked' : 'notFound'));
+    const timer = window.setTimeout(() => finish(c.peerConnection?.remoteDescription ? 'blocked' : 'notFound'), 25000);
+  });
+}
+
+/**
+ * Keeps a peer registered with the broker: phones put background pages to sleep
+ * and the broker forgets them (nobody could join that room / tournament any
+ * more). Reconnects with growing pauses, and right away when the page shows again.
+ */
+function keepRegistered(peer: Peer) {
+  let timer = 0;
+  let tries = 0;
+  const retry = () => {
+    window.clearTimeout(timer);
+    if (peer.destroyed || !peer.disconnected) return;
+    try {
+      peer.reconnect();
+    } catch {
+      /* still closing: next try */
+    }
+    timer = window.setTimeout(retry, Math.min(15000, 1000 * 2 ** Math.min(tries++, 4)));
+  };
+  const visible = () => {
+    if (document.visibilityState === 'visible' && peer.disconnected && !peer.destroyed) {
+      tries = 0;
+      retry();
+    }
+  };
+  peer.on('disconnected', () => {
+    tries = 0;
+    timer = window.setTimeout(retry, 500);
+  });
+  peer.on('open', () => window.clearTimeout(timer));
+  document.addEventListener('visibilitychange', visible);
+  peer.on('close', () => {
+    window.clearTimeout(timer);
+    document.removeEventListener('visibilitychange', visible);
+  });
+}
+
+/** Reports the broker registration of a peer (true = reachable). */
+function watchBroker(peer: Peer, cb: (ok: boolean) => void) {
+  peer.on('disconnected', () => cb(false));
+  peer.on('open', () => cb(true));
+}
+
+// ---- keep the phone's screen on while a peer is open (a sleeping page drops everything)
+const awakePeers = new Set<Peer>();
+let wakeLock: WakeLockSentinel | null = null;
+async function updateWakeLock() {
+  try {
+    if (awakePeers.size && document.visibilityState === 'visible') {
+      if (!wakeLock || wakeLock.released) wakeLock = (await navigator.wakeLock?.request('screen')) ?? null;
+    } else if (wakeLock) {
+      const w = wakeLock;
+      wakeLock = null;
+      await w.release();
+    }
+  } catch {
+    /* not supported / refused */
+  }
+}
+document.addEventListener('visibilitychange', () => void updateWakeLock());
 
 let peerLib: Promise<typeof import('peerjs')> | null = null;
 
@@ -399,17 +575,41 @@ export function preloadNet(): Promise<typeof import('peerjs')> {
 }
 
 async function openPeer(id?: string): Promise<Peer> {
-  const { Peer } = await preloadNet();
+  let Peer: typeof import('peerjs').Peer;
+  try {
+    ({ Peer } = await preloadNet());
+  } catch {
+    throw new NetError('broker', 'Impossible de charger le module en ligne : vérifie ta connexion internet et réessaie.');
+  }
+  if (typeof RTCPeerConnection === 'undefined') throw new NetError('browser', MSG_BROWSER);
   return new Promise((resolve, reject) => {
     const peer = id ? new Peer(id, peerOptions()) : new Peer(peerOptions());
-    const timer = window.setTimeout(() => reject(new Error('Le serveur de mise en relation ne répond pas.')), 12000);
-    peer.on('open', () => {
+    let opened = false;
+    const fail = (e: Error) => {
       window.clearTimeout(timer);
+      peer.destroy();
+      reject(e);
+    };
+    const timer = window.setTimeout(() => fail(new NetError('broker', MSG_BROKER)), 15000);
+    peer.on('open', () => {
+      if (opened) return;
+      opened = true;
+      window.clearTimeout(timer);
+      keepRegistered(peer);
+      awakePeers.add(peer);
+      void updateWakeLock();
+      peer.on('close', () => {
+        awakePeers.delete(peer);
+        void updateWakeLock();
+      });
       resolve(peer);
     });
     peer.on('error', (e) => {
-      window.clearTimeout(timer);
-      reject(e);
+      if (opened) return;
+      const t = errType(e);
+      if (t === 'browser-incompatible') fail(new NetError('browser', MSG_BROWSER));
+      else if (TRANSIENT.has(t)) fail(new NetError('broker', MSG_BROKER));
+      else fail(e instanceof Error ? e : new Error(String(e)));
     });
   });
 }
