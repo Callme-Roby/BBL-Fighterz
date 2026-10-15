@@ -153,10 +153,11 @@ function headgear(hs: number): THREE.Group {
   const ry = 0.125 * hs + 0.018;
   const rz = 0.112 * hs + 0.018;
   // top + back of the skull (a sphere cut open in front)
-  const shellGeo = new THREE.SphereGeometry(1, 12, 8, Math.PI * 0.18, Math.PI * 1.64, 0, Math.PI * 0.62);
+  // SphereGeometry leaves its phi gap on -X: a ~100° gap turned toward +Z (the face)
+  const shellGeo = new THREE.SphereGeometry(1, 12, 8, Math.PI * 0.28, Math.PI * 1.44, 0, Math.PI * 0.62);
   const shell = new THREE.Mesh(shellGeo, mat(0x1c3fb0));
   shell.scale.set(rx, ry, rz);
-  shell.rotation.y = Math.PI; // opening toward +Z (the face)
+  shell.rotation.y = Math.PI / 2;
   shell.position.y = cy;
   shellGeo.computeVertexNormals();
   (shell.material as THREE.Material).side = THREE.DoubleSide;

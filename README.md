@@ -77,13 +77,15 @@ utilisable aussi en fin de combo.
 | Elies | RETOUR EN ENFANCE | Baby Elies prend sa place (0 dégât), puis Elies revient et met tout en un coup de poing |
 | Thomas | REGARDE DERRIÈRE TOI ! | la feinte, les coups dans le dos, puis il s'enfuit à l'autre bout de l'arène |
 | Dylan | JAMBES DE FEU | combo de jambes… puis son genou lâche (il se blesse et râle) |
-| Mihaï | SUPER SAYAN BBL | transformation, pose avec lunettes, coups de pied répétés là où ça fait mal |
+| Mihaï | SUPER SAYAN BBL | transformation, pose avec lunettes, puis il s'acharne sur les bijoux de famille |
 | Benji | C'EST QUOI TA CONFIG ? | la question qui déstabilise, puis l'uppercut |
 | Alex | VIENS LÀ MON MIGNON | écran noir, bagarre de dessin animé (BIM ! BAM ! POW !), l'adversaire K.O. avec des étoiles |
 | Isis | MUSCLES XXL | se transforme en bodybuildeuse puis enchaîne |
 | Zia | RAP CONTENDERS | battle de rap, punchlines en gros plan, pas un seul coup |
 | Clément | ARSENAL BARBU | mitraillette, grenades, bazooka |
 | Enola | SPIDER-POTE | son pote masqué débarque et ils enchaînent à deux |
+| Rayan | PACIFISTE… OU PAS | « moi je suis pacifiste »… puis l'adversaire devient Dylan : gants, casque, combo de boxe anglaise et uppercut |
+| Billel | LA MÉTA | face caméra, un tunnel derrière lui, il explique la méta de League of Legends jusqu'à ce que l'adversaire s'effondre |
 
 Les cinématiques sont des données (`src/sim/ultimates.ts`, `src/sim/ults/`) : coups, positions,
 caméras et une timeline de présentation (persos invités, accessoires, répliques, textes BD,
