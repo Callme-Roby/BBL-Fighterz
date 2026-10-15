@@ -10,93 +10,147 @@ export function crew1Scripts(): UltimateScript[] {
 }
 
 /**
- * Elies — RETOUR EN ENFANCE: "forme ultime"… poof, Baby Elies. The toddler slaps and kicks
- * the victim's shins for zero damage while they laugh, poof, Elies is back and lands ONE
- * punch carrying the whole BBL MAX damage.
+ * Elies — RETOUR EN ENFANCE: "Forme ultime !"… poof, Baby Elies (the star of the show).
+ * "Areuh !", a flurry of tiny fists on the knee, a charging headbutt, a kick in the shin
+ * and a victory dance — all for zero damage while the victim laughs — then a tantrum,
+ * poof, Elies is back and lands ONE punch carrying the whole BBL MAX damage.
  */
 function baby(): UltimateScript {
   const ax: CurveKeys = [
     [2, 0],
-    [46, 0],
-    [57, 0.36],
-    [126, 0.36],
-    [172, 0.34],
-    [182, 0.02],
-    [214, 0.02],
-    [234, -0.3],
-    [240, -0.22],
-    [250, -0.18],
+    [104, 0],
+    // waddles up to the victim's knees
+    [118, 0.28],
+    [142, 0.28],
+    [146, 0.34],
+    [152, 0.34],
+    // backs up for a run-up
+    [166, -0.12],
+    [176, -0.12],
+    // charges, head first
+    [185, 0.26],
+    [186, 0.26],
+    // bounces off the knee, dizzy
+    [192, 0.14],
+    [198, 0.14],
+    [204, 0.27],
+    [242, 0.27],
+    // tantrum, stomping backwards
+    [256, 0.16],
+    [258, 0.16],
+    // Elies again: steps back cracking his knuckles, winds up, one punch
+    [270, 0.02],
+    [292, 0.02],
+    [302, -0.3],
+    [308, -0.22],
+    [318, -0.18],
   ];
+  // the flurry of tiny fists on the front knee (zero damage)
+  const flurry = [122, 128, 134, 140, 146];
   return {
     id: 'baby',
-    length: 300,
+    length: 360,
     hits: [
-      // Baby Elies: tiny slaps and kicks on the knees / shins, no damage at all
-      { f: 64, dmg: 0, strength: 'light', y: 0.45 },
-      { f: 76, dmg: 0, strength: 'light', y: 0.45 },
-      { f: 88, dmg: 0, strength: 'light', y: 0.3 },
-      { f: 100, dmg: 0, strength: 'light', y: 0.5 },
-      { f: 112, dmg: 0, strength: 'light', y: 0.3 },
-      { f: 124, dmg: 0, strength: 'light', y: 0.45 },
+      ...flurry.map((f, i) => ({ f, dmg: 0, strength: 'light' as const, y: i === 4 ? 0.44 : 0.53, dx: i === 4 ? -0.22 : -0.21 })),
+      // charging headbutt on the knee
+      { f: 186, dmg: 0, strength: 'medium', y: 0.6, dx: -0.14 },
+      // toe poke in the shin
+      { f: 204, dmg: 0, strength: 'light', y: 0.25, dx: -0.13 },
       // the grown-up punch: everything at once
-      { f: 240, dmg: 60, strength: 'heavy', y: 1.55 },
+      { f: 308, dmg: 60, strength: 'heavy', y: 1.55 },
     ],
     ay: [[0, 0]],
     vy: [
-      [240, 0],
-      [246, 0.7],
-      [254, 1.15],
-      [258, 1.25],
-      [264, 1.0],
-      [272, 0],
+      [308, 0],
+      [314, 0.7],
+      [322, 1.15],
+      [326, 1.25],
+      [332, 1.0],
+      [340, 0],
     ],
     ax,
     dist: relDist(
       [
         [2, 0.82],
-        [240, 0.82],
-        [246, 1.5],
-        [256, 2.4],
-        [266, 3.0],
-        [272, 3.3],
-        [280, 3.45],
+        [308, 0.82],
+        [314, 1.5],
+        [324, 2.4],
+        [334, 3.0],
+        [340, 3.3],
+        [348, 3.45],
       ],
       ax,
     ),
-    fall: 272,
+    fall: 340,
     cams: [
       [0, 'close'],
-      [28, 'side'],
-      [60, 'low'],
-      [76, 'vface'],
-      [126, 'two'],
-      [186, 'close'],
-      [212, 'vface'],
-      [230, 'over'],
-      [246, 'wide'],
-      [282, 'close'],
+      // Baby Elies: full-body shots at his own scale
+      [32, 'amid'],
+      [66, 'vface'],
+      [98, 'amid'],
+      [150, 'close'],
+      [168, 'amid'],
+      [218, 'vface'],
+      [236, 'amid'],
+      // poof: Elies is back
+      [258, 'close'],
+      [292, 'over'],
     ],
     cine: {
-      swaps: [{ who: 'a', cast: 'babyelies', from: 30, to: 186, fx: 'poof' }],
+      swaps: [{ who: 'a', cast: 'babyelies', from: 32, to: 258, fx: 'poof' }],
       events: [
-        { f: 14, t: 'sfx', id: 'powerUp' },
-        { f: 16, t: 'fx', fx: 'powerAura', at: 'a' },
-        { f: 22, t: 'shake', amt: 0.3 },
-        // (spoken with Baby Elies' own voice while the swap is on)
-        { f: 32, t: 'say', who: 'a', text: 'Areuh ! Areuh !', pitch: 1.8, rate: 1.25, dur: 40 },
-        { f: 66, t: 'fx', fx: 'question', at: 'v' },
-        { f: 80, t: 'say', who: 'v', text: 'Hein ? C’est quoi ce bébé ?', rate: 1.3, dur: 74 },
-        { f: 160, t: 'sfx', id: 'crowdLaugh' },
-        { f: 164, t: 'say', who: 'v', text: 'Ha ha ha !', rate: 1.3, dur: 30 },
-        { f: 160, t: 'fx', fx: 'veins', at: 'a', bone: 'head' },
-        { f: 189, t: 'fx', fx: 'exclaim', at: 'v' },
-        { f: 196, t: 'say', who: 'a', text: 'Le bébé a grandi.', rate: 1.2, dur: 46 },
-        { f: 204, t: 'fx', fx: 'sweat', at: 'v' },
-        { f: 240, t: 'shake', amt: 1 },
-        { f: 240, t: 'flash', amt: 0.6 },
-        { f: 241, t: 'text', text: 'BAM !', style: 'boom', dur: 40 },
-        { f: 248, t: 'sfx', id: 'crowdOoh' },
-        { f: 272, t: 'shake', amt: 0.5 },
+        { f: 3, t: 'say', who: 'a', text: 'Forme ultime… !', rate: 1.15, dur: 28 },
+        { f: 10, t: 'sfx', id: 'powerUp' },
+        { f: 12, t: 'fx', fx: 'powerAura', at: 'a' },
+        { f: 20, t: 'shake', amt: 0.3 },
+        { f: 24, t: 'fx', fx: 'powerAura', at: 'a', scale: 1.3 },
+        { f: 28, t: 'shake', amt: 0.5 },
+        // (Baby Elies speaks with his own voice while the swap is on)
+        { f: 36, t: 'say', who: 'a', text: 'Areuh ! Areuh !', pitch: 1.4, rate: 1.15, dur: 34 },
+        { f: 38, t: 'text', text: 'AREUH !', style: 'boom', color: '#ff8fd0', dur: 28 },
+        { f: 44, t: 'sfx', id: 'crowdOoh' },
+        { f: 64, t: 'fx', fx: 'question', at: 'v' },
+        { f: 68, t: 'say', who: 'v', text: 'Hein ? C’est quoi ce bébé ?', rate: 1.25, dur: 52 },
+        { f: 99, t: 'fx', fx: 'veins', at: 'a', bone: 'head' },
+        { f: 123, t: 'text', text: 'PIF !', style: 'boom', dur: 16 },
+        { f: 135, t: 'text', text: 'PAF !', style: 'boom', dur: 16 },
+        { f: 147, t: 'text', text: 'POUF !', style: 'boom', dur: 18 },
+        { f: 124, t: 'say', who: 'v', text: 'Ça chatouille !', rate: 1.2, dur: 30 },
+        { f: 151, t: 'fx', fx: 'veins', at: 'a', bone: 'head' },
+        { f: 156, t: 'say', who: 'a', text: 'Grrrrr !', pitch: 1.1, rate: 0.9, dur: 24 },
+        { f: 157, t: 'shake', amt: 0.15 },
+        { f: 170, t: 'sfx', id: 'step' },
+        { f: 174, t: 'sfx', id: 'step' },
+        { f: 177, t: 'sfx', id: 'dash' },
+        { f: 178, t: 'fx', fx: 'speed', at: 'a' },
+        { f: 186, t: 'sfx', id: 'bonk' },
+        { f: 187, t: 'text', text: 'TOC !', style: 'boom', color: '#ffd84a', dur: 22 },
+        // (placed low enough to stay in the toddler-sized shot)
+        { f: 189, t: 'fx', fx: 'stars', at: 'a', y: 1.0 },
+        { f: 205, t: 'text', text: 'BIM !', style: 'boom', dur: 16 },
+        { f: 208, t: 'say', who: 'a', text: 'Gagné !', pitch: 1.2, rate: 1.1, dur: 14 },
+        { f: 211, t: 'fx', fx: 'confetti', at: 'a' },
+        { f: 218, t: 'sfx', id: 'crowdLaugh' },
+        { f: 220, t: 'say', who: 'v', text: 'Ha ha ! Trop chou !', rate: 1.3, dur: 32 },
+        // tantrum
+        { f: 238, t: 'fx', fx: 'veins', at: 'a', bone: 'head' },
+        { f: 239, t: 'shake', amt: 0.2 },
+        { f: 243, t: 'sfx', id: 'step' },
+        { f: 247, t: 'shake', amt: 0.2 },
+        { f: 250, t: 'say', who: 'a', text: 'Ouiiiin !', pitch: 1.3, rate: 0.85, dur: 12 },
+        { f: 251, t: 'text', text: 'OUIIIN !', style: 'boom', color: '#7ad0ff', dur: 24 },
+        { f: 251, t: 'sfx', id: 'step' },
+        { f: 255, t: 'shake', amt: 0.2 },
+        // poof (swap ends at 258): Elies is back, the crying stops
+        { f: 260, t: 'fx', fx: 'exclaim', at: 'v' },
+        { f: 262, t: 'say', who: 'a', text: 'Le bébé a grandi.', rate: 1.15, dur: 34 },
+        { f: 276, t: 'fx', fx: 'sweat', at: 'v' },
+        { f: 296, t: 'say', who: 'v', text: 'Pitié !', rate: 1.2, dur: 16 },
+        { f: 308, t: 'shake', amt: 1 },
+        { f: 308, t: 'flash', amt: 0.6 },
+        { f: 309, t: 'text', text: 'BAM !', style: 'boom', dur: 40 },
+        { f: 316, t: 'sfx', id: 'crowdOoh' },
+        { f: 340, t: 'shake', amt: 0.5 },
       ],
     },
   };
@@ -320,64 +374,81 @@ function kneecap(): UltimateScript {
 }
 
 /**
- * Mihaï — SUPER SAYAN BBL: screaming power-up, golden hair, shades on, "Trop facile.", six
- * nonchalant low blows (hands in the pockets) and a last one that sends the victim flying.
+ * Mihaï — SUPER SAYAN BBL: screaming power-up, golden hair, shades on, "Trop facile."… and
+ * then he ONLY kicks the crotch: three nonchalant low blows (hands in the pockets), a smug
+ * look at the camera over his shades, six faster ones, and a last giant one: the victim
+ * drops to its knees, then falls on its back, curled up.
  */
 function saiyan(): UltimateScript {
-  const kicks = [148, 156, 164, 172, 180, 188];
+  const slow = [150, 162, 174];
+  const fast = [236, 244, 251, 257, 263, 269];
+  const FIN = 290;
   const ax: CurveKeys = [
     [2, 0],
     [12, -0.25],
-    [130, -0.25],
-    [142, 0.04],
-    [148, 0.08],
-    [196, 0.12],
-    [202, -0.04],
-    [208, 0.06],
-    [216, 0.1],
+    [134, -0.25],
+    [146, 0.06],
+    [278, 0.06],
+    [286, -0.04],
+    [FIN, 0.08],
+    [296, 0.12],
+    [326, 0.12],
+    [338, 0.04],
   ];
-  // the victim is lifted onto its toes by every low blow
+  // every low blow lifts the victim onto its toes; it hops around holding the crotch
   const lifts: CurveKeys = [];
-  for (const f of kicks) lifts.push([f - 1, 0], [f + 2, 0.07], [f + 5, 0]);
+  for (const f of slow) lifts.push([f - 1, 0], [f + 2, 0.07], [f + 5, 0]);
+  for (const f of [184, 189, 194]) lifts.push([f - 2, 0], [f, 0.05], [f + 2, 0]);
+  for (const f of fast) lifts.push([f - 1, 0], [f + 2, 0.06], [f + 4, 0]);
+  const kicks = [...slow, ...fast];
+  // impact on the crotch (instep between the legs)
+  const crotch = (f: number, i: number) => ({
+    f,
+    dmg: i < 6 ? 4 : 5,
+    strength: i < 3 ? ('medium' as const) : ('light' as const),
+    y: 0.93,
+    dx: -0.06,
+  });
   return {
     id: 'saiyan',
-    length: 310,
-    hits: [
-      ...kicks.map((f, i) => ({ f, dmg: i < 3 ? 5 : 6, strength: i < 3 ? ('light' as const) : ('medium' as const), y: 0.88 - i * 0.015, dx: -0.1 })),
-      { f: 208, dmg: 27, strength: 'heavy', y: 0.85, dx: -0.1 },
-    ],
+    length: 360,
+    hits: [...kicks.map(crotch), { f: FIN, dmg: 21, strength: 'heavy', y: 0.97, dx: -0.06 }],
     ay: [[0, 0]],
-    vy: [...lifts, [207, 0], [214, 1.2], [222, 2.0], [228, 2.2], [234, 2.0], [242, 1.0], [248, 0]],
+    vy: [...lifts, [FIN - 1, 0], [FIN + 3, 0.2], [FIN + 8, 0.28], [FIN + 13, 0.12], [FIN + 16, 0]],
     ax,
     dist: relDist(
       [
         [2, 0.85],
-        [140, 0.92],
-        [208, 0.92],
-        [216, 1.3],
-        [226, 1.9],
-        [236, 2.4],
-        [248, 2.8],
-        [256, 2.9],
+        [140, 0.97],
+        [FIN, 0.97],
+        [FIN + 8, 1.17],
+        [FIN + 16, 1.29],
+        [FIN + 26, 1.35],
       ],
       ax,
     ),
-    fall: 248,
+    fall: 322,
     cams: [
       [0, 'close'],
       [22, 'hero'],
-      [56, 'close'],
-      [74, 'hero'],
-      [102, 'close'],
+      [98, 'close'],
+      // the low blows: side view, the victim's face, Mihaï's smug face, low angle
       [136, 'side'],
-      [166, 'vface'],
-      [200, 'low'],
-      [230, 'high'],
-      [254, 'close'],
+      [180, 'vface'],
+      [198, 'close'],
+      [228, 'vface'],
+      [240, 'low'],
+      [272, 'side'],
+      [328, 'close'],
     ],
     cine: {
-      swaps: [{ who: 'a', cast: 'mihai_ssj', from: 60, to: 310, fx: 'power' }],
-      props: [{ prop: 'shades', on: 'a', bone: 'head', from: 112, to: 310 }],
+      swaps: [{ who: 'a', cast: 'mihai_ssj', from: 60, to: 360, fx: 'power' }],
+      props: [
+        { prop: 'shades', on: 'a', bone: 'head', from: 110, to: 202 },
+        // pulled down the nose to look at the camera over them
+        { prop: 'shades', on: 'a', bone: 'head', from: 202, to: 224, pos: [0, -0.05, 0.016] },
+        { prop: 'shades', on: 'a', bone: 'head', from: 224, to: 360 },
+      ],
       light: [
         [1, 0.4],
         [12, 0.4],
@@ -388,38 +459,71 @@ function saiyan(): UltimateScript {
         [100, 0.45],
       ],
       events: [
-        { f: 12, t: 'say', who: 'a', text: 'Haaaaaaaaa !', rate: 0.7, dur: 50 },
-        { f: 14, t: 'sfx', id: 'powerUp' },
-        { f: 18, t: 'fx', fx: 'powerAura', at: 'a' },
-        { f: 26, t: 'shake', amt: 0.3 },
-        { f: 32, t: 'fx', fx: 'powerAura', at: 'a' },
-        { f: 40, t: 'shake', amt: 0.45 },
-        { f: 46, t: 'fx', fx: 'powerAura', at: 'a', scale: 1.3 },
-        { f: 54, t: 'shake', amt: 0.6 },
+        { f: 10, t: 'say', who: 'a', text: 'Haaaaaaaaa !', rate: 0.7, dur: 48 },
+        { f: 12, t: 'sfx', id: 'powerUp' },
+        { f: 16, t: 'fx', fx: 'powerAura', at: 'a' },
+        { f: 24, t: 'shake', amt: 0.3 },
+        { f: 30, t: 'fx', fx: 'powerAura', at: 'a' },
+        { f: 38, t: 'shake', amt: 0.45 },
+        { f: 44, t: 'fx', fx: 'powerAura', at: 'a', scale: 1.3 },
+        { f: 52, t: 'shake', amt: 0.6 },
         { f: 60, t: 'flash', color: '#ffe066', amt: 0.9 },
         { f: 60, t: 'shake', amt: 1 },
         { f: 60, t: 'sfx', id: 'super' },
-        { f: 62, t: 'text', text: 'SUPER SAYAN !', style: 'punch', color: '#ffd84a', dur: 50 },
+        { f: 62, t: 'text', text: 'SUPER SAYAN !', style: 'punch', color: '#ffd84a', dur: 44 },
         { f: 64, t: 'fx', fx: 'powerAura', at: 'a', scale: 1.5 },
         { f: 66, t: 'sfx', id: 'crowdOoh' },
         { f: 70, t: 'fx', fx: 'exclaim', at: 'v' },
         { f: 80, t: 'fx', fx: 'sweat', at: 'v' },
         { f: 84, t: 'fx', fx: 'powerAura', at: 'a' },
-        { f: 112, t: 'sfx', id: 'shine' },
-        { f: 114, t: 'fx', fx: 'shine', at: 'a', bone: 'head' },
-        { f: 120, t: 'say', who: 'a', text: 'Trop facile.', dur: 44 },
-        { f: 152, t: 'fx', fx: 'pain', at: 'v', dx: -0.1, y: 0.85 },
-        { f: 168, t: 'say', who: 'v', text: 'Ouille !', pitch: 1.9, dur: 30 },
-        { f: 166, t: 'sfx', id: 'crowdOoh' },
-        { f: 176, t: 'fx', fx: 'pain', at: 'v', dx: -0.1, y: 0.8 },
-        { f: 208, t: 'shake', amt: 1 },
-        { f: 208, t: 'flash', color: '#ffe066', amt: 0.5 },
-        { f: 209, t: 'sfx', id: 'boing' },
-        { f: 209, t: 'text', text: 'DING !', style: 'boom', dur: 36 },
-        { f: 212, t: 'say', who: 'v', text: 'Ouiiiiille !', pitch: 2.2, dur: 40 },
-        { f: 248, t: 'shake', amt: 0.5 },
-        { f: 266, t: 'sfx', id: 'shine' },
-        { f: 266, t: 'fx', fx: 'shine', at: 'a', bone: 'head' },
+        { f: 110, t: 'sfx', id: 'shine' },
+        { f: 112, t: 'fx', fx: 'shine', at: 'a', bone: 'head' },
+        { f: 116, t: 'say', who: 'a', text: 'Trop facile.', dur: 30 },
+        // three slow low blows
+        { f: 151, t: 'text', text: 'DING !', style: 'boom', dur: 20 },
+        { f: 151, t: 'fx', fx: 'pain', at: 'v', dx: -0.04, y: 0.9 },
+        { f: 152, t: 'say', who: 'v', text: 'Ouille !', pitch: 2, dur: 18 },
+        { f: 154, t: 'sfx', id: 'crowdOoh' },
+        { f: 163, t: 'text', text: 'DONG !', style: 'boom', dur: 20 },
+        { f: 163, t: 'sfx', id: 'boing' },
+        { f: 175, t: 'text', text: 'CRAC !', style: 'boom', color: '#ff5a4a', dur: 22 },
+        { f: 175, t: 'fx', fx: 'pain', at: 'v', dx: -0.04, y: 0.9 },
+        { f: 176, t: 'shake', amt: 0.25 },
+        { f: 182, t: 'say', who: 'v', text: 'Pas là !', pitch: 2.1, rate: 1.1, dur: 18 },
+        { f: 184, t: 'fx', fx: 'sweat', at: 'v' },
+        // a look at the camera over the shades
+        { f: 198, t: 'say', who: 'a', text: 'Quoi ? Ça marche.', rate: 1.2, dur: 34 },
+        { f: 204, t: 'sfx', id: 'shine' },
+        { f: 205, t: 'fx', fx: 'shine', at: 'a', bone: 'head' },
+        { f: 208, t: 'sfx', id: 'crowdLaugh' },
+        // and again, faster and faster
+        { f: 232, t: 'say', who: 'v', text: 'Encore ?!', pitch: 2.1, rate: 1.1, dur: 20 },
+        { f: 230, t: 'fx', fx: 'exclaim', at: 'v' },
+        { f: 237, t: 'text', text: 'DING !', style: 'boom', dur: 14 },
+        { f: 245, t: 'text', text: 'DONG !', style: 'boom', dur: 14 },
+        { f: 245, t: 'sfx', id: 'boing' },
+        { f: 252, t: 'text', text: 'DING !', style: 'boom', dur: 14 },
+        { f: 252, t: 'fx', fx: 'pain', at: 'v', dx: -0.04, y: 0.9 },
+        { f: 258, t: 'text', text: 'DONG !', style: 'boom', dur: 14 },
+        { f: 258, t: 'sfx', id: 'bonk' },
+        { f: 264, t: 'text', text: 'CRAC !', style: 'boom', color: '#ff5a4a', dur: 14 },
+        { f: 270, t: 'text', text: 'PAS LÀ !!!', style: 'punch', color: '#ff5a4a', dur: 24 },
+        { f: 270, t: 'fx', fx: 'pain', at: 'v', dx: -0.04, y: 0.9 },
+        // the last one
+        { f: FIN, t: 'shake', amt: 1 },
+        { f: FIN, t: 'flash', color: '#ffe066', amt: 0.5 },
+        { f: FIN, t: 'sfx', id: 'boing' },
+        { f: FIN + 1, t: 'sfx', id: 'crack' },
+        { f: FIN + 1, t: 'text', text: 'DING DONG !!!', style: 'punch', color: '#ffd84a', dur: 40 },
+        { f: FIN + 2, t: 'fx', fx: 'pain', at: 'v', dx: -0.04, y: 1.1 },
+        { f: FIN + 2, t: 'say', who: 'v', text: 'Ouiiiiille…', pitch: 2.4, rate: 0.8, dur: 44 },
+        { f: FIN + 6, t: 'sfx', id: 'crowdOoh' },
+        { f: 305, t: 'sfx', id: 'land' },
+        { f: 322, t: 'shake', amt: 0.4 },
+        { f: 325, t: 'fx', fx: 'stars', at: 'v' },
+        { f: 328, t: 'say', who: 'a', text: 'Dans le mille.', rate: 1.1, dur: 28 },
+        { f: 340, t: 'sfx', id: 'shine' },
+        { f: 340, t: 'fx', fx: 'shine', at: 'a', bone: 'head' },
       ],
     },
   };
