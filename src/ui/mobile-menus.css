@@ -253,6 +253,26 @@ html.touch-ui .btn:hover {
     margin-top: 3px;
   }
 
+  .pick-screen .sel-assist {
+    margin-top: 6px;
+    gap: 6px;
+  }
+
+  .pick-screen .sel-assist .aph {
+    width: 26px;
+    height: 33px;
+    font-size: 14px;
+  }
+
+  .pick-screen .sel-assist b {
+    font-size: 11px;
+  }
+
+  .pick-screen .sel-assist small,
+  .pick-screen .sel-assist .ak {
+    font-size: 6px;
+  }
+
   .pick-screen .bottom {
     gap: 7px;
   }
@@ -505,6 +525,26 @@ html.touch-ui .btn:hover {
   .pick-screen .lock {
     font-size: 8px;
     margin-top: 2px;
+  }
+
+  .pick-screen .sel-assist {
+    margin-top: 5px;
+    gap: 6px;
+  }
+
+  .pick-screen .sel-assist .aph {
+    width: 24px;
+    height: 30px;
+    font-size: 13px;
+  }
+
+  .pick-screen .sel-assist b {
+    font-size: 10px;
+  }
+
+  .pick-screen .sel-assist small,
+  .pick-screen .sel-assist .ak {
+    font-size: 6px;
   }
 
   .pick-screen .arena {

@@ -1,12 +1,14 @@
 /**
  * TOURNOI — fighter picks: the participants choose their fighter one after
- * another (portrait grid + « ? » random cell, one fighter in the 3D studio).
+ * another (portrait grid + « ? » random cell, one fighter in the 3D studio),
+ * then their assist in the same grid (« ? » = au hasard, never themselves).
  */
 import { audio } from '../audio/audio';
 import type { App, Screen } from '../app';
+import { assistOf, ASSIST_KIND_LABEL } from '../data/assists';
 import type { FighterDef } from '../data/roster';
 import { fullRoster } from '../game/settings';
-import { fighterIndexByName, saveTournament, type Tournament } from '../game/tournament';
+import { assistOfParticipant, fighterIndexByName, saveTournament, type Tournament } from '../game/tournament';
 import { input } from '../input/input';
 import { loadFace } from '../render/faceTexture';
 import { Showroom, type ShowroomFit } from '../render/showroom';
@@ -25,6 +27,9 @@ export class TournamentPickScreen implements Screen {
   private index = 0;
   /** grid cursor; roster.length = the « ? » random cell */
   private cursor = 0;
+  /** choosing the fighter, then the assist (same grid) */
+  private step: 'fighter' | 'assist' = 'fighter';
+  private acursor = 0;
   /** true during the short pause after a confirmed pick */
   private busy = false;
   private disposed = false;
@@ -75,8 +80,8 @@ export class TournamentPickScreen implements Screen {
         'div',
         { class: 'tn-pick-bottom' },
         grid,
-        h('div', { class: 'title-hint kbd-only' }, '← → ↑ ↓ / ZQSD pour choisir · Entrée pour valider · Échap = participant précédent'),
-        h('div', { class: 'title-hint touch-only' }, 'Touche un perso · RETOUR = participant précédent'),
+        h('div', { class: 'title-hint kbd-only' }, '← → ↑ ↓ / ZQSD · Entrée = valider (le perso, puis son assist) · Échap = retour'),
+        h('div', { class: 'title-hint touch-only' }, 'Touche un perso, puis son assist · RETOUR = étape précédente'),
         ok,
       ),
     );
@@ -94,7 +99,7 @@ export class TournamentPickScreen implements Screen {
   }
 
   /** Shows participant i, with the cursor on their previous pick, else on the fighter with their name. */
-  private load(i: number) {
+  private load(i: number, step: 'fighter' | 'assist' = 'fighter') {
     this.index = i;
     this.busy = false;
     const p = this.t.participants[i];
@@ -102,14 +107,39 @@ export class TournamentPickScreen implements Screen {
     if (idx < 0) idx = fighterIndexByName(p.name, this.roster);
     if (idx < 0) idx = this.roster.length;
     this.cursor = idx;
-    const n = this.t.participants.length;
-    this.titleEl.textContent = `PARTICIPANT ${i + 1}/${n} — ${p.name}, ${p.cpu ? 'CHOISIS SON' : 'CHOISIS TON'} COMBATTANT`;
-    this.subEl.replaceChildren(
-      p.cpu ? h('span', { class: 'tn-cpu' }, 'CPU') : h('span', { class: 'tn-human' }, 'HUMAIN'),
-      p.cpu ? ' Ce participant est joué par l’ordinateur — le « ? » choisit au hasard' : ' Plusieurs participants peuvent prendre le même perso',
-    );
+    this.setStep(p.fighterId ? step : 'fighter');
     this.renderStrip();
     this.refresh();
+  }
+
+  /** Fighter step, or assist step (cursor on the previous friend, else next to your own face). */
+  private setStep(step: 'fighter' | 'assist') {
+    const i = this.index;
+    const p = this.t.participants[i];
+    this.step = step;
+    if (step === 'assist') {
+      const own = this.ownIndex();
+      const prev = p.assistId && p.assistId !== p.fighterId ? this.roster.findIndex((d) => d.id === p.assistId) : -1;
+      this.acursor = prev >= 0 ? prev : own >= 0 ? (own + 1) % this.roster.length : this.roster.length;
+      if (this.acursor === own) this.acursor = this.roster.length;
+    }
+    const n = this.t.participants.length;
+    const what = step === 'assist' ? 'ASSIST' : 'COMBATTANT';
+    this.titleEl.textContent = `PARTICIPANT ${i + 1}/${n} — ${p.name}, ${p.cpu ? 'CHOISIS SON' : 'CHOISIS TON'} ${what}`;
+    this.subEl.replaceChildren(
+      p.cpu ? h('span', { class: 'tn-cpu' }, 'CPU') : h('span', { class: 'tn-human' }, 'HUMAIN'),
+      step === 'assist'
+        ? ' Le pote appelé avec le bouton ASSIST en plein combat (pas soi-même) — le « ? » choisit au hasard'
+        : p.cpu
+          ? ' Ce participant est joué par l’ordinateur — le « ? » choisit au hasard'
+          : ' Plusieurs participants peuvent prendre le même perso',
+    );
+  }
+
+  /** grid index of the current participant's fighter */
+  private ownIndex(): number {
+    const id = this.t.participants[this.index]?.fighterId;
+    return id ? this.roster.findIndex((d) => d.id === id) : -1;
   }
 
   /** Participant list with the fighters already chosen. */
@@ -117,10 +147,12 @@ export class TournamentPickScreen implements Screen {
     const items = this.t.participants.map((p, i) => {
       const done = i < this.index;
       const def = done ? (this.roster.find((d) => d.id === p.fighterId) ?? null) : null;
+      const friend = done ? assistOfParticipant(this.t, i, this.roster) : null;
       return h(
         'div',
         { class: 'tn-strip-it' + (i === this.index ? ' cur' : '') + (done ? ' done' : '') },
         portrait(def, 'tn-ph'),
+        friend ? portrait(friend, 'tn-ph tn-strip-as') : null,
         h('span', { class: 'tn-strip-nm' }, p.name, p.cpu ? h('i', { class: 'tn-cpu' }, 'CPU') : null),
       );
     });
@@ -135,14 +167,39 @@ export class TournamentPickScreen implements Screen {
 
   private refresh() {
     const p = this.t.participants[this.index];
+    const assist = this.step === 'assist';
     this.cells.forEach((cell, i) => {
       const on = i === this.cursor;
+      const as = assist && i === this.acursor;
       cell.classList.toggle('p1', on);
+      cell.classList.toggle('a1', as);
+      cell.classList.toggle('own', assist && on);
       cell.querySelectorAll('.tag').forEach((t) => t.remove());
-      if (on) cell.append(h('span', { class: 'tag t1' }, p.name.slice(0, 7)));
+      if (as) cell.append(h('span', { class: 'tag t1 ta' }, '★' + p.name.slice(0, 6)));
+      else if (on) cell.append(h('span', { class: 'tag t1' }, p.name.slice(0, 7)));
     });
     const def = this.defAt(this.cursor);
     const parts: (string | HTMLElement)[] = [def ? def.name : '???', h('span', { class: 'ttl' }, def ? def.title : 'Au hasard')];
+    if (assist) {
+      // « ASSIST : ISIS » + « UPPERCUT MUSCLÉ · LANCEUR »
+      const friend = this.defAt(this.acursor);
+      const self = friend && def && friend.id === def.id;
+      const a = friend ? assistOf(friend) : null;
+      parts.push(
+        h(
+          'div',
+          { class: 'sel-assist' + (this.busy ? '' : ' picking') },
+          portrait(friend, 'aph'),
+          h(
+            'div',
+            { class: 'atx' },
+            h('span', { class: 'ak' }, this.busy ? 'ASSIST' : p.cpu ? 'CHOISIS SON ASSIST' : 'CHOISIS TON ASSIST'),
+            h('b', null, friend ? friend.name : '???'),
+            h('small', null, self ? 'Pas soi-même !' : a ? `${a.name} · ${ASSIST_KIND_LABEL[a.kind]}` : 'Au hasard'),
+          ),
+        ),
+      );
+    }
     if (this.busy) parts.push(h('div', { class: 'lock' }, 'PRÊT !'));
     this.nameEl.replaceChildren(...parts);
     void this.showroom.show(0, def);
@@ -150,9 +207,11 @@ export class TournamentPickScreen implements Screen {
 
   private clickCell(i: number) {
     if (this.busy) return;
-    if (this.cursor === i) this.confirm();
+    const cur = this.step === 'assist' ? this.acursor : this.cursor;
+    if (cur === i) this.confirm();
     else {
-      this.cursor = i;
+      if (this.step === 'assist') this.acursor = i;
+      else this.cursor = i;
       audio.sfx('cursor');
       this.refresh();
     }
@@ -160,15 +219,22 @@ export class TournamentPickScreen implements Screen {
 
   private move(dx: number, dy: number) {
     if (this.busy) return;
+    const assist = this.step === 'assist';
+    const cur = assist ? this.acursor : this.cursor;
+    const own = assist ? this.ownIndex() : -1;
     const n = this.roster.length + 1;
-    let i = this.cursor;
-    if (dx) i = (i + dx + n) % n;
+    let i = cur;
+    if (dx) {
+      i = (i + dx + n) % n;
+      if (i === own) i = (i + dx + n) % n;
+    }
     if (dy) {
       i += dy * gridColumns(this.cells, this.cols);
-      if (i < 0 || i >= n) i = this.cursor;
+      if (i < 0 || i >= n) i = cur;
     }
-    if (i !== this.cursor) {
-      this.cursor = i;
+    if (i !== cur) {
+      if (assist) this.acursor = i;
+      else this.cursor = i;
       audio.sfx('cursor');
       this.refresh();
     }
@@ -176,14 +242,42 @@ export class TournamentPickScreen implements Screen {
 
   private confirm() {
     if (this.busy) return;
-    let def = this.defAt(this.cursor);
-    if (!def) {
-      // random cell: show who the dice picked
-      def = this.roster[Math.floor(Math.random() * this.roster.length)];
-      this.cursor = this.roster.indexOf(def);
+    if (this.step === 'fighter') {
+      let def = this.defAt(this.cursor);
+      if (!def) {
+        // random cell: show who the dice picked
+        def = this.roster[Math.floor(Math.random() * this.roster.length)];
+        this.cursor = this.roster.indexOf(def);
+      }
+      this.t.participants[this.index].fighterId = def.id;
+      saveTournament(this.t);
+      audio.sfx('confirm');
+      void this.showroom.show(0, def).then(() => this.showroom.play(0, 'win' + (this.index % 3)));
+      // then the assist, in the same grid
+      this.setStep('assist');
+      this.refresh();
+      return;
     }
+    const own = this.ownIndex();
+    if (this.acursor === own) {
+      // a friend can't assist themselves
+      audio.sfx('cancel');
+      const cell = this.cells[own];
+      cell?.classList.remove('nope');
+      void cell?.offsetWidth;
+      cell?.classList.add('nope');
+      return;
+    }
+    let friend = this.defAt(this.acursor);
+    if (!friend) {
+      const pool = this.roster.filter((_, k) => k !== own);
+      friend = pool[Math.floor(Math.random() * pool.length)] ?? null;
+      if (friend) this.acursor = this.roster.indexOf(friend);
+    }
+    const def = this.defAt(this.cursor);
+    if (!def) return;
     const i = this.index;
-    this.t.participants[i].fighterId = def.id;
+    this.t.participants[i].assistId = friend?.id;
     const last = i + 1 >= this.t.participants.length;
     this.t.pickIndex = last ? i : i + 1;
     if (last) this.t.phase = 'bracket';
@@ -191,7 +285,6 @@ export class TournamentPickScreen implements Screen {
     this.busy = true;
     audio.sfx('confirm');
     this.refresh();
-    void this.showroom.show(0, def).then(() => this.showroom.play(0, 'win' + (i % 3)));
     this.timer = window.setTimeout(() => {
       if (this.disposed) return;
       if (last) goTournamentBracket(this.t);
@@ -199,14 +292,18 @@ export class TournamentPickScreen implements Screen {
     }, NEXT_DELAY);
   }
 
-  /** Previous participant, or back to the setup screen from the first one. */
+  /** Back one step: assist → fighter → previous participant's assist → … → setup screen. */
   private back() {
     if (this.busy) return;
     audio.sfx('cancel');
-    if (this.index > 0) {
+    if (this.step === 'assist') {
+      this.setStep('fighter');
+      this.showroom.play(0, 'showcase');
+      this.refresh();
+    } else if (this.index > 0) {
       this.t.pickIndex = this.index - 1;
       saveTournament(this.t);
-      this.load(this.index - 1);
+      this.load(this.index - 1, 'assist');
     } else goTournament(this.t.participants);
   }
 

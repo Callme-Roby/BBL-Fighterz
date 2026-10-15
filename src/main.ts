@@ -7,6 +7,7 @@ import { roomFromUrl, tournamentFromUrl } from './net/peer';
 import * as flow from './screens/flow';
 import { goOnline, goTitle, goTournamentHome, initFlow, startFight } from './screens/flow';
 import { ROSTER } from './data/roster';
+import { randomAssist } from './data/assists';
 import { STAGES } from './render/stages';
 
 function boot() {
@@ -27,12 +28,16 @@ function boot() {
     (window as unknown as { bblFlow: typeof flow }).bblFlow = flow;
     (window as unknown as { bblRoster: typeof ROSTER }).bblRoster = ROSTER;
     // ?debug: start a CPU fight straight away, e.g. bblStart('zia', 'thomas')
-    (window as unknown as { bblStart: unknown }).bblStart = (a: string, b: string, stage?: string) => {
+    // assists: bblStart('zia', 'thomas', undefined, 'isis', 'clement'); omitted = drawn at random (seed 1), '' = none
+    (window as unknown as { bblStart: unknown }).bblStart = (a: string, b: string, stage?: string, a1?: string, a2?: string) => {
       const find = (id: string) => ROSTER.find((f) => f.id === id) ?? ROSTER[0];
+      const friend = (id: string | undefined, me: string, k: number) =>
+        id === undefined ? randomAssist(1 + k, find(me).id, ROSTER) : id ? (ROSTER.find((f) => f.id === id) ?? null) : null;
       startFight({
         mode: 'cpu',
         p1: find(a),
         p2: find(b),
+        assists: [friend(a1, a, 0), friend(a2, b, 1)],
         stageId: stage ?? STAGES[0].id,
         rounds: 1,
         difficulty: 'easy',

@@ -16,6 +16,9 @@ leurs photos sont plaquées sur le visage des combattants par un shader.
     concernés s'affrontent en ligne, **tous les autres regardent le combat en direct**. Un joueur qui
     recharge sa page retrouve sa place ; si quelqu'un est déconnecté, l'organisateur peut lui donner
     le combat perdu par forfait ou le remplacer par le CPU. L'organisateur doit garder sa page ouverte.
+- **ASSISTS** : avant le combat, chacun choisit aussi un pote en **assist** ; en plein combat, la touche
+  ASSIST l'appelle : il débarque, place son attaque signature (ruée, lanceur, projectile ou distraction)
+  et repart, puis il faut attendre qu'il recharge
 - **LABO** : crée un perso dans le navigateur avec une photo (recadrage, cheveux, fringues, voix, répliques)
 - Sélection des persos avec aperçu 3D, choix de l'arène, écran VS, intro de chaque perso
   (« Je vais te tuer. »), ROUND 1… FIGHT !, K.O. au ralenti, poses de victoire
@@ -51,13 +54,17 @@ Rien d'autre à configurer : pas de serveur, pas de base de données.
 | Poing droit | I | T | O (ou Num5) | △ / Y |
 | Pied gauche | J | F | K (ou Num1) | ✕ / A |
 | Pied droit | K | G | L (ou Num2) | ○ / B |
-| **BBL MAX** (jauge pleine) | E (ou O) | E | P (ou Num6) | R1 / R2 |
+| **BBL MAX** (jauge pleine) | E (ou O) | E | P (ou Num6) | R1 / RB |
+| **Assist** (ton pote) | Y (ou Num7) | Y | , en AZERTY / M en QWERTY (ou Num7) | R2 / RT (ou R3) |
 | **Garde / parade** | Maj gauche (ou L) | Maj gauche | Maj droite (ou Num0) | L2 |
 | **Saisie** | A en AZERTY / Q en QWERTY (ou H) | A / Q | ! en AZERTY, / en QWERTY (ou Num3) | L1 |
 | Pause | Échap | Échap | Échap | Start |
 
-Les touches sont lues par position physique : ZQSD sur AZERTY = WASD sur QWERTY.
-Sur téléphone / tablette, un joystick et 4 boutons tactiles apparaissent.
+Les touches sont lues par position physique : ZQSD sur AZERTY = WASD sur QWERTY (et Y = Z sur
+un clavier allemand QWERTZ : les écrans d'aide affichent la lettre de ton clavier).
+Sur téléphone / tablette, un joystick et des boutons tactiles apparaissent : LP RP LK RK, BBL MAX,
+GARDE, SAISIE et **ASSIST** (avec le visage de ton pote, grisé pendant la recharge). Téléphone en
+hauteur : l'écran se partage entre le combat (en haut) et une manette (en bas).
 
 **Mécaniques** : garde en maintenant la touche *GARDE* ou *arrière* (debout = bloque hauts et moyens,
 accroupi = bloque les bas, les coups hauts passent au-dessus des accroupis) · **PARADE** : taper GARDE
@@ -69,6 +76,38 @@ libres** : tout coup qui touche (ou est bloqué) peut s'annuler dans n'importe q
 jauge **BBL** qui se remplit en tapant/encaissant : pleine, la touche **BBL MAX** déclenche l'ultime
 (gros plan sur le visage + réplique, puis ruée : si elle touche, cinématique propre à chaque perso),
 utilisable aussi en fin de combo.
+
+**Combos façon FighterZ** : **auto-combo** en martelant Poing G (sans direction) : poings, pied,
+uppercut, super saut et smash s'enchaînent tout seuls · **combos aériens** : après un lanceur, HAUT =
+super saut à la poursuite de l'adversaire, puis poings / pieds en l'air, avant-avant = dash aérien,
+bas + pied = smash qui l'écrase au sol · rebonds sur le mur et au sol pour prolonger · dégâts et
+étourdissement dégressifs dans les longs combos (pas d'infini) · **finish DESTRUCTION** : le coup du
+K.O. envoie l'adversaire à travers le décor, au ralenti.
+
+### Les assists
+
+Sur l'écran de sélection, après avoir validé ton perso, tu choisis ton **assist** dans la même grille
+(pas toi-même ; « ? » = au hasard ; RETOUR revient d'une étape). Le CPU tire le sien au hasard, en
+tournoi chaque participant a le sien (en ligne : « HASARD » est tiré au début du tournoi). Pendant le
+combat, le HUD montre son visage et sa jauge de recharge à côté de la jauge BBL : « ASSIST ! » quand
+il est prêt.
+
+| Pote | Assist | Type |
+|---|---|---|
+| Dylan | CHARGE DU BIDON | ruée (gros coup qui fait tomber) |
+| Thomas | COUP EN TRAÎTRE | ruée |
+| Rayan | CROCHET PACIFISTE | ruée |
+| Isis | UPPERCUT MUSCLÉ | lanceur (enchaîne en combo aérien) |
+| Elies | RETOUR À L'ENVOYEUR | lanceur |
+| Mihaï | COUP DE PIED SAYAN | lanceur |
+| Clément | GRENADE BARBUE | projectile |
+| Enola | TOILE DE POTE | projectile |
+| Billel | MOT-CLÉ MÉTA | projectile |
+| Alex | VIENS LÀ MON MIGNON | distraction (l'adversaire reste figé un instant) |
+| Benji | C'EST QUOI TA CONFIG ? | distraction |
+| Zia | PUNCHLINE | distraction |
+
+Les persos du LABO ont aussi un assist (type tiré de leur identifiant). Données : `src/data/assists.ts`.
 
 ### Les BBL MAX
 

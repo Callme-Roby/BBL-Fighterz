@@ -189,6 +189,69 @@
   top: calc(var(--tu) * 76);
 }
 
+/* ASSIST: the friend's face above the attack buttons, a dark sweep while it recharges (--cd 0 → 1) */
+#touch .btns .assist {
+  left: calc(var(--tu) * 128);
+  top: calc(var(--tu) * -58);
+  width: calc(var(--tu) * 50);
+  height: calc(var(--tu) * 50);
+  font-size: max(6px, calc(var(--tu) * 7));
+  border-color: rgba(41, 215, 196, 0.7);
+}
+
+#touch .btns .assist .aface {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: center 22% / cover no-repeat;
+  image-rendering: pixelated;
+  opacity: 0.9;
+}
+
+#touch .btns .assist::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(transparent calc(var(--cd, 1) * 360deg), rgba(0, 0, 0, 0.72) 0);
+  pointer-events: none;
+}
+
+/* the label hangs under the face like a badge */
+#touch .btns .assist span {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  bottom: calc(var(--tu) * -6);
+  transform: translateX(-50%);
+  padding: 2px 3px;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(41, 215, 196, 0.7);
+  border-radius: 3px;
+}
+
+#touch .btns .assist.cool .aface,
+#touch .btns .assist.busy .aface {
+  filter: grayscale(1) brightness(0.8);
+}
+
+#touch .btns .assist.ready {
+  border-color: var(--teal);
+  box-shadow: 0 0 12px rgba(41, 215, 196, 0.8);
+}
+
+#touch .btns .assist.on {
+  transform: scale(0.94);
+}
+
+#touch .btns .assist.on .aface {
+  filter: brightness(1.35);
+}
+
+#touch.noassist .btns .assist {
+  display: none;
+}
+
 #touch .btns b.super {
   border-color: rgba(255, 210, 58, 0.75);
   color: var(--orange2);
@@ -280,9 +343,9 @@
   height: auto;
   flex: none;
   display: grid;
-  grid-template-columns: repeat(2, calc(var(--tu) * 84));
+  grid-template-columns: repeat(2, calc(var(--tu) * 90));
   grid-template-areas:
-    'bbl bbl'
+    'assist bbl'
     'lp rp'
     'lk rk'
     'grab guard';
@@ -347,10 +410,75 @@
 
 #app.split #touch .btns .bbl {
   grid-area: bbl;
-  width: calc(var(--tu) * 150);
+  width: calc(var(--tu) * 90);
+  gap: calc(var(--tu) * 4);
   --bc: var(--orange2);
   color: var(--orange2);
+  font-size: max(9px, calc(var(--tu) * 10.5));
+}
+
+/* no assist this fight: BBL MAX takes the whole top row again */
+#app.split #touch.noassist .btns {
+  grid-template-areas:
+    'bbl bbl'
+    'lp rp'
+    'lk rk'
+    'grab guard';
+}
+
+#app.split #touch.noassist .btns .bbl {
+  width: calc(var(--tu) * 150);
+  gap: calc(var(--tu) * 5);
   font-size: max(10px, calc(var(--tu) * 13));
+}
+
+/* ASSIST pill: face + label, a dark curtain drawn back while it recharges */
+#app.split #touch .btns .assist {
+  grid-area: assist;
+  width: calc(var(--tu) * 90);
+  height: calc(var(--tu) * 44);
+  border-radius: calc(var(--tu) * 12);
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: calc(var(--tu) * 4);
+  padding: 0 0 0 calc(var(--tu) * 4);
+  overflow: hidden;
+  font-size: max(7px, calc(var(--tu) * 7.5));
+  --bc: var(--teal);
+  color: #b8fff6;
+}
+
+#app.split #touch .btns .assist .aface {
+  position: relative;
+  inset: auto;
+  flex: none;
+  width: calc(var(--tu) * 28);
+  height: calc(var(--tu) * 28);
+  border: 2px solid #000;
+  opacity: 1;
+}
+
+#app.split #touch .btns .assist span {
+  position: relative;
+  left: auto;
+  bottom: auto;
+  transform: none;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+
+#app.split #touch .btns .assist::after {
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent calc(var(--cd, 1) * 100%), rgba(0, 0, 0, 0.66) 0);
+}
+
+#app.split #touch .btns .assist.ready {
+  box-shadow: inset 0 0 0 2px var(--teal), 0 0 14px rgba(41, 215, 196, 0.85);
+}
+
+#app.split #touch .btns .assist.on {
+  transform: translateY(2px);
 }
 
 #app.split #touch .btns .bbl small {
@@ -427,6 +555,37 @@
   max-width: 760px;
 }
 
+/* assist widgets: above the BBL gauges (landscape touch) / at the bottom corners of the picture (portrait) */
+#app.touchui:not(.split) .assistw,
+#app.split .assistw {
+  left: 0;
+  right: auto;
+  bottom: calc(100% + 8px);
+  width: 112px;
+}
+
+#app.touchui:not(.split) .assistw.right,
+#app.split .assistw.right {
+  left: auto;
+  right: 0;
+}
+
+#app.split .assistw {
+  /* the gauges sit on the deck: lift the widgets into the picture */
+  bottom: calc(100% + 18px);
+}
+
+/* landscape touch: the right banner leaves the pause button alone */
+#app.touchui:not(.split) .assist-call.right {
+  right: calc(max(8px, env(safe-area-inset-right)) + 52px);
+}
+
+/* the combo counter steps aside while an assist banner is on its side */
+.hud.calling-l .combo.left,
+.hud.calling-r .combo.right {
+  margin-top: 56px;
+}
+
 /* ------------------------------------------------------------------ */
 /* HUD on small screens                                                 */
 /* ------------------------------------------------------------------ */
@@ -497,6 +656,44 @@
   .comic.caption {
     font-size: 15px;
   }
+  .assistw .aface {
+    width: 24px;
+    height: 24px;
+  }
+  .assistw .albl {
+    font-size: 6px;
+    margin-bottom: 3px;
+  }
+  .assistw .abar {
+    height: 5px;
+  }
+  .assist-call {
+    top: calc(max(8px, env(safe-area-inset-top)) + 44px);
+    gap: 7px;
+    padding: 4px 10px 4px 4px;
+    max-width: 74%;
+  }
+  .assist-call.right {
+    padding: 4px 4px 4px 10px;
+  }
+  .assist-call .ph {
+    width: 28px;
+    height: 34px;
+  }
+  .assist-call .mv {
+    font-size: 12px;
+  }
+  .assist-call .shout {
+    margin-top: 3px;
+    font-size: 7px;
+  }
+  .hud.calling-l .combo.left,
+  .hud.calling-r .combo.right {
+    margin-top: 34px;
+  }
+  .combo em {
+    font-size: 7px;
+  }
 }
 
 /* phone held upright (split view or not) */
@@ -518,6 +715,9 @@
   }
   .announce.ko {
     font-size: 19vw;
+  }
+  .announce.destroy {
+    font-size: 10.5vw;
   }
   .announce.super {
     top: 18%;
@@ -558,6 +758,9 @@
   }
   .announce.ko {
     font-size: min(18vw, 36vh);
+  }
+  .announce.destroy {
+    font-size: min(9vw, 18vh);
   }
   .announce.super {
     top: 20%;
@@ -660,6 +863,30 @@
   .vs .vstitle {
     max-width: 90vw;
   }
+  .vs .vs-assist {
+    justify-content: flex-start;
+    margin-top: 10px;
+    gap: 8px;
+  }
+  .vs .pname.p2 .vs-assist {
+    flex-direction: row-reverse;
+  }
+  .vs .pname.p2 .vs-assist .atx {
+    text-align: right;
+  }
+  .vs .vs-assist .aph {
+    width: 36px;
+    height: 45px;
+    border-width: 2px;
+    box-shadow: 3px 3px 0 #000;
+  }
+  .vs .vs-assist b {
+    font-size: clamp(12px, 3.6vw, 18px);
+  }
+  .vs .vs-assist small,
+  .vs .vs-assist .ak {
+    font-size: 7px;
+  }
 }
 
 @media (max-height: 500px) and (orientation: landscape) {
@@ -678,6 +905,21 @@
   }
   .vs .vsword {
     font-size: min(12vw, 30vh);
+  }
+  .vs .vs-assist {
+    margin-top: 8px;
+  }
+  .vs .vs-assist .aph {
+    width: 30px;
+    height: 38px;
+    border-width: 2px;
+  }
+  .vs .vs-assist b {
+    font-size: 13px;
+  }
+  .vs .vs-assist small,
+  .vs .vs-assist .ak {
+    font-size: 6px;
   }
 }
 
@@ -778,6 +1020,11 @@
 .controls-table .tbtn.gold {
   border-color: var(--orange2);
   color: var(--orange2);
+}
+
+.controls-table .tbtn.teal {
+  border-color: var(--teal);
+  color: #8ff6e8;
 }
 
 @media (max-width: 600px), (max-height: 500px) {

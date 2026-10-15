@@ -4,6 +4,14 @@ import { PS1Globals } from './ps1Material';
 /**
  * Low-resolution render target + "PS1 output" post pass:
  * nearest upscale, 15-bit colour with ordered dithering, light scanlines.
+ *
+ * Also draws the "hit feel" overlays of the fight (see FightWorld):
+ *  - impact frames (DBFZ style): for 1-2 frames the picture becomes a flat
+ *    high-contrast drawing, the characters (found in the depth buffer: anything
+ *    standing on the fight lane z ≈ 0, above the floor) as ink silhouettes on a
+ *    paper background (`uImpactMode` 1), or bright shapes on black (mode 2),
+ *    with a jagged starburst behind them at the impact point;
+ *  - radial speed lines converging on the impact point (`uLines`).
  */
 export class RetroPipeline {
   readonly renderer: THREE.WebGLRenderer;
@@ -27,6 +35,8 @@ export class RetroPipeline {
       minFilter: THREE.NearestFilter,
       magFilter: THREE.NearestFilter,
       depthBuffer: true,
+      // read by the impact frames (silhouettes of the fighters)
+      depthTexture: new THREE.DepthTexture(this.lowW, this.lowH),
     });
     this.postMat = new THREE.ShaderMaterial({
       uniforms: {
@@ -36,6 +46,15 @@ export class RetroPipeline {
         uFlash: { value: 0 },
         uFlashColor: { value: new THREE.Color(1, 1, 1) },
         uFade: { value: 0 },
+        tDepth: { value: this.rt.depthTexture },
+        uInvVP: { value: new THREE.Matrix4() },
+        uImpactMode: { value: 0 },
+        uImpactTint: { value: new THREE.Color(1, 0.2, 0.1) },
+        uImpactCenter: { value: new THREE.Vector2(0.5, 0.5) },
+        uImpactSeed: { value: 0 },
+        uLines: { value: 0 },
+        uLinesCenter: { value: new THREE.Vector2(0.5, 0.5) },
+        uLinesSeed: { value: 0 },
       },
       vertexShader: /* glsl */ `
         varying vec2 vUv;
@@ -48,7 +67,35 @@ export class RetroPipeline {
         uniform float uFlash;
         uniform vec3 uFlashColor;
         uniform float uFade;
+        uniform sampler2D tDepth;
+        uniform mat4 uInvVP;
+        uniform float uImpactMode;
+        uniform vec3 uImpactTint;
+        uniform vec2 uImpactCenter;
+        uniform float uImpactSeed;
+        uniform float uLines;
+        uniform vec2 uLinesCenter;
+        uniform float uLinesSeed;
         varying vec2 vUv;
+        float hash1(float n) { return fract(sin(n * 12.9898 + 4.1414) * 43758.5453); }
+        // manga speed lines converging on c: 0..1 coverage of this pixel
+        float speedLines(vec2 uv, vec2 c, float seed, float strength) {
+          vec2 d = (uv - c) * vec2(uLow.x / uLow.y, 1.0);
+          float r = length(d);
+          float a = atan(d.y, d.x) / 6.2831853 + 0.5;
+          float cells = 72.0;
+          float k = a * cells;
+          float id = floor(k);
+          float h = hash1(id + seed * 17.0);
+          float h2 = hash1(id * 3.7 + seed * 5.0);
+          // only some cells carry a line; thin wedges that start at a random radius
+          float on = step(0.42, h2);
+          float w = 0.12 + 0.3 * h;
+          float edge = abs(fract(k) - 0.5) * 2.0;
+          float wedge = step(edge, w * smoothstep(0.0, 1.2, r));
+          float r0 = mix(0.36, 0.85, h) * (1.25 - 0.45 * strength);
+          return on * wedge * smoothstep(r0, r0 + 0.12, r);
+        }
         float bayer4(vec2 p) {
           int x = int(mod(p.x, 4.0));
           int y = int(mod(p.y, 4.0));
@@ -68,7 +115,45 @@ export class RetroPipeline {
             float d = (bayer4(px) - 0.5) / 32.0;
             c = floor((c + d) * 32.0 + 0.5) / 32.0;
           }
-          c = mix(c, uFlashColor, uFlash);
+          vec2 uvp = (px + 0.5) / uLow;
+          if (uImpactMode > 0.5) {
+            // impact frame: characters (on the fight lane, above the floor) vs everything else
+            float dz = texture2D(tDepth, uvp).r;
+            vec4 wp = uInvVP * vec4(uvp * 2.0 - 1.0, dz * 2.0 - 1.0, 1.0);
+            wp /= wp.w;
+            float fg = (dz < 0.99999 && abs(wp.z) < 1.1 && wp.y > 0.03) ? 1.0 : 0.0;
+            float lum = dot(c, vec3(0.299, 0.587, 0.114));
+            // jagged starburst behind the characters
+            vec2 sd = (uvp - uImpactCenter) * vec2(uLow.x / uLow.y, 1.0);
+            float sr = length(sd);
+            float sa = atan(sd.y, sd.x);
+            float spikes = 0.5 + 0.5 * cos(sa * 9.0 + uImpactSeed * 6.0);
+            spikes = pow(spikes, 3.0) + 0.35 * pow(0.5 + 0.5 * cos(sa * 23.0 + uImpactSeed * 11.0), 6.0);
+            float star = step(sr, 0.08 + 0.32 * spikes);
+            float lines = speedLines(uvp, uImpactCenter, uImpactSeed, 1.0);
+            vec3 ink = vec3(0.05, 0.04, 0.07);
+            vec3 paper = vec3(0.98, 0.95, 0.88);
+            if (uImpactMode < 1.5) {
+              // flat ink silhouettes on paper
+              vec3 bg = mix(paper, uImpactTint, star * 0.85);
+              bg = mix(bg, ink, lines * (1.0 - star) * 0.9);
+              vec3 fgc = ink;
+              c = mix(bg, fgc, fg);
+            } else {
+              // negative: bright, posterized characters on black
+              vec3 bg = mix(ink, uImpactTint * 0.9, star);
+              bg = mix(bg, paper, lines * (1.0 - star) * 0.75);
+              vec3 fgc = mix(uImpactTint, paper, step(0.32, lum));
+              c = mix(bg, fgc, fg);
+            }
+          } else {
+            if (uLines > 0.001) {
+              float l = speedLines(uvp, uLinesCenter, uLinesSeed, uLines);
+              c = mix(c, vec3(1.0), l * uLines * 0.7);
+            }
+            // (an impact frame is its own flash: it stays crisp)
+            c = mix(c, uFlashColor, uFlash);
+          }
           c *= 1.0 - uFade;
           // subtle scanline darkening on odd low-res rows
           float scan = mod(px.y, 2.0) < 1.0 ? 1.0 : 0.94;
@@ -89,6 +174,16 @@ export class RetroPipeline {
       uFlashColor: { value: THREE.Color };
       uFade: { value: number };
       uDither: { value: number };
+      /** 0 = off, 1 = ink silhouettes on paper, 2 = negative (bright on black) */
+      uImpactMode: { value: number };
+      uImpactTint: { value: THREE.Color };
+      /** screen uv (0..1, origin bottom-left) of the impact */
+      uImpactCenter: { value: THREE.Vector2 };
+      uImpactSeed: { value: number };
+      /** speed lines strength (0 = none) */
+      uLines: { value: number };
+      uLinesCenter: { value: THREE.Vector2 };
+      uLinesSeed: { value: number };
     };
   }
 
@@ -111,6 +206,11 @@ export class RetroPipeline {
     this.renderer.setRenderTarget(this.rt);
     this.renderer.clear();
     this.renderer.render(scene, camera);
+    if (this.postMat.uniforms.uImpactMode.value > 0.5) {
+      // world position of each pixel (impact-frame silhouettes): inverse view-projection
+      // (the camera's matrices are up to date once the scene has been rendered)
+      (this.postMat.uniforms.uInvVP.value as THREE.Matrix4).multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
+    }
     this.renderer.setRenderTarget(null);
     this.renderer.render(this.postScene, this.postCam);
   }
@@ -143,6 +243,7 @@ export class RetroPipeline {
   }
 
   dispose() {
+    this.rt.depthTexture?.dispose();
     this.rt.dispose();
     this.postMat.dispose();
     this.renderer.dispose();

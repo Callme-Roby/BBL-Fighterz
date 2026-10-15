@@ -5,7 +5,8 @@
 import '../ui/tournament.css';
 import * as THREE from 'three';
 import type { FighterDef } from '../data/roster';
-import { BYE, fighterOf, roundName, type Match, type Side, type Tournament } from '../game/tournament';
+import { assistOfParticipant, BYE, fighterOf, roundName, type Match, type Side, type Tournament } from '../game/tournament';
+import { keyLabel, P1_KEYS, P2_KEYS, SOLO_KEYS } from '../input/input';
 import { loadFace } from '../render/faceTexture';
 import type { Showroom } from '../render/showroom';
 import { h, type Menu } from '../ui/dom';
@@ -35,6 +36,12 @@ export function portrait(def: FighterDef | null, cls = 'tn-ph'): HTMLDivElement 
     .then((f) => (el.style.backgroundImage = `url(${f.portraitUrl})`))
     .catch(() => el.classList.add('unknown'));
   return el;
+}
+
+/** « + ISIS » under a fighter's name: the participant's assist (small face + name). */
+export function assistTag(def: FighterDef | null): HTMLElement | null {
+  if (!def) return null;
+  return h('div', { class: 'tn-vs-assist', title: 'Assist' }, portrait(def, 'tn-aph'), h('span', null, 'ASSIST ' + def.name));
 }
 
 /**
@@ -70,12 +77,12 @@ export function controlsEl(humans: number): HTMLElement {
   const lines: { who?: string; side?: 'l' | 'r'; chunks: string[] }[] =
     humans >= 2
       ? [
-          { who: 'GAUCHE :', side: 'l', chunks: ['ZQSD/WASD + R T F G', 'E = BBL MAX'] },
-          { who: 'DROITE :', side: 'r', chunks: ['flèches + I O K L', 'P = BBL MAX'] },
+          { who: 'GAUCHE :', side: 'l', chunks: ['ZQSD/WASD + R T F G', `${keyLabel(P1_KEYS.super[0])} = BBL MAX`, `${keyLabel(P1_KEYS.assist[0])} = ASSIST`] },
+          { who: 'DROITE :', side: 'r', chunks: ['flèches + I O K L', `${keyLabel(P2_KEYS.super[0])} = BBL MAX`, `${keyLabel(P2_KEYS.assist[0])} = ASSIST`] },
           { chunks: ['ou une manette chacun'] },
         ]
       : humans === 1
-        ? [{ chunks: ['ZQSD/WASD ou flèches', 'U I J K = poings/pieds', 'E = BBL MAX'] }, { chunks: ['ou la manette'] }]
+        ? [{ chunks: ['ZQSD/WASD ou flèches', 'U I J K = poings/pieds', `${keyLabel(SOLO_KEYS.super[0])} = BBL MAX`, `${keyLabel(SOLO_KEYS.assist[0])} = ASSIST`] }, { chunks: ['ou la manette'] }]
         : [{ chunks: ['Match entre CPU'] }];
   return h(
     'div',
@@ -103,6 +110,10 @@ export interface BracketOptions {
 
 /** The whole single-elimination tree (columns of rounds joined by connectors). */
 export function bracketTree(t: Tournament, roster: FighterDef[], o: BracketOptions = {}): HTMLElement {
+  const assistName = (i: number) => {
+    const a = assistOfParticipant(t, i, roster);
+    return a ? ` + assist ${a.name}` : '';
+  };
   const sideEl = (s: Side, m: Match): HTMLElement => {
     if (s === BYE) return h('div', { class: 'tn-side byeside' }, h('span', { class: 'tn-name' }, '—'));
     if (s === null) return h('div', { class: 'tn-side tbd' }, h('div', { class: 'tn-ph unknown' }, '?'), h('span', { class: 'tn-name' }, '…'));
@@ -114,7 +125,7 @@ export function bracketTree(t: Tournament, roster: FighterDef[], o: BracketOptio
     if (o.offline?.[s]) cls.push('off');
     return h(
       'div',
-      { class: cls.join(' '), title: `${p.name} (${def.name})` },
+      { class: cls.join(' '), title: `${p.name} (${def.name}${assistName(s)})` },
       portrait(def),
       h('div', { class: 'tn-info' }, h('span', { class: 'tn-name' }, p.name), h('span', { class: 'tn-fighter' }, def.name)),
       p.cpu ? h('span', { class: 'tn-cpu' }, 'CPU') : null,

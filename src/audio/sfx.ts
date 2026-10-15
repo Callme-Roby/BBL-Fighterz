@@ -39,6 +39,10 @@ export const RANDOMIZED_SFX: ReadonlySet<SfxId> = new Set<SfxId>([
   'crash',
   'crack',
   'dash',
+  'bounce',
+  'wallBreak',
+  'superJump',
+  'airDash',
 ]);
 
 /**
@@ -80,6 +84,11 @@ const LEVEL: Record<SfxId, number> = {
   dash: 1.1,
   flex: 0.5,
   shine: 0.75,
+  impact: 0.5,
+  bounce: 0.7,
+  wallBreak: 0.5,
+  superJump: 0.8,
+  airDash: 0.9,
 };
 
 /** Play a procedural effect. */
@@ -867,5 +876,63 @@ const SFX: Record<SfxId, (env: SfxEnv, t: number, p: number) => void> = {
       sweepTone(ctx, out, tt, { f0: f * r, f1: f * r, sweep: 0, peak: g, decay: d });
     }
     noiseBurst(ctx, out, tt, { filter: 'highpass', freq: 7000 * p, peak: 0.12, attack: 0.005, decay: 0.3 });
+  },
+
+  /** Impact frame: a deep sub "boom" under a sharp crack, with a short room tail. */
+  impact(env, t, p) {
+    const { ctx, out } = env;
+    reverbSend(env, 0.3);
+    sweepTone(ctx, crunch(env, 0.7, 0.9), t, { f0: 95 * p, f1: 28 * p, sweep: 0.35, peak: 1.0, decay: 0.6 });
+    noiseBurst(ctx, crunch(env, 1.2, 0.6), t, { filter: 'highpass', freq: 2500 * p, peak: 0.8, attack: 0.0005, decay: 0.05 });
+    noiseBurst(ctx, out, t, { filter: 'bandpass', freq: 700 * p, q: 0.6, peak: 0.5, decay: 0.22 });
+    noiseBurst(ctx, out, t + 0.01, { filter: 'lowpass', freq: 300 * p, peak: 0.45, attack: 0.01, decay: 0.5, rate: 0.5 });
+  },
+
+  /** Body bouncing off a wall / the floor: hollow thud with a short rubbery rebound. */
+  bounce(env, t, p) {
+    const { ctx, out } = env;
+    sweepTone(ctx, crunch(env, 0.4, 0.9), t, { f0: 160 * p, f1: 55 * p, sweep: 0.09, peak: 0.9, decay: 0.2 });
+    noiseBurst(ctx, out, t, { filter: 'bandpass', freq: 900 * p, q: 0.9, peak: 0.45, decay: 0.08 });
+    sweepTone(ctx, out, t + 0.07, { type: 'triangle', f0: 110 * p, f1: 240 * p, sweep: 0.12, peak: 0.3, attack: 0.005, decay: 0.14 });
+  },
+
+  /** Destruction finish: a wall bursting — boom, rubble raining down, glass shards. */
+  wallBreak(env, t, p) {
+    const { ctx, out } = env;
+    reverbSend(env, 0.35);
+    heavyImpact(env, t, p * 0.8, 1.6);
+    noiseBurst(ctx, crunch(env, 0.9, 0.7), t, { filter: 'lowpass', freq: 1400 * p, peak: 0.8, attack: 0.003, decay: 0.9, rate: 0.6 });
+    // rubble: lots of small knocks
+    for (let i = 0; i < 16; i++) {
+      const dt = rnd(0.04, 1.1);
+      const lvl = rnd(0.25, 0.6) * (1 - dt * 0.6);
+      sweepTone(ctx, out, t + dt, { f0: rnd(160, 420) * p, f1: rnd(60, 120) * p, sweep: 0.04, peak: lvl, decay: rnd(0.04, 0.09) });
+      noiseBurst(ctx, out, t + dt, { filter: 'bandpass', freq: rnd(900, 2600) * p, q: 1.1, peak: lvl * 0.7, decay: rnd(0.015, 0.04) });
+    }
+    // glass / barrier shards
+    for (let i = 0; i < 7; i++) {
+      const dt = rnd(0.02, 0.5);
+      const f = rnd(2600, 5200) * p;
+      sweepTone(ctx, out, t + dt, { type: 'triangle', f0: f, f1: f * 0.97, sweep: 0.1, peak: 0.07, decay: rnd(0.12, 0.3) });
+    }
+  },
+
+  /** Super jump: a springy launch and a rising rush of air. */
+  superJump(env, t, p) {
+    const { ctx, out } = env;
+    sweepTone(ctx, out, t, { f0: 90 * p, f1: 200 * p, sweep: 0.12, peak: 0.5, decay: 0.16 });
+    noiseBurst(ctx, out, t, {
+      filter: 'bandpass', freq: 400 * p, freqEnd: 4200 * p, sweep: 0.3, q: 1.6, peak: 0.6, attack: 0.03, decay: 0.3,
+    });
+    noiseBurst(ctx, out, t, { filter: 'lowpass', freq: 400 * p, peak: 0.35, decay: 0.1 });
+  },
+
+  /** Air dash: a short, sharp whoosh. */
+  airDash(env, t, p) {
+    const { ctx, out } = env;
+    noiseBurst(ctx, out, t, {
+      filter: 'bandpass', freq: 3600 * p, freqEnd: 700 * p, sweep: 0.16, q: 1.8, peak: 0.65, attack: 0.012, decay: 0.17,
+    });
+    sweepTone(ctx, out, t, { type: 'triangle', f0: 900 * p, f1: 300 * p, sweep: 0.12, peak: 0.12, decay: 0.14 });
   },
 };

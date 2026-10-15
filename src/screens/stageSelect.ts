@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { audio } from '../audio/audio';
 import type { App, Screen } from '../app';
+import { randomAssist } from '../data/assists';
 import type { FighterDef } from '../data/roster';
-import { settings } from '../game/settings';
+import { fullRoster, settings } from '../game/settings';
 import { input } from '../input/input';
 import type { NetLink } from '../net/peer';
 import type { RetroPipeline } from '../render/pipeline';
@@ -49,6 +50,7 @@ export class StageSelectScreen implements Screen {
     private p1: FighterDef,
     private p2: FighterDef,
     private link?: NetLink,
+    private assists: [FighterDef | null, FighterDef | null] = [null, null],
   ) {}
 
   enter() {
@@ -99,8 +101,11 @@ export class StageSelectScreen implements Screen {
     let stageId = this.index < STAGES.length ? STAGES[this.index].id : STAGES[Math.floor(Math.random() * STAGES.length)].id;
     if (!STAGES.find((s) => s.id === stageId)) stageId = STAGES[0].id;
     const seed = (Math.random() * 1e9) >>> 0;
+    // arcade: the CPU's friend is drawn from the fight seed
+    const assists: [FighterDef | null, FighterDef | null] = [this.assists[0], this.assists[1]];
+    if (this.mode === 'cpu' && !assists[1]) assists[1] = randomAssist(seed ^ 0xa55157, this.p2.id, fullRoster());
     if (this.mode === 'online' && this.link) {
-      this.link.send({ t: 'start', stage: stageId, p1: this.p1, p2: this.p2, seed, rounds: settings.rounds });
+      this.link.send({ t: 'start', stage: stageId, p1: this.p1, p2: this.p2, a1: assists[0], a2: assists[1], seed, rounds: settings.rounds });
     }
     startFight({
       mode: this.mode,
@@ -112,6 +117,7 @@ export class StageSelectScreen implements Screen {
       seed,
       link: this.link,
       localPlayer: 0,
+      assists,
     });
   }
 

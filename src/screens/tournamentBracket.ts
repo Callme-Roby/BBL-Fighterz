@@ -7,6 +7,7 @@ import type { App, Screen } from '../app';
 import type { FighterDef } from '../data/roster';
 import { fullRoster, settings } from '../game/settings';
 import {
+  assistOfParticipant,
   champion,
   clearTournament,
   fighterOf,
@@ -25,7 +26,7 @@ import { Showroom } from '../render/showroom';
 import { STAGES } from '../render/stages';
 import { backButton, h, isTouchUi, Menu, uiRoot } from '../ui/dom';
 import { goMenu, goTournamentBracket, goTournamentChampion, startFight } from './flow';
-import { bracketTree, controlsEl, guardButtons, portrait, syncMenuFocus } from './tournamentShared';
+import { assistTag, bracketTree, controlsEl, guardButtons, portrait, syncMenuFocus } from './tournamentShared';
 
 /**
  * Records the result of match (r, m) and saves. Returns the message to flash
@@ -122,6 +123,7 @@ export class TournamentBracketScreen implements Screen {
         portrait(def, 'tn-vs-ph'),
         h('div', { class: 'tn-vs-name' }, p.name),
         h('div', { class: 'tn-vs-fighter' }, def.name),
+        assistTag(assistOfParticipant(t, i, this.roster)),
         h('div', { class: 'tn-vs-tag' + (p.cpu ? ' cpu' : '') }, tag),
       );
     };
@@ -163,6 +165,7 @@ export class TournamentBracketScreen implements Screen {
       seed: fightSeed(t),
       cpuSides: [pa.cpu, pb.cpu],
       names: [pa.name, pb.name],
+      assists: [assistOfParticipant(t, a, this.roster), assistOfParticipant(t, b, this.roster)],
       tournament: {
         title: matchTitle(t, r, m),
         onResult: (w) => {

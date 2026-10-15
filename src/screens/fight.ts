@@ -1,17 +1,19 @@
 import { audio } from '../audio/audio';
 import type { App, Screen } from '../app';
+import { assistOf, assistSpec, ASSIST_KIND_LABEL } from '../data/assists';
 import type { FighterDef } from '../data/roster';
 import { ultimateOf } from '../data/ultimates';
 import { FightWorld } from '../game/world';
-import { input } from '../input/input';
+import { input, keyLabel, P1_KEYS, P2_KEYS } from '../input/input';
 import type { NetLink, NetMsg } from '../net/peer';
 import { RollbackSession, type TimedEvent } from '../net/rollback';
+import { loadFace } from '../render/faceTexture';
 import { getStage } from '../render/stages';
 import { CpuBrain, type Difficulty } from '../sim/ai';
 import { createGame, step } from '../sim/sim';
 import { INTRO_SPLIT, type GameState, type SimEvent } from '../sim/types';
 import { h, Menu, uiRoot } from '../ui/dom';
-import { Hud } from '../ui/hud';
+import { Hud, type AssistHud } from '../ui/hud';
 import { controlsHelp } from './help';
 import { goMenu, goSelect, startFight } from './flow';
 
@@ -46,6 +48,11 @@ export interface FightSetup {
   tv?: (frame: number, i0: number, i1: number) => void;
   /** spectator mode: where the inputs come from */
   feed?: SpectatorFeed;
+  /**
+   * friend called with the assist button, per side (null = none). Chosen on the select
+   * screens (the CPU's is drawn from the seed); online, both browsers get the same pair.
+   */
+  assists?: [FighterDef | null, FighterDef | null];
 }
 
 export interface TournamentHooks {
@@ -92,6 +99,10 @@ export class FightScreen implements Screen {
   private spectating = false;
   /** the first frame after loading has been presented (HUD shown, round announced) */
   private started = false;
+  /** faces of the assists (banner when called) */
+  private assistFaces: [string | null, string | null] = [null, null];
+  /** full scale of the touch ASSIST button's recharge sweep */
+  private touchCdMax = 0;
 
   constructor(
     private app: App,
@@ -101,6 +112,7 @@ export class FightScreen implements Screen {
       roundsToWin: setup.rounds,
       skipIntro: setup.skipIntro,
       ultimates: [ultimateOf(setup.p1).script, ultimateOf(setup.p2).script],
+      assists: [assistSpec(setup.assists?.[0]), assistSpec(setup.assists?.[1])],
     });
     // deterministic variant choices for intro animations (same on both peers)
     this.state.fighters[0].variant = setup.seed % 2;
@@ -116,7 +128,24 @@ export class FightScreen implements Screen {
       this.unsubs.push(setup.link.onClose((reason) => this.disconnected(reason)));
     }
     const [names, tags] = this.labels();
-    this.hud = new Hud(names, this.superKeys(), tags);
+    const akeys = this.assistKeys();
+    const ahud = (i: 0 | 1): AssistHud | null => {
+      const def = setup.assists?.[i];
+      return def ? { name: def.name, key: akeys[i] } : null;
+    };
+    this.hud = new Hud(names, this.superKeys(), tags, [ahud(0), ahud(1)]);
+    for (const i of [0, 1] as const) {
+      const def = setup.assists?.[i];
+      if (!def) continue;
+      loadFace(def)
+        .then((f) => {
+          if (this.disposed) return;
+          this.assistFaces[i] = f.portraitUrl;
+          this.hud.setAssistPortrait(i, f.portraitUrl);
+          if (this.localSide === i) this.app.touch.setAssistFace(f.portraitUrl);
+        })
+        .catch(() => undefined);
+    }
     // console access for testing: open the game with ?debug
     if (location.search.includes('debug') || (window as unknown as { bblDebug?: boolean }).bblDebug) (window as unknown as { bblFight: unknown }).bblFight = this;
     FightWorld.create(setup.p1, setup.p2, setup.stageId).then((w) => {
@@ -125,6 +154,8 @@ export class FightScreen implements Screen {
         return;
       }
       this.world = w;
+      // the friends' look (lab creations received online are not in the local roster)
+      w.setAssistDefs([setup.assists?.[0] ?? null, setup.assists?.[1] ?? null]);
       w.setCineHooks({
         say: (sp, text, o) => {
           this.showLine(sp.name, sp.portrait, text, (o.dur / 60) * 1000);
@@ -164,6 +195,10 @@ export class FightScreen implements Screen {
     audio.playMusic(getStage(this.setup.stageId).music, { fade: 1 });
     this.app.touch.setGameplay(true);
     this.app.touch.onPause = () => this.togglePause();
+    // ASSIST button: shown when the side played here has a friend (face filled in when loaded)
+    const side = this.localSide;
+    const mine = side === 0 || side === 1 ? this.setup.assists?.[side] : null;
+    this.app.touch.setAssistFace(mine ? (this.assistFaces[side as 0 | 1] ?? '') : null);
   }
 
   exit() {
@@ -180,14 +215,37 @@ export class FightScreen implements Screen {
   /** "P1 VS P2" splash shown while the match loads. */
   private showVs() {
     const names = this.setup.names;
+    const face = (def: FighterDef, el: HTMLElement) => {
+      loadFace(def)
+        .then((f) => (el.style.backgroundImage = `url(${f.portraitUrl})`))
+        .catch(() => undefined);
+      return el;
+    };
     const side = (def: FighterDef, cls: string) => {
-      const who = names ? names[cls === 'l' ? 0 : 1] : null;
-      const ph = h('div', { class: 'portrait' });
-      import('../render/faceTexture').then(({ loadFace }) => loadFace(def).then((f) => (ph.style.backgroundImage = `url(${f.portraitUrl})`)));
+      const i = cls === 'l' ? 0 : 1;
+      const who = names ? names[i] : null;
+      const ph = face(def, h('div', { class: 'portrait' }));
       const sub = who && who.toUpperCase() !== def.name.toUpperCase() ? `avec ${def.name} — ${def.title}` : def.title;
       const shown = who ? who.toUpperCase() : def.name;
       const long = shown.length > 9 ? ' long' : '';
-      return h('div', { class: 'side ' + cls }, ph, h('div', { class: 'pname ' + (cls === 'l' ? 'p1' : 'p2') + long }, h('span', { class: 'nm' }, shown), h('span', { class: 'ttl' }, sub)));
+      // the friend on call: small portrait + name + move under the fighter
+      const ad = this.setup.assists?.[i];
+      const a = ad ? assistOf(ad) : null;
+      const assist =
+        ad && a
+          ? h(
+              'div',
+              { class: 'vs-assist' },
+              face(ad, h('div', { class: 'aph' })),
+              h('div', { class: 'atx' }, h('span', { class: 'ak' }, 'ASSIST'), h('b', null, ad.name), h('small', null, `${a.name} · ${ASSIST_KIND_LABEL[a.kind]}`)),
+            )
+          : null;
+      return h(
+        'div',
+        { class: 'side ' + cls },
+        ph,
+        h('div', { class: 'pname ' + (cls === 'l' ? 'p1' : 'p2') + long }, h('span', { class: 'nm' }, shown), h('span', { class: 'ttl' }, sub), assist),
+      );
     };
     const mid = h('div', { class: 'mid' });
     if (this.setup.tournament) mid.append(h('div', { class: 'title-hint vstitle' }, this.setup.tournament.title));
@@ -206,6 +264,7 @@ export class FightScreen implements Screen {
       if (this.overlay && !this.rematchMine) this.showResults();
     }
     if (m.t === 'start' && this.setup.link && !this.setup.link.isHost) {
+      // rematch: same fighters and assists (the host's message carries them too)
       startFight({ ...this.setup, stageId: m.stage, seed: m.seed, skipIntro: true });
     }
     if (m.t === 'toSelect') goSelect('online', this.setup.link);
@@ -260,6 +319,20 @@ export class FightScreen implements Screen {
   private superKeys(): [string, string] {
     const keys = this.superKeysRaw();
     // the side played with the touch controls has its BBL button right there: no key to press
+    const side = this.localSide;
+    if (this.app.touch.enabled && (side === 0 || side === 1)) keys[side] = '';
+    return keys;
+  }
+
+  /** key shown in the HUD next to "ASSIST !" for each side ('' = CPU / remote / touch) */
+  private assistKeys(): [string, string] {
+    const k1 = keyLabel(P1_KEYS.assist[0]);
+    const k2 = keyLabel(P2_KEYS.assist[0]);
+    let keys: [string, string];
+    if (this.setup.mode === 'spectate') keys = ['', ''];
+    else if (this.setup.mode === 'online') keys = this.setup.localPlayer === 1 ? ['', k1] : [k1, ''];
+    else if (this.humans >= 2) keys = [k1, k2];
+    else keys = [this.cpu[0] ? '' : k1, this.cpu[1] ? '' : k1];
     const side = this.localSide;
     if (this.app.touch.enabled && (side === 0 || side === 1)) keys[side] = '';
     return keys;
@@ -390,7 +463,8 @@ export class FightScreen implements Screen {
   private checkRematch() {
     if (this.rematchMine && this.rematchTheirs && this.setup.link?.isHost) {
       const seed = (Math.random() * 1e9) >>> 0;
-      this.setup.link.send({ t: 'start', stage: this.setup.stageId, p1: this.setup.p1, p2: this.setup.p2, seed, rounds: this.setup.rounds });
+      const [a1, a2] = this.setup.assists ?? [null, null];
+      this.setup.link.send({ t: 'start', stage: this.setup.stageId, p1: this.setup.p1, p2: this.setup.p2, a1, a2, seed, rounds: this.setup.rounds });
       startFight({ ...this.setup, seed, skipIntro: true });
     }
   }
@@ -507,6 +581,14 @@ export class FightScreen implements Screen {
     this.hud.update(this.state, dt * 60);
     const side = this.localSide;
     this.app.touch.setSuperReady(side >= 0 && this.state.fighters[side].meter >= 100);
+    const as = side >= 0 ? this.state.assists?.[side] : null;
+    if (as) {
+      // gauge scale: the longest cooldown seen since the last call
+      if (as.cooldown > this.touchCdMax) this.touchCdMax = as.cooldown;
+      const ready = as.phase === 'off' && as.cooldown <= 0;
+      if (ready) this.touchCdMax = 0;
+      this.app.touch.setAssistState(ready ? 'ready' : as.phase !== 'off' ? 'busy' : 'cool', this.touchCdMax > 0 ? 1 - as.cooldown / this.touchCdMax : 0);
+    }
     // spectators / CPU vs CPU: the controls do nothing (only the pause button matters)
     this.app.touch.setIdle(side < 0 || !this.interactive());
     if (online && this.session) {
@@ -623,6 +705,19 @@ export class FightScreen implements Screen {
       }
       case 'superCombo':
         this.app.pipeline.post.uFlash.value = 0.55;
+        break;
+      case 'assist': {
+        // « ISIS : UPPERCUT MUSCLÉ ! » + the friend's shout
+        const def = this.setup.assists?.[ev.p];
+        if (!def) break;
+        const a = assistOf(def);
+        this.hud.assistCall(ev.p, def.name, a.name, a.line, this.assistFaces[ev.p]);
+        void audio.say(a.line, { lang: def.voice?.lang, pitch: def.voice?.pitch, rate: Math.min(2, (def.voice?.rate ?? 1) * 1.15) });
+        break;
+      }
+      case 'wallBreak':
+        // destruction finish: the K.O.'d fighter goes through the scenery
+        this.hud.announce('DESTRUCTION !', 'destroy', 130);
         break;
       case 'throwBreak':
         this.hud.announce('ÉCHAPPÉ !', 'small', 40);

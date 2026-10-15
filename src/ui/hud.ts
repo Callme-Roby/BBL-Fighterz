@@ -1,6 +1,26 @@
 import { MAX_HP, MAX_METER, type GameState } from '../sim/types';
 import { h } from './dom';
 
+/** HUD info about a side's assist (the friend chosen before the fight). */
+export interface AssistHud {
+  /** friend's name */
+  name: string;
+  /** key that calls them, shown when ready ('' = CPU / remote / touch) */
+  key: string;
+}
+
+interface AssistWidget {
+  box: HTMLDivElement;
+  face: HTMLDivElement;
+  fill: HTMLDivElement;
+  lbl: HTMLDivElement;
+  key: string;
+  /** longest cooldown seen since the last call (the gauge's full scale) */
+  max: number;
+  text: string;
+  mode: string;
+}
+
 /** Tekken-3-style DOM HUD driven by the game state. */
 export class Hud {
   readonly el: HTMLDivElement;
@@ -25,16 +45,22 @@ export class Hud {
   private bars: HTMLDivElement;
   private meterRow: HTMLDivElement;
   private meterText = ['', ''];
+  private assistW: (AssistWidget | null)[] = [null, null];
+  private callEls: ({ el: HTMLDivElement; t: number } | null)[] = [null, null];
+  /** the attacker's current combo went through the auto-combo route */
+  private autoCombo = [false, false];
 
   /**
    * @param names names shown on the nameplates (player or fighter names)
    * @param superKeys key shown next to "BBL MAX !" for each side ('' = CPU / remote / touch)
    * @param tags fighter played, shown after the name when it differs ('' = none; hidden on small screens)
+   * @param assists each side's assist (null = none): small face + recharge gauge next to the BBL gauge
    */
   constructor(
     names: [string, string],
     private superKeys: [string, string] = ['E', 'P'],
     tags: [string, string] = ['', ''],
+    assists: [AssistHud | null, AssistHud | null] = [null, null],
   ) {
     this.names = [names[0], names[1]];
     this.tags = [tags[0], tags[1]];
@@ -56,6 +82,15 @@ export class Hud {
       const fill = h('div', { class: 'mfill' });
       const box = h('div', { class: 'meter' + (i === 1 ? ' right' : '') }, h('div', { class: 'mlbl' }, 'BBL'), h('div', { class: 'mbar' }, fill));
       this.meters.push({ box, fill });
+      const a = assists[i];
+      if (a) {
+        const face = h('div', { class: 'aface' });
+        const afill = h('div', { class: 'afill' });
+        const lbl = h('div', { class: 'albl' }, 'ASSIST');
+        const abox = h('div', { class: 'assistw' + (i === 1 ? ' right' : ''), title: `Assist : ${a.name}` }, face, h('div', { class: 'acol' }, lbl, h('div', { class: 'abar' }, afill)));
+        box.append(abox);
+        this.assistW[i] = { box: abox, face, fill: afill, lbl, key: a.key, max: 0, text: 'ASSIST', mode: '' };
+      }
       return box;
     };
     this.meterRow = h('div', { class: 'meters' }, meter(0), meter(1));
@@ -82,6 +117,29 @@ export class Hud {
     if (!el) return;
     this.fillPlate(i, name);
     el.classList.toggle('renamed', name !== null);
+  }
+
+  /** Face of side i's assist (loaded after the HUD is built). */
+  setAssistPortrait(i: number, url: string) {
+    const w = this.assistW[i];
+    if (w) w.face.style.backgroundImage = `url(${url})`;
+  }
+
+  /**
+   * Side i called their assist: « ISIS : UPPERCUT MUSCLÉ ! » slides in from that side,
+   * with the friend's shout under it.
+   */
+  assistCall(i: number, who: string, move: string, line: string, portrait: string | null) {
+    this.callEls[i]?.el.remove();
+    const el = h(
+      'div',
+      { class: 'assist-call ' + (i === 0 ? 'left' : 'right') },
+      h('div', { class: 'ph', style: portrait ? `background-image:url(${portrait})` : '' }),
+      h('div', { class: 'txt' }, h('div', { class: 'mv' }, h('b', null, who), ' : ', move, ' !'), h('div', { class: 'shout' }, '« ' + line + ' »')),
+    );
+    this.el.append(el);
+    this.el.classList.add(i === 0 ? 'calling-l' : 'calling-r');
+    this.callEls[i] = { el, t: 110 };
   }
 
   setNetInfo(text: string) {
@@ -200,8 +258,12 @@ export class Hud {
         (this.meters[i].box.firstChild as HTMLElement).textContent = txt;
       }
 
+      this.updateAssist(i, s);
+
       // combo counter shows on the attacker's side
       const victim = s.fighters[1 - i];
+      if (victim.comboCount === 0) this.autoCombo[i] = false;
+      else if ((f.autoStep ?? 0) >= 2) this.autoCombo[i] = true;
       if (victim.comboCount >= 2 && victim.comboCount !== this.lastCombo[i]) {
         this.comboEls[i]?.remove();
         const el = h(
@@ -209,6 +271,7 @@ export class Hud {
           { class: 'combo ' + (i === 0 ? 'left' : 'right') },
           h('b', null, `${victim.comboCount} HITS`),
           h('span', null, `${victim.comboDamage} DÉGÂTS`),
+          this.autoCombo[i] ? h('em', null, 'AUTO-COMBO') : null,
         );
         this.comboEls[i] = el;
         this.el.append(el);
@@ -234,6 +297,17 @@ export class Hud {
     this.timer.textContent = String(secs);
     this.timer.classList.toggle('warn', secs <= 10 && s.phase === 'fight');
 
+    for (let i = 0; i < 2; i++) {
+      const c = this.callEls[i];
+      if (!c) continue;
+      c.t -= dtFrames;
+      if (c.t <= 0) {
+        c.el.remove();
+        this.callEls[i] = null;
+        this.el.classList.remove(i === 0 ? 'calling-l' : 'calling-r');
+      } else if (c.t <= 14) c.el.classList.add('out');
+    }
+
     for (let i = this.comics.length - 1; i >= 0; i--) {
       const c = this.comics[i];
       c.t -= dtFrames;
@@ -246,6 +320,31 @@ export class Hud {
     if (this.announceTimer > 0) {
       this.announceTimer -= dtFrames;
       if (this.announceTimer <= 0) this.clearAnnounce();
+    }
+  }
+
+  /** Assist face + recharge gauge: lit « ASSIST ! » when ready, empty while the friend is on screen. */
+  private updateAssist(i: number, s: GameState) {
+    const w = this.assistW[i];
+    const a = s.assists?.[i];
+    if (!w || !a) return;
+    const busy = a.phase !== 'off';
+    const cd = Math.max(0, a.cooldown);
+    if (cd > w.max) w.max = cd;
+    const ready = !busy && cd <= 0;
+    if (ready) w.max = 0;
+    const frac = ready ? 1 : w.max > 0 ? 1 - cd / w.max : 0;
+    w.fill.style.width = (busy ? 0 : frac * 100) + '%';
+    const mode = ready ? 'ready' : busy ? 'busy' : 'cool';
+    if (mode !== w.mode) {
+      w.mode = mode;
+      w.box.classList.toggle('ready', ready);
+      w.box.classList.toggle('busy', busy);
+    }
+    const text = ready ? (w.key ? `ASSIST ! ${w.key}` : 'ASSIST !') : busy ? 'EN PISTE' : 'ASSIST';
+    if (text !== w.text) {
+      w.text = text;
+      w.lbl.textContent = text;
     }
   }
 }

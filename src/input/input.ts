@@ -1,4 +1,4 @@
-import { IN_DOWN, IN_GRAB, IN_GUARD, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_RK, IN_RP, IN_SUPER, IN_UP } from '../sim/types';
+import { IN_ASSIST, IN_DOWN, IN_GRAB, IN_GUARD, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_RK, IN_RP, IN_SUPER, IN_UP } from '../sim/types';
 
 /**
  * Keyboard (physical key codes, so AZERTY & QWERTY both work), gamepads and
@@ -7,9 +7,9 @@ import { IN_DOWN, IN_GRAB, IN_GUARD, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_RK, IN_
 
 export type ControlMode = 'solo' | 'versus';
 
-type Binding = Record<'up' | 'down' | 'left' | 'right' | 'lp' | 'rp' | 'lk' | 'rk' | 'super' | 'guard' | 'grab', string[]>;
+type Binding = Record<'up' | 'down' | 'left' | 'right' | 'lp' | 'rp' | 'lk' | 'rk' | 'super' | 'guard' | 'grab' | 'assist', string[]>;
 
-/** P1 when two players share the keyboard: ZQSD/WASD + R T F G, E = BBL MAX */
+/** P1 when two players share the keyboard: ZQSD/WASD + R T F G, E = BBL MAX, Y = ASSIST */
 export const P1_KEYS: Binding = {
   up: ['KeyW'],
   down: ['KeyS'],
@@ -22,8 +22,9 @@ export const P1_KEYS: Binding = {
   super: ['KeyE'],
   guard: ['ShiftLeft'],
   grab: ['KeyQ'],
+  assist: ['KeyY'],
 };
-/** P2 when two players share the keyboard: arrows + I O K L (or numpad 4 5 1 2), P = BBL MAX */
+/** P2 when two players share the keyboard: arrows + I O K L (or numpad 4 5 1 2), P = BBL MAX, M = ASSIST */
 export const P2_KEYS: Binding = {
   up: ['ArrowUp'],
   down: ['ArrowDown'],
@@ -36,8 +37,9 @@ export const P2_KEYS: Binding = {
   super: ['KeyP', 'Numpad6'],
   guard: ['ShiftRight', 'Numpad0'],
   grab: ['Slash', 'Numpad3'],
+  assist: ['KeyM', 'Numpad7'],
 };
-/** Solo player: everything (WASD or arrows, U I J K or R T F G, E or O = BBL MAX) */
+/** Solo player: everything (WASD or arrows, U I J K or R T F G, E or O = BBL MAX, Y = ASSIST: between both hands) */
 export const SOLO_KEYS: Binding = {
   up: ['KeyW', 'ArrowUp', 'Space'],
   down: ['KeyS', 'ArrowDown'],
@@ -50,6 +52,7 @@ export const SOLO_KEYS: Binding = {
   super: ['KeyE', 'KeyO', 'Numpad6'],
   guard: ['ShiftLeft', 'KeyL', 'Numpad0'],
   grab: ['KeyQ', 'KeyH', 'Numpad3'],
+  assist: ['KeyY', 'Numpad7'],
 };
 
 const BIT: Record<keyof Binding, number> = {
@@ -64,6 +67,7 @@ const BIT: Record<keyof Binding, number> = {
   super: IN_SUPER,
   guard: IN_GUARD,
   grab: IN_GRAB,
+  assist: IN_ASSIST,
 };
 
 export type MenuAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'back' | 'start';
@@ -109,6 +113,8 @@ class InputManager {
   private padPrev: number[][] = [[], [], [], []];
   /** bits from the on-screen touch pad */
   touchBits = 0;
+  /** touch buttons pressed since the last simulation tick (a very quick tap is never lost) */
+  touchLatch = 0;
   /** true while a text field has focus (disable game keys) */
   private typing = false;
   private listeners = new Set<(code: string) => void>();
@@ -165,7 +171,8 @@ class InputManager {
     if (b(1)) bits |= IN_RK;
     if (b(4)) bits |= IN_GRAB; // LB = grab
     if (b(6)) bits |= IN_GUARD; // LT = guard / parry
-    if (b(5) || b(7)) bits |= IN_SUPER; // RB / RT = BBL MAX
+    if (b(5)) bits |= IN_SUPER; // RB = BBL MAX
+    if (b(7) || b(11)) bits |= IN_ASSIST; // RT (or right stick click) = assist
     return bits;
   }
 
@@ -197,6 +204,7 @@ class InputManager {
   /** Call after each simulation tick that read the inputs. */
   endTick() {
     this.latch.clear();
+    this.touchLatch = 0;
   }
 
   menuEvents(): MenuEvent[] {
@@ -213,7 +221,7 @@ class InputManager {
   bits(player: 0 | 1, mode: ControlMode): number {
     const pads = this.pads();
     if (mode === 'solo') {
-      let bits = this.keyBits(SOLO_KEYS) | this.touchBits;
+      let bits = this.keyBits(SOLO_KEYS) | this.touchBits | this.touchLatch;
       for (const p of pads) bits |= this.padBits(p);
       return bits;
     }
@@ -221,7 +229,7 @@ class InputManager {
     let bits = this.keyBits(player === 0 ? P1_KEYS : P2_KEYS);
     if (pads.length >= 2) bits |= this.padBits(pads[player]);
     else if (pads.length === 1 && player === 1) bits |= this.padBits(pads[0]);
-    if (player === 0) bits |= this.touchBits;
+    if (player === 0) bits |= this.touchBits | this.touchLatch;
     return bits;
   }
 
@@ -255,6 +263,7 @@ export function keyLabel(code: string): string {
     Numpad5: 'Num5',
     Numpad1: 'Num1',
     Numpad2: 'Num2',
+    Numpad7: 'Num7',
   };
   if (special[code]) return special[code];
   const l = layoutMap?.get(code);

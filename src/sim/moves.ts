@@ -1,4 +1,4 @@
-import type { HitLevel, MoveId, Strength } from './types';
+import type { AssistKind, HitLevel, MoveId, Strength } from './types';
 
 /**
  * Frame data (60 fps). `startup` = first active frame (counting from 1 the way
@@ -109,10 +109,10 @@ export const MOVES: Record<MoveId, MoveDef> = {
     reach: 0.95, hitY: 1.3, hitstun: 20, blockstun: 12, pushHit: 0.07, pushBlock: 0.06,
     strength: 'heavy', air: true,
   }),
-  // placeholder frame data (tuned by the combat-engine work)
+  // air: down + kick. Spikes an airborne opponent to the floor (ground bounce once per combo)
   airSmash: M({
-    id: 'airSmash', name: 'Smash aérien', startup: 10, active: 6, recovery: 10, damage: 18, level: 'mid',
-    reach: 0.9, hitY: 1.2, hitstun: 24, blockstun: 14, pushHit: 0.04, pushBlock: 0.06,
+    id: 'airSmash', name: 'Smash aérien', startup: 10, active: 5, recovery: 12, damage: 16, level: 'mid',
+    reach: 0.88, hitY: 1.0, hitstun: 22, blockstun: 13, pushHit: 0.03, pushBlock: 0.06,
     strength: 'heavy', air: true,
   }),
   throw: M({
@@ -130,3 +130,72 @@ export const MOVES: Record<MoveId, MoveDef> = {
 export function moveTotal(m: MoveDef): number {
   return m.startup + m.active + m.recovery - 1;
 }
+
+/** What a blow needs for the hit pipeline (moves and assist attacks). */
+export interface Strike {
+  /** the fighter move (null for an assist's attack) */
+  id: MoveId | null;
+  damage: number;
+  level: HitLevel;
+  hitY: number;
+  hitstun: number;
+  blockstun: number;
+  pushHit: number;
+  pushBlock: number;
+  strength: Strength;
+  knockdown?: boolean;
+  launch?: number;
+  /** jumping attack */
+  air?: boolean;
+}
+
+/**
+ * Assist frame data. Phases: enter (poof in, untouchable) -> attack -> leave -> off.
+ * `startup` / `active` count frames of the attack phase (1 = first attack frame).
+ */
+export interface AssistMove extends Strike {
+  kind: AssistKind;
+  /** frames of the 'enter' phase */
+  enter: number;
+  startup: number;
+  active: number;
+  /** length of the 'attack' phase */
+  total: number;
+  /** frames of the 'leave' phase */
+  leave: number;
+  /** horizontal reach from the assist (or its projectile) */
+  reach: number;
+}
+
+const A = (m: AssistMove) => m;
+
+export const ASSIST_MOVES: Record<AssistKind, AssistMove> = {
+  // dashes in from behind the caller (RUSH_SPEED m/frame from `startup`), one heavy mid blow: knockdown + wall bounce
+  rush: A({
+    kind: 'rush', id: null, enter: 14, startup: 6, active: 30, total: 46, leave: 12, reach: 0.72,
+    damage: 18, level: 'mid', hitY: 1.3, hitstun: 26, blockstun: 18, pushHit: 0.12, pushBlock: 0.12, strength: 'heavy', knockdown: true,
+  }),
+  // pops up next to the opponent: uppercut launch (the caller can super jump after it)
+  launcher: A({
+    kind: 'launcher', id: null, enter: 12, startup: 8, active: 5, total: 26, leave: 12, reach: 0.95,
+    damage: 12, level: 'mid', hitY: 1.4, hitstun: 22, blockstun: 16, pushHit: 0.02, pushBlock: 0.06, strength: 'heavy', launch: 0.165,
+  }),
+  // from behind the caller: a projectile (BEAM_SPEED m/frame) spawned at `startup`, hits mid at the first contact
+  beam: A({
+    kind: 'beam', id: null, enter: 14, startup: 10, active: 1, total: 26, leave: 12, reach: 0.35,
+    damage: 14, level: 'mid', hitY: 1.2, hitstun: 40, blockstun: 16, pushHit: 0.025, pushBlock: 0.06, strength: 'medium',
+  }),
+  // pops in front of the opponent: dizzy (no damage) if not guarding, pushback if guarded
+  stun: A({
+    kind: 'stun', id: null, enter: 14, startup: 10, active: 10, total: 32, leave: 12, reach: 1.3,
+    damage: 0, level: 'mid', hitY: 1.5, hitstun: 70, blockstun: 14, pushHit: 0, pushBlock: 0.08, strength: 'light',
+  }),
+};
+
+/** rush assist dash speed (m/frame) */
+export const RUSH_SPEED = 0.2;
+/** beam assist projectile speed (m/frame) and height (m) */
+export const BEAM_SPEED = 0.12;
+export const BEAM_Y = 1.2;
+/** frames before an assist can be called again (from the call) */
+export const ASSIST_COOLDOWN = 480;

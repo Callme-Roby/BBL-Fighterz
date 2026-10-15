@@ -50,3 +50,35 @@ export function assistOf(def: FighterDef): AssistDef {
 export function assistSpec(def: FighterDef | null | undefined): AssistSpec | null {
   return def ? { id: def.id, kind: assistOf(def).kind } : null;
 }
+
+/** What each kind does, in a few words (select screen, VS splash, help). */
+export const ASSIST_KIND_LABEL: Record<AssistKind, string> = {
+  rush: 'RUÉE',
+  launcher: 'LANCEUR',
+  beam: 'PROJECTILE',
+  stun: 'DISTRACTION',
+};
+
+/** Small integer hash (deterministic, same result on every browser). */
+function hash32(n: number): number {
+  let h = (n ^ 0x9e3779b9) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0;
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+/**
+ * Friend for a side that did not choose (CPU, « HASARD »): picked from `roster`
+ * with the seed (same seed → same friend), never the fighter itself.
+ */
+export function randomAssist(seed: number, fighterId: string, roster: FighterDef[]): FighterDef | null {
+  const pool = roster.filter((d) => d.id !== fighterId);
+  if (!pool.length) return null;
+  return pool[hash32(seed >>> 0) % pool.length];
+}
+
+/** Chosen friend by id, or a seeded random one when the id is empty / unknown / the fighter itself. */
+export function resolveAssist(id: string | undefined, fighterId: string, seed: number, roster: FighterDef[]): FighterDef | null {
+  const chosen = id && id !== fighterId ? roster.find((d) => d.id === id) : undefined;
+  return chosen ?? randomAssist(seed, fighterId, roster);
+}

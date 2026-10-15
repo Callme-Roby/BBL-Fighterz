@@ -1,6 +1,6 @@
 import { input } from '../input/input';
 import { settings } from '../game/settings';
-import { IN_DOWN, IN_GRAB, IN_GUARD, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_RK, IN_RP, IN_SUPER, IN_UP } from '../sim/types';
+import { IN_ASSIST, IN_DOWN, IN_GRAB, IN_GUARD, IN_LEFT, IN_LK, IN_LP, IN_RIGHT, IN_RK, IN_RP, IN_SUPER, IN_UP } from '../sim/types';
 import { h } from './dom';
 
 /**
@@ -17,6 +17,11 @@ export class TouchControls {
   private padPointer = -1;
   private gameplay = false;
   private shownState = false;
+  /** ASSIST button: the friend's face + a cooldown ring / bar (--cd: 0 = just called, 1 = ready) */
+  private assistBtn!: HTMLElement;
+  private assistFace!: HTMLDivElement;
+  private assistCd = -1;
+  private assistMode = '';
   onPause: (() => void) | null = null;
   /** called when the controls appear / disappear (the app re-lays out the screen) */
   onLayout: (() => void) | null = null;
@@ -34,9 +39,16 @@ export class TouchControls {
       ['bbl super', 'BBL', 'MAX', IN_SUPER],
       ['guard', 'GARDE', '', IN_GUARD],
       ['grab', 'SAISIE', '', IN_GRAB],
+      ['assist', 'ASSIST', '', IN_ASSIST],
     ];
     for (const [cls, label, sub, bit] of layout) {
       const b = h('b', { class: cls }, h('span', null, label), sub ? h('small', null, sub) : null);
+      if (bit === IN_ASSIST) {
+        // face of the friend, under a cooldown sweep (see .assist in mobile-game.css)
+        this.assistFace = h('div', { class: 'aface' });
+        b.prepend(this.assistFace);
+        this.assistBtn = b;
+      }
       const on = (e: PointerEvent) => {
         e.preventDefault();
         try {
@@ -45,6 +57,7 @@ export class TouchControls {
           // synthetic pointers (tests) cannot always be captured
         }
         this.btnBits |= bit;
+        input.touchLatch |= bit;
         b.classList.add('on');
         this.flush();
       };
@@ -85,6 +98,7 @@ export class TouchControls {
     this.pad.addEventListener('pointerup', end);
     this.pad.addEventListener('pointercancel', end);
     root.append(this.pad, this.btns, pause);
+    this.setAssistFace(null);
     this.refresh();
     window.matchMedia?.('(pointer: coarse)').addEventListener?.('change', () => this.refresh());
   }
@@ -151,6 +165,30 @@ export class TouchControls {
     this.root.classList.toggle('full', on);
   }
 
+  /** Face of the friend on the ASSIST button (null = no assist this fight: the button is hidden). */
+  setAssistFace(url: string | null) {
+    this.root.classList.toggle('noassist', url === null);
+    this.assistFace.style.backgroundImage = url ? `url(${url})` : '';
+  }
+
+  /**
+   * ASSIST button state: 'ready' (lit), 'busy' (the friend is on screen) or 'cool' with
+   * `frac` = recharge progress 0..1.
+   */
+  setAssistState(mode: 'ready' | 'busy' | 'cool', frac = 1) {
+    if (mode !== this.assistMode) {
+      this.assistMode = mode;
+      this.assistBtn.classList.toggle('ready', mode === 'ready');
+      this.assistBtn.classList.toggle('busy', mode === 'busy');
+      this.assistBtn.classList.toggle('cool', mode === 'cool');
+    }
+    const cd = mode === 'cool' ? Math.round(Math.max(0, Math.min(1, frac)) * 100) / 100 : mode === 'ready' ? 1 : 0;
+    if (cd !== this.assistCd) {
+      this.assistCd = cd;
+      this.assistBtn.style.setProperty('--cd', String(cd));
+    }
+  }
+
   /** Fade the controls while they do nothing (intros, BBL MAX cinematics, K.O.). */
   setIdle(on: boolean) {
     this.root.classList.toggle('idle', on);
@@ -166,6 +204,8 @@ export class TouchControls {
     this.gameplay = on;
     if (!on) {
       this.root.classList.remove('idle', 'covered', 'full');
+      this.setAssistFace(null);
+      this.setAssistState('ready');
     }
     this.refresh();
   }

@@ -23,6 +23,7 @@ import type { FightSetup, SpectatorFeed } from '../screens/fight';
 import { goMenuWithMessage, goTournamentChampionOnline, goTournamentOnline, startFight } from '../screens/flow';
 import { fullRoster, sanitizeDef, settings } from './settings';
 import {
+  assistOfParticipant,
   champion,
   cleanName,
   createTournament,
@@ -161,7 +162,7 @@ export class OnlineTournament {
     ot.hub = hub;
     const n = cleanName(name, 'ORGA');
     saveName(n);
-    ot.entries = [{ name: n, cpu: false, fighterId: '', online: true }];
+    ot.entries = [{ name: n, cpu: false, fighterId: '', assistId: '', online: true }];
     ot.slots = [{ token: 'host', link: null }];
     ot.me = 0;
     hub.onGuest((link) => ot.onGuestLink(link));
@@ -204,20 +205,25 @@ export class OnlineTournament {
   }
 
   // ------------------------------------------------------------------ lobby (everybody)
-  /** My name / fighter. */
-  setMe(name: string, fighter: FighterDef | null) {
+  /**
+   * My name / fighter / assist. `assistId` = a built-in fighter id ('' = « HASARD »,
+   * omitted = keep the current one); never my own fighter.
+   */
+  setMe(name: string, fighter: FighterDef | null, assistId?: string) {
     const n = cleanName(name, this.isHost ? 'ORGA' : 'JOUEUR');
     saveName(n);
     const builtIn = fighter ? ROSTER.some((d) => d.id === fighter.id) : true;
     const fighterId = fighter?.id ?? '';
     const def = fighter && !builtIn ? fighter : undefined;
+    let aid = assistId ?? this.entries[this.me]?.assistId ?? '';
+    if (aid === fighterId || !ROSTER.some((d) => d.id === aid)) aid = '';
     if (this.isHost) {
       if (this.started || this.me < 0) return;
-      Object.assign(this.entries[this.me], { name: n, fighterId, def });
+      Object.assign(this.entries[this.me], { name: n, fighterId, def, assistId: aid });
       this.broadcastLobby();
       this.changed();
     } else {
-      this.link?.send({ t: 'tnMe', name: n, fighterId, def });
+      this.link?.send({ t: 'tnMe', name: n, fighterId, def, assistId: aid });
     }
   }
 
@@ -235,7 +241,8 @@ export class OnlineTournament {
     const pick = (free.length ? free : roster)[Math.floor(Math.random() * (free.length || roster.length))];
     const nb = this.entries.filter((e) => e.cpu).length + 1;
     const builtIn = ROSTER.some((d) => d.id === pick.id);
-    this.entries.push({ name: `CPU ${nb}`, cpu: true, fighterId: pick.id, def: builtIn ? undefined : pick, online: true });
+    // the CPU's assist is drawn from the tournament seed at the start (« HASARD »)
+    this.entries.push({ name: `CPU ${nb}`, cpu: true, fighterId: pick.id, def: builtIn ? undefined : pick, assistId: '', online: true });
     this.slots.push({ token: 'cpu-' + randomToken(), link: null });
     this.broadcastLobby();
     this.changed();
@@ -267,8 +274,11 @@ export class OnlineTournament {
   start() {
     if (!this.isHost || !this.canStart()) return;
     const t = createTournament(
-      this.entries.map((e) => ({ name: e.name, cpu: e.cpu, fighterId: e.fighterId, def: e.def })),
+      this.entries.map((e) => ({ name: e.name, cpu: e.cpu, fighterId: e.fighterId, def: e.def, assistId: e.assistId || undefined })),
     );
+    // « HASARD » assists are drawn now from the tournament seed, among the built-in fighters
+    // (known by every browser): from here on every participant has a fixed friend
+    t.participants.forEach((p, i) => (p.assistId = assistOfParticipant(t, i, ROSTER)?.id));
     t.phase = 'bracket';
     refresh(t);
     this.tour = t;
@@ -300,6 +310,7 @@ export class OnlineTournament {
       b,
       p1: fighterOf(t, a, roster),
       p2: fighterOf(t, b, roster),
+      assists: [assistOfParticipant(t, a, roster), assistOfParticipant(t, b, roster)],
       stageId: stageFor(t, STAGES.map((s) => s.id)),
       rounds: settings.rounds,
       difficulty: settings.difficulty,
@@ -401,7 +412,7 @@ export class OnlineTournament {
       this.entries[back].online = true;
       if (this.tour) this.flash = `${this.entries[back].name} est de retour`;
     } else if (!this.started && this.entries.length < MAX_PARTICIPANTS) {
-      this.entries.push({ name: cleanName(m.name, `JOUEUR ${this.entries.length + 1}`), cpu: false, fighterId: '', online: true });
+      this.entries.push({ name: cleanName(m.name, `JOUEUR ${this.entries.length + 1}`), cpu: false, fighterId: '', assistId: '', online: true });
       this.slots.push({ token: m.token, link });
     } else {
       this.watchers.push(link);
@@ -439,6 +450,9 @@ export class OnlineTournament {
           e.def = undefined;
           e.fighterId = roster.some((d) => d.id === m.fighterId) ? m.fighterId : '';
         }
+        // assist: a built-in fighter (every browser knows it), never yourself; '' = « HASARD »
+        if (typeof m.assistId === 'string') e.assistId = m.assistId !== e.fighterId && ROSTER.some((d) => d.id === m.assistId) ? m.assistId : '';
+        if (e.assistId === e.fighterId) e.assistId = '';
         this.broadcastLobby();
         this.changed();
         break;
@@ -640,6 +654,7 @@ export class OnlineTournament {
     return {
       p1: match.p1,
       p2: match.p2,
+      assists: match.assists ?? [null, null],
       stageId: match.stageId,
       rounds: match.rounds,
       difficulty: match.difficulty,

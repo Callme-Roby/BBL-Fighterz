@@ -13,6 +13,7 @@
  * A match side is a participant index, `BYE` (nobody: the other side goes
  * through automatically) or `null` (not decided yet).
  */
+import { resolveAssist } from '../data/assists';
 import type { FighterDef } from '../data/roster';
 import { CpuBrain, type Difficulty } from '../sim/ai';
 import { createGame, step } from '../sim/sim';
@@ -39,6 +40,8 @@ export interface Participant {
   fighterId: string;
   /** online tournaments: full definition of a custom fighter created on another browser */
   def?: FighterDef;
+  /** id of the friend called with the assist button (missing / unknown = drawn from the tournament seed) */
+  assistId?: string;
 }
 
 /** participant index, BYE, or null = not known yet */
@@ -360,6 +363,12 @@ export function fighterOf(t: Tournament, i: number, roster: FighterDef[] = fullR
   return roster.find((d) => d.id === p?.fighterId) ?? roster[0];
 }
 
+/** Assist of participant i: the chosen friend, else one drawn from the tournament seed (never their own fighter). */
+export function assistOfParticipant(t: Tournament, i: number, roster: FighterDef[] = fullRoster()): FighterDef | null {
+  const p = t.participants[i];
+  return resolveAssist(p?.assistId, fighterOf(t, i, roster).id, mix(t.seed, i, 0xa5515), roster);
+}
+
 /** Roster index of the fighter whose name matches the participant's name, or -1. */
 export function fighterIndexByName(name: string, roster: FighterDef[]): number {
   const n = normName(name);
@@ -429,6 +438,7 @@ export function loadTournament(): Tournament | null {
     for (const p of t.participants) {
       p.name = cleanName(p.name, '???');
       p.cpu = !!p.cpu;
+      if (typeof p.assistId !== 'string') delete p.assistId;
     }
     for (const round of t.rounds) for (const m of round) m.bye = !!m.bye;
     // fighters that no longer exist (deleted lab fighter…) → first roster fighter

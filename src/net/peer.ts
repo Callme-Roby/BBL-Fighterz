@@ -8,7 +8,8 @@ import type { Tournament } from '../game/tournament';
  * game traffic then goes directly between the two players.
  */
 
-export const NET_VERSION = 'bbl-2';
+/** bump when the messages or the simulation change (both browsers must run the same game) */
+export const NET_VERSION = 'bbl-3';
 const ID_PREFIX = 'bblfighterz-';
 /** online tournaments: the organiser's peer id is ID_PREFIX + TN_TAG + code */
 const TN_TAG = 't';
@@ -20,6 +21,8 @@ export interface TnEntry {
   /** chosen fighter (a built-in roster id, or a full custom definition) */
   fighterId: string;
   def?: FighterDef;
+  /** chosen assist (a built-in roster id; '' = « HASARD »: drawn from the tournament seed at the start) */
+  assistId: string;
   /** connected right now (CPU entries are always "online") */
   online: boolean;
 }
@@ -35,6 +38,8 @@ export interface TnMatch {
   b: number;
   p1: FighterDef;
   p2: FighterDef;
+  /** each side's assist (every browser creates the game with these) */
+  assists: [FighterDef | null, FighterDef | null];
   stageId: string;
   rounds: number;
   difficulty: 'easy' | 'normal' | 'hard';
@@ -48,9 +53,11 @@ export interface TnMatch {
 
 export type NetMsg =
   | { t: 'hello'; version: string; name: string }
-  | { t: 'pick'; def: FighterDef | null; locked: boolean; cursor: number }
+  /** fighter select: my fighter (cursor or locked), then my assist (cursor or locked) */
+  | { t: 'pick'; def: FighterDef | null; locked: boolean; cursor: number; assist: FighterDef | null; assistLocked: boolean; assistCursor: number }
   | { t: 'stage'; id: string; locked: boolean }
-  | { t: 'start'; stage: string; p1: FighterDef; p2: FighterDef; seed: number; rounds: number }
+  /** host → guest: the fight starts (a1 / a2 = assists of P1 / P2, the same on both browsers) */
+  | { t: 'start'; stage: string; p1: FighterDef; p2: FighterDef; a1: FighterDef | null; a2: FighterDef | null; seed: number; rounds: number }
   | { t: 'in'; f: number; b: number[]; adv: number }
   | { t: 'sum'; f: number; h: number }
   | { t: 'ready' }
@@ -66,8 +73,8 @@ export type NetMsg =
   | { t: 'tnError'; reason: string }
   /** organiser → guest: lobby / tournament state. `you` = participant index of the receiver (-1 = spectator) */
   | { t: 'tnLobby'; entries: TnEntry[]; you: number; started: boolean }
-  /** guest → organiser: name / fighter choice */
-  | { t: 'tnMe'; name: string; fighterId: string; def?: FighterDef }
+  /** guest → organiser: name / fighter / assist choice (assistId '' = « HASARD ») */
+  | { t: 'tnMe'; name: string; fighterId: string; def?: FighterDef; assistId?: string }
   /** organiser → all: the bracket (after the start) */
   | { t: 'tnState'; tour: Tournament; live: TnMatch | null; flash: string }
   /** organiser → all: a match starts (its two players fight, the others watch) */

@@ -34,8 +34,9 @@ export function goSelect(mode: FightMode, link?: NetLink) {
   app.go(new SelectScreen(app, mode, link));
 }
 
-export function goStageSelect(mode: FightMode, p1: FighterDef, p2: FighterDef, link?: NetLink) {
-  app.go(new StageSelectScreen(app, mode, p1, p2, link));
+/** `assists` = friends chosen on the select screen (null = CPU: drawn from the fight seed) */
+export function goStageSelect(mode: FightMode, p1: FighterDef, p2: FighterDef, link?: NetLink, assists?: [FighterDef | null, FighterDef | null]) {
+  app.go(new StageSelectScreen(app, mode, p1, p2, link, assists));
 }
 
 export function startFight(setup: FightSetup) {

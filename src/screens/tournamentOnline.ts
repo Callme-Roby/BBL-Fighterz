@@ -6,17 +6,18 @@
  */
 import { audio } from '../audio/audio';
 import type { App, Screen } from '../app';
-import type { FighterDef } from '../data/roster';
+import { assistOf, ASSIST_KIND_LABEL } from '../data/assists';
+import { ROSTER, type FighterDef } from '../data/roster';
 import { entryFighter, OnlineTournament, savedPlayerName } from '../game/onlineTournament';
 import { fullRoster, settings } from '../game/settings';
-import { fighterOf, humansIn, matchTitle, MAX_PARTICIPANTS, NAME_MAX, totalMatches } from '../game/tournament';
+import { assistOfParticipant, fighterOf, humansIn, matchTitle, MAX_PARTICIPANTS, NAME_MAX, totalMatches } from '../game/tournament';
 import { input } from '../input/input';
 import { tournamentInviteUrl } from '../net/peer';
 import { loadFace } from '../render/faceTexture';
 import { Showroom } from '../render/showroom';
 import { backButton, h, Menu, uiRoot, type MenuItem } from '../ui/dom';
 import { goMenu, goTournament, goTournamentOnline } from './flow';
-import { bracketTree, centerShowroom, controlsEl, guardButtons, portrait, syncMenuFocus } from './tournamentShared';
+import { assistTag, bracketTree, centerShowroom, controlsEl, guardButtons, portrait, syncMenuFocus } from './tournamentShared';
 
 const DIFF_LABEL = { easy: 'FACILE', normal: 'NORMAL', hard: 'DIFFICILE' } as const;
 
@@ -279,6 +280,7 @@ export class TournamentOnlineScreen implements Screen {
 
     const rows = ot.entries.map((e, i) => {
       const def = entryFighter(e, this.roster);
+      const friend = e.assistId ? (ROSTER.find((d) => d.id === e.assistId) ?? null) : null;
       const tag = e.cpu ? 'CPU' : !e.online ? 'HORS LIGNE' : e.fighterId ? 'PRÊT' : 'CHOISIT…';
       const del = ot.isHost && i !== ot.me ? h('button', { class: 'tn-del', title: 'Retirer' }, '✕') : null;
       del?.addEventListener('click', () => (audio.sfx('cancel'), ot.remove(i)));
@@ -291,7 +293,7 @@ export class TournamentOnlineScreen implements Screen {
           'div',
           { class: 'tn-info' },
           h('span', { class: 'tn-name' }, e.name, i === 0 && !e.cpu ? h('span', { class: 'tn-org' }, ' ★ ORGA') : null),
-          h('span', { class: 'tn-fighter' }, def ? def.name : '—'),
+          h('span', { class: 'tn-fighter' }, def ? def.name : '—', h('span', { class: 'tn-lassist' }, ' + ', friend ? friend.name : '?')),
         ),
         i === ot.me ? h('span', { class: 'tn-you' }, 'TOI') : null,
         h('span', { class: 'tn-ltag' + (e.cpu ? ' cpu' : e.fighterId ? ' ok' : '') }, tag),
@@ -322,11 +324,40 @@ export class TournamentOnlineScreen implements Screen {
         cell.addEventListener('click', () => this.pick(i));
         grid.append(cell);
       });
+      // assist: the built-in fighters (every browser knows them) except mine, « ? » = au hasard
+      const myAssist = mine.assistId ? (ROSTER.find((d) => d.id === mine.assistId) ?? null) : null;
+      const agrid = h('div', { class: 'grid tn-lgrid tn-agrid', style: `--cols:${this.cols}` });
+      [...ROSTER, null].forEach((def) => {
+        const own = !!def && def.id === myDef?.id;
+        const on = def ? myAssist?.id === def.id : !myAssist;
+        const cell = h(
+          'div',
+          { class: 'cell' + (def ? '' : ' special') + (on ? ' a1' : '') + (own ? ' own' : ''), title: def ? `${def.name} : ${assistOf(def).name}` : 'Au hasard' },
+          def ? h('div', { class: 'nm' }, def.name) : '?',
+        );
+        if (def) loadFace(def).then((f) => (cell.style.backgroundImage = `url(${f.portraitUrl})`));
+        cell.addEventListener('click', () => {
+          if (own) {
+            audio.sfx('cancel');
+            return;
+          }
+          audio.sfx('confirm');
+          ot.setMe(this.nameField?.value ?? mine.name, myDef, def?.id ?? '');
+        });
+        agrid.append(cell);
+      });
+      const a = myAssist ? assistOf(myAssist) : null;
       me = h(
         'div',
         { class: 'panel tn-lme' },
         h('div', { class: 'field' }, 'TON NOM', field),
         h('div', { class: 'field' }, myDef ? `TON PERSO : ${myDef.name}` : 'CHOISIS TON PERSO', grid),
+        h(
+          'div',
+          { class: 'field' },
+          myAssist && a ? `TON ASSIST : ${myAssist.name} — ${a.name} (${ASSIST_KIND_LABEL[a.kind]})` : 'TON ASSIST : AU HASARD',
+          agrid,
+        ),
       );
     } else {
       this.nameField = null;
@@ -334,6 +365,14 @@ export class TournamentOnlineScreen implements Screen {
     }
 
     const items: MenuItem[] = [];
+    // keyboard / gamepad: Entrée changes the assist (mouse / touch: tap a face)
+    const assistItem: MenuItem | null = mine
+      ? {
+          label: 'CHANGER D’ASSIST',
+          sub: mine.assistId ? `Assist : ${ROSTER.find((d) => d.id === mine.assistId)?.name ?? '?'}` : 'Assist : au hasard',
+          action: () => this.cycleAssist(),
+        }
+      : null;
     if (ot.isHost) {
       items.push({
         label: 'LANCER LE TOURNOI',
@@ -341,10 +380,12 @@ export class TournamentOnlineScreen implements Screen {
         disabled: !ot.canStart(),
         action: () => (audio.sfx('confirm'), ot.start()),
       });
+      if (assistItem) items.push(assistItem);
       items.push({ label: '+ AJOUTER UN CPU', disabled: ot.entries.length >= MAX_PARTICIPANTS, action: () => (audio.sfx('confirm'), ot.addCpu()) });
       items.push({ label: "MÉLANGER L'ORDRE", sub: 'Ordre des têtes de série', action: () => (audio.sfx('confirm'), ot.shuffleOrder()) });
       items.push({ label: 'ANNULER LE TOURNOI', action: () => this.askLeave() });
     } else {
+      if (assistItem) items.push(assistItem);
       items.push({ label: 'QUITTER', action: () => this.askLeave() });
     }
     this.setMenu(items);
@@ -387,6 +428,17 @@ export class TournamentOnlineScreen implements Screen {
     ot.setMe(this.nameField?.value ?? ot.entries[ot.me].name, def);
   }
 
+  /** Next assist in the roster order (« HASARD » after the last one), skipping my own fighter. */
+  private cycleAssist() {
+    const ot = this.ot!;
+    const mine = ot.me >= 0 ? ot.entries[ot.me] : null;
+    if (!mine) return;
+    const ids = ['', ...ROSTER.map((d) => d.id).filter((id) => id !== mine.fighterId)];
+    const k = ids.indexOf(mine.assistId);
+    audio.sfx('cursor');
+    ot.setMe(this.nameField?.value ?? mine.name, entryFighter(mine, this.roster), ids[(k + 1) % ids.length]);
+  }
+
   private updateShowroom(def: FighterDef | null) {
     const id = def?.id ?? '';
     if (id === this.shownFighter) return;
@@ -427,6 +479,7 @@ export class TournamentOnlineScreen implements Screen {
         portrait(def, 'tn-vs-ph'),
         h('div', { class: 'tn-vs-name' }, p.name),
         h('div', { class: 'tn-vs-fighter' }, def.name),
+        assistTag(assistOfParticipant(t, i, this.roster)),
         h('div', { class: 'tn-vs-tag' + (p.cpu ? ' cpu' : !ot.entries[i]?.online ? ' off' : '') }, tag),
       );
     };

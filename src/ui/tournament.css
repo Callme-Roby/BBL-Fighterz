@@ -219,6 +219,22 @@
   opacity: 1;
 }
 
+/* phones held upright: the name is centred above the grid, so is the assist line */
+@media (max-width: 600px) {
+  .tn-pick .sel-assist {
+    justify-content: center;
+  }
+}
+
+/* the participant's assist: smaller face tucked against their fighter's */
+.tn-strip-it .tn-ph.tn-strip-as {
+  width: 14px;
+  height: 18px;
+  margin-left: -4px;
+  align-self: flex-end;
+  border-color: var(--teal);
+}
+
 .tn-strip-it.cur {
   opacity: 1;
   color: var(--orange2);
@@ -546,6 +562,35 @@
 .tn-vs-fighter {
   font-size: 7px;
   color: var(--muted);
+}
+
+/* « ASSIST ISIS » under the fighter of a participant */
+.tn-vs-assist {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  font-size: 6px;
+  color: #8ff6e8;
+  white-space: nowrap;
+}
+
+.tn-vs-assist span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tn-vs-assist .tn-aph {
+  flex: none;
+  width: 14px;
+  height: 18px;
+  border: 1px solid var(--teal);
+  background: #000 center / cover no-repeat;
+  image-rendering: pixelated;
+}
+
+.tn-vs-assist .tn-aph.unknown {
+  display: none;
 }
 
 .tn-vs-tag {
@@ -981,6 +1026,28 @@
   border-color: #8a86b8;
 }
 
+/* lobby: assist grid (smaller faces), « + ISIS » after the fighter in the list */
+.tn-agrid {
+  grid-template-columns: repeat(var(--cols, 6), 44px);
+}
+
+.tn-agrid .cell {
+  width: 44px;
+  height: 55px;
+}
+
+.tn-agrid .cell .nm {
+  font-size: 6px;
+}
+
+.tn-agrid .cell.own::after {
+  font-size: 20px;
+}
+
+.tn-lassist {
+  color: #8ff6e8;
+}
+
 .tn-lactions .menu {
   display: flex;
   flex-direction: row;
@@ -1043,6 +1110,13 @@
   .tn-lgrid .cell {
     width: 52px;
     height: 64px;
+  }
+  .tn-agrid {
+    grid-template-columns: repeat(5, 44px);
+  }
+  .tn-agrid .cell {
+    width: 44px;
+    height: 55px;
   }
 }
 

@@ -388,11 +388,56 @@ export const ATTACKS: Record<MoveId, AttackPoses> = {
       upperArmR: [-20, 0, -50],
     }),
   },
-  // placeholder (animated by the rendering work): downward axe kick in the air
+  // downward axe kick in the air: the lead leg goes up over the head, then the heel chops down
   airSmash: {
     base: AIR,
-    windup: merge(AIR, { thighR: [-150, 0, -6], shinR: [10, 0, 0], hips: [-10, 0, 0], upperArmL: [-120, 0, 30], upperArmR: [-120, 0, -30] }),
-    strike: merge(AIR, { thighR: [-20, 0, -6], shinR: [0, 0, 0], hips: [20, 0, 0], spine: [16, 0, 0], upperArmL: [-40, 0, 40], upperArmR: [-40, 0, -40] }),
+    windup: merge(AIR, {
+      root: [0, 0.04, -0.04],
+      hips: [-22, -12, 0],
+      spine: [-14, 0, 0],
+      chest: [-8, 0, 0],
+      head: [-4, 4, 0],
+      thighL: [-168, 0, 6],
+      shinL: [4, 0, 0],
+      footL: [-24, 0, 0],
+      thighR: [-30, 0, -8],
+      shinR: [104, 0, 0],
+      footR: [-20, 0, 0],
+      upperArmL: [-150, 0, 42],
+      foreArmL: [-34, 0, 0],
+      upperArmR: [-150, 0, -42],
+      foreArmR: [-34, 0, 0],
+    }),
+    strike: merge(AIR, {
+      root: [0, 0.06, 0.12],
+      hips: [26, -10, 0],
+      spine: [28, 0, 0],
+      chest: [14, 0, 0],
+      neck: [6, 0, 0],
+      head: [10, 0, 0],
+      thighL: [-42, 0, 6],
+      shinL: [6, 0, 0],
+      footL: [-34, 0, 0],
+      thighR: [-62, 0, -8],
+      shinR: [112, 0, 0],
+      footR: [-10, 0, 0],
+      upperArmL: [-14, 0, 58],
+      foreArmL: [-58, 0, 0],
+      upperArmR: [-24, 0, -58],
+      foreArmR: [-58, 0, 0],
+    }),
+    follow: merge(AIR, {
+      root: [0, 0.04, 0.08],
+      hips: [16, -14, 0],
+      spine: [18, 0, 0],
+      thighL: [-26, 0, 6],
+      shinL: [26, 0, 0],
+      footL: [-20, 0, 0],
+      upperArmL: [-30, 0, 46],
+      foreArmL: [-80, 0, 0],
+      upperArmR: [-36, 0, -46],
+      foreArmR: [-80, 0, 0],
+    }),
   },
   throw: {
     windup: merge(STANCE, { upperArmL: [-80, 0, 20], foreArmL: [-40, 0, 0], upperArmR: [-80, 0, -20], foreArmR: [-40, 0, 0], hips: [0, -10, 0] }),
@@ -941,6 +986,435 @@ export function CLIP_JUGGLE_POSES() {
 }
 
 // ---------------------------------------------------------------------------
+// air combos, bounces
+// ---------------------------------------------------------------------------
+/** chase jump after a launcher: deep crouch, explosive spring, rising toward the opponent */
+function superJump(): Clip {
+  const load = merge(CROUCH, {
+    root: [0, -0.46, 0.02],
+    spine: [26, 0, 0],
+    chest: [10, 0, 0],
+    head: [-18, 6, 0],
+    upperArmL: [24, 0, 22],
+    foreArmL: [-34, 0, 0],
+    upperArmR: [26, 0, -22],
+    foreArmR: [-34, 0, 0],
+  });
+  const spring = merge(STANCE, {
+    root: [0, 0.06, 0.06],
+    hips: [-6, -16, 0],
+    spine: [-10, 0, 0],
+    chest: [-8, 0, 0],
+    neck: [-8, 0, 0],
+    head: [-18, 4, 0],
+    upperArmL: [-172, 0, 10],
+    foreArmL: [-10, 0, 0],
+    handL: [0, 0, 0],
+    upperArmR: [-36, 0, -34],
+    foreArmR: [-96, 0, 0],
+    thighL: [-8, 0, 4],
+    shinL: [8, 0, 0],
+    footL: [34, 0, 0],
+    thighR: [10, 0, -4],
+    shinR: [22, 0, 0],
+    footR: [44, 0, 0],
+  });
+  const rise = merge(AIR, {
+    root: [0, 0.05, 0.04],
+    hips: [-8, -20, 0],
+    spine: [-4, 0, 0],
+    head: [-14, 4, 0],
+    upperArmL: [-130, 0, 22],
+    foreArmL: [-50, 0, 0],
+    upperArmR: [-50, 0, -30],
+    foreArmR: [-110, 0, 0],
+    thighL: [-58, 0, 8],
+    shinL: [86, 0, 0],
+    thighR: [-18, 0, -8],
+    shinR: [70, 0, 0],
+    footR: [-10, 0, 0],
+  });
+  // the sim's super jump homes in for ~13 frames (attacks allowed from frame 5)
+  return {
+    length: 24,
+    keys: [
+      { f: 0, p: load },
+      { f: 1, p: load },
+      { f: 4, p: spring, ease: 'out' },
+      { f: 11, p: rise, ease: 'smooth' },
+      { f: 24, p: AIR, ease: 'smooth' },
+    ],
+  };
+}
+
+/** air dash: horizontal lunge, lead arm forward, trailing leg stretched back */
+const AIR_DASH: Pose = merge(AIR, {
+  root: [0, 0.02, 0.12],
+  hips: [24, -18, 0],
+  spine: [18, 0, 0],
+  chest: [8, 0, 0],
+  neck: [-12, 0, 0],
+  head: [-22, 4, 0],
+  upperArmL: [-84, 0, 18],
+  foreArmL: [-36, 0, 0],
+  upperArmR: [34, 0, -26],
+  foreArmR: [-24, 0, 0],
+  thighL: [-62, 0, 6],
+  shinL: [84, 0, 0],
+  footL: [-10, 0, 0],
+  thighR: [34, 0, -6],
+  shinR: [36, 0, 0],
+  footR: [-30, 0, 0],
+});
+function airDash(): Clip {
+  return {
+    length: 24,
+    keys: [
+      { f: 0, p: AIR },
+      { f: 3, p: AIR_DASH, ease: 'out' },
+      { f: 14, p: merge(AIR_DASH, { hips: [18, -20, 0], upperArmR: [24, 0, -30] }), ease: 'smooth' },
+      { f: 24, p: AIR, ease: 'smooth' },
+    ],
+  };
+}
+
+/** flattened against the wall (starfish), then peeling off into a fall */
+const SPLAT: Pose = merge(STANCE, {
+  root: [0, 0.02, -0.14],
+  hips: [-12, -8, 0],
+  spine: [-14, 0, 0],
+  chest: [-10, 0, 0],
+  neck: [-10, 0, 0],
+  head: [-22, 14, 0],
+  upperArmL: [-16, 0, 116],
+  foreArmL: [-24, 0, 0],
+  handL: [0, 0, 0],
+  upperArmR: [-16, 0, -116],
+  foreArmR: [-24, 0, 0],
+  handR: [0, 0, 0],
+  thighL: [2, 0, 24],
+  shinL: [10, 0, 0],
+  footL: [34, 0, 0],
+  thighR: [2, 0, -24],
+  shinR: [12, 0, 0],
+  footR: [34, 0, 0],
+});
+function wallSplat(): Clip {
+  const wobble = merge(SPLAT, { head: [-12, 34, 6], upperArmL: [-12, 0, 104], upperArmR: [-22, 0, -110] });
+  // pinned for 16 frames by the sim, then thrown back into a juggle ('wallBounce' clip)
+  return {
+    length: 16,
+    keys: [
+      { f: 0, p: HIT_HIGH },
+      { f: 2, p: SPLAT, ease: 'out' },
+      { f: 8, p: SPLAT },
+      { f: 12, p: wobble, ease: 'smooth' },
+      { f: 16, p: PEEL, ease: 'in' },
+    ],
+  };
+}
+
+/** wall splat peel pose (start of the bounce back) */
+const PEEL: Pose = merge(STANCE, {
+  root: [0, -0.1, -0.02],
+  hips: [10, -20, 0],
+  spine: [26, 0, 0],
+  chest: [14, 0, 0],
+  neck: [14, 0, 0],
+  head: [26, 10, 0],
+  upperArmL: [-6, 0, 40],
+  foreArmL: [-24, 0, 0],
+  upperArmR: [-6, 0, -40],
+  foreArmR: [-24, 0, 0],
+  thighL: [-22, 0, 10],
+  shinL: [44, 0, 0],
+  thighR: [-12, 0, -10],
+  shinR: [40, 0, 0],
+  footL: [20, 0, 0],
+  footR: [20, 0, 0],
+});
+
+/** thrown back off the wall: peeling off, then tumbling into the juggle */
+function wallBounce(): Clip {
+  const j = CLIP_JUGGLE_POSES();
+  return {
+    length: 24,
+    keys: [
+      { f: 0, p: PEEL },
+      { f: 8, p: merge(j.a, { spine: [20, 0, 0], head: [20, 0, 0] }), ease: 'smooth' },
+      { f: 24, p: j.b, ease: 'smooth' },
+    ],
+  };
+}
+
+/** dizzy (stun assist): swaying on wobbly legs, arms hanging, head rolling */
+function dizzy(): Clip {
+  const a = merge(STANCE, {
+    root: [0.04, -0.1, 0],
+    hips: [0, -30, 8],
+    spine: [14, 0, -10],
+    chest: [6, 0, -6],
+    neck: [10, 0, -10],
+    head: [16, 20, -18],
+    upperArmL: [6, 0, 16],
+    foreArmL: [-20, 0, 0],
+    upperArmR: [4, 0, -14],
+    foreArmR: [-24, 0, 0],
+    thighL: [-20, 0, 8],
+    shinL: [36, 0, 0],
+    thighR: [6, 0, -8],
+    shinR: [30, 0, 0],
+  });
+  const b = merge(a, { root: [-0.04, -0.12, 0], hips: [0, -38, -8], spine: [12, 0, 10], neck: [8, 0, 10], head: [12, 30, 16], upperArmL: [2, 0, 20], upperArmR: [8, 0, -20] });
+  return {
+    length: 48,
+    loop: true,
+    keys: [
+      { f: 0, p: a },
+      { f: 24, p: b, ease: 'smooth' },
+      { f: 48, p: a, ease: 'smooth' },
+    ],
+  };
+}
+
+/** slammed flat on the floor, limbs flung up by the bounce, then back to the juggle */
+function groundBounce(): Clip {
+  const j = CLIP_JUGGLE_POSES();
+  const flat = merge(LYING, {
+    root: [0, -0.8, -0.05],
+    head: [-10, -20, 0],
+    upperArmL: [-60, 0, 100],
+    foreArmL: [-20, 0, 0],
+    upperArmR: [-70, 0, -100],
+    foreArmR: [-20, 0, 0],
+    thighL: [-56, 0, 22],
+    shinL: [50, 0, 0],
+    thighR: [-46, 0, -22],
+    shinR: [40, 0, 0],
+  });
+  return {
+    length: 30,
+    keys: [
+      { f: 0, p: flat },
+      { f: 3, p: flat },
+      { f: 12, p: merge(j.b, { root: [0, -0.3, 0] }), ease: 'smooth' },
+      { f: 30, p: j.c, ease: 'smooth' },
+    ],
+  };
+}
+
+/** K.O. through the wall: spread-eagle tumble */
+function blownAway(): Clip {
+  const a = merge(HIT_HIGH, {
+    root: [0, 0, 0],
+    hips: [-40, -10, 0],
+    spine: [-16, 0, 0],
+    head: [-30, 10, 0],
+    upperArmL: [-40, 0, 120],
+    foreArmL: [-20, 0, 0],
+    upperArmR: [-30, 0, -120],
+    foreArmR: [-20, 0, 0],
+    thighL: [-30, 0, 30],
+    shinL: [30, 0, 0],
+    thighR: [-10, 0, -30],
+    shinR: [50, 0, 0],
+  });
+  const b = merge(a, { upperArmL: [-70, 0, 100], upperArmR: [-10, 0, -130], thighL: [-50, 0, 20], thighR: [0, 0, -36], head: [-20, -14, 0] });
+  return { length: 24, loop: true, keys: [{ f: 0, p: a }, { f: 12, p: b, ease: 'smooth' }, { f: 24, p: a, ease: 'smooth' }] };
+}
+
+// ---------------------------------------------------------------------------
+// assists (the friend called with the assist button)
+// ---------------------------------------------------------------------------
+function assistEnter(): Clip {
+  const landing = merge(CROUCH, { root: [0, -0.32, 0], upperArmL: [-40, 0, 60], upperArmR: [-40, 0, -60], foreArmL: [-40, 0, 0], foreArmR: [-40, 0, 0] });
+  return {
+    length: 16,
+    keys: [
+      { f: 0, p: AIR },
+      { f: 5, p: landing, ease: 'in' },
+      { f: 14, p: STANCE, ease: 'smooth' },
+      { f: 16, p: STANCE },
+    ],
+  };
+}
+
+function assistLeave(): Clip {
+  // quick thumbs up, then springs away (12 frames before the poof)
+  const thumbs = merge(STANCE, {
+    root: [0, -0.02, 0],
+    hips: [0, -40, 0],
+    head: [-8, 20, 0],
+    upperArmL: [-80, 0, 20],
+    foreArmL: [-70, 0, 0],
+    handL: [0, 0, 60],
+    thighL: [-10, 0, 6],
+    shinL: [10, 0, 0],
+  });
+  return {
+    length: 14,
+    keys: [
+      { f: 0, p: STANCE },
+      { f: 3, p: thumbs, ease: 'out' },
+      { f: 7, p: thumbs },
+      { f: 10, p: merge(CROUCH, { root: [0, -0.3, 0] }), ease: 'smooth' },
+      { f: 13, p: AIR, ease: 'out' },
+      { f: 14, p: AIR },
+    ],
+  };
+}
+
+const RUN_A = merge(DASH_F, { root: [0, -0.12, 0.1], spine: [24, 0, 0], upperArmL: [-90, 0, 20], foreArmL: [-60, 0, 0], upperArmR: [10, 0, -40], foreArmR: [-60, 0, 0] });
+const RUN_B = merge(RUN_A, {
+  thighL: [-20, 0, 6],
+  shinL: [70, 0, 0],
+  thighR: [-40, 0, -6],
+  shinR: [30, 0, 0],
+  upperArmL: [-40, 0, 20],
+  upperArmR: [-70, 0, -30],
+});
+
+/** rush assist: crouched start (the sim's dash starts on frame 7) */
+function assistRushStart(): Clip {
+  return {
+    length: 7,
+    keys: [
+      { f: 0, p: STANCE },
+      { f: 5, p: merge(CROUCH, { root: [0, -0.3, 0.05], spine: [30, 0, 0] }), ease: 'out' },
+      { f: 7, p: RUN_A, ease: 'in' },
+    ],
+  };
+}
+
+/** rush assist: sprint cycle until the punch */
+function assistRushRun(): Clip {
+  return { length: 12, loop: true, keys: [{ f: 0, p: RUN_A }, { f: 6, p: RUN_B, ease: 'smooth' }, { f: 12, p: RUN_A, ease: 'smooth' }] };
+}
+
+/** rush assist: the big punch (started a few frames before contact) */
+function assistRushPunch(): Clip {
+  const P = ATTACKS.powerPunch;
+  return {
+    length: 26,
+    keys: [
+      { f: 0, p: RUN_A },
+      { f: 2, p: P.windup, ease: 'out' },
+      { f: 5, p: P.strike, ease: 'in' },
+      { f: 14, p: P.strike },
+      { f: 26, p: STANCE, ease: 'smooth' },
+    ],
+  };
+}
+
+function assistLauncher(): Clip {
+  // strikes on frame 8 (sim: startup 8, active 5, total 26)
+  const U = ATTACKS.uppercut;
+  const high = merge(U.strike, { root: [0, 0.1, 0.1], thighL: [-60, 0, 6], shinL: [70, 0, 0], footR: [30, 0, 0], footL: [10, 0, 0] });
+  return {
+    length: 26,
+    keys: [
+      { f: 0, p: STANCE },
+      { f: 4, p: U.windup, ease: 'out' },
+      { f: 5, p: U.windup },
+      { f: 8, p: high, ease: 'in' },
+      { f: 15, p: high },
+      { f: 21, p: U.follow ?? STANCE, ease: 'smooth' },
+      { f: 26, p: STANCE, ease: 'smooth' },
+    ],
+  };
+}
+
+function assistBeam(): Clip {
+  // overhand throw
+  const cock = merge(STANCE, {
+    root: [0, -0.06, -0.06],
+    hips: [0, -62, 0],
+    spine: [-10, -18, 0],
+    chest: [-8, -10, 0],
+    head: [-6, 30, 0],
+    upperArmR: [-160, 0, -14],
+    foreArmR: [-110, 0, 0],
+    upperArmL: [-80, 0, 30],
+    foreArmL: [-20, 0, 0],
+    thighL: [-50, 0, 6],
+    shinL: [60, 0, 0],
+  });
+  const release = merge(STANCE, {
+    root: [0, -0.1, 0.12],
+    hips: [0, 30, 0],
+    spine: [22, 14, 0],
+    chest: [12, 14, 0],
+    head: [-10, -26, 0],
+    upperArmR: [-84, 0, 0],
+    foreArmR: [-6, 0, 0],
+    handR: [-20, 0, 0],
+    upperArmL: [-20, 0, 40],
+    foreArmL: [-60, 0, 0],
+    thighL: [-46, 0, 6],
+    shinL: [50, 0, 0],
+    thighR: [22, 0, -6],
+    shinR: [14, 0, 0],
+    footR: [-30, 0, 0],
+  });
+  const follow = merge(release, { upperArmR: [-30, 0, 20], foreArmR: [-30, 0, 0], spine: [28, 18, 0] });
+  // the projectile leaves on frame 10 (sim: startup 10, total 26)
+  return {
+    length: 26,
+    keys: [
+      { f: 0, p: STANCE },
+      { f: 5, p: cock, ease: 'out' },
+      { f: 7, p: cock },
+      { f: 10, p: release, ease: 'in' },
+      { f: 16, p: follow, ease: 'smooth' },
+      { f: 21, p: follow },
+      { f: 26, p: STANCE, ease: 'smooth' },
+    ],
+  };
+}
+
+function assistStun(): Clip {
+  // goofy dance: hip sway, waving arm, head tilt with a wink
+  const relaxed: Pose = { thighL: [-10, 0, 8], shinL: [18, 0, 0], footL: [-6, 0, 0], thighR: [4, 0, -8], shinR: [10, 0, 0], footR: [-6, 0, 0] };
+  const a = merge(STANCE, relaxed, {
+    root: [0.03, -0.04, 0],
+    hips: [0, -26, 10],
+    spine: [0, 0, -12],
+    chest: [0, 0, -6],
+    head: [-6, 24, 16],
+    upperArmL: [0, 0, 150],
+    foreArmL: [0, 0, 30],
+    handL: [0, 0, 20],
+    upperArmR: [-20, 0, -30],
+    foreArmR: [-90, 0, 0],
+  });
+  const b = merge(STANCE, relaxed, {
+    root: [-0.03, -0.08, 0],
+    hips: [0, -40, -10],
+    spine: [0, 0, 12],
+    chest: [0, 0, 6],
+    head: [-6, 10, -16],
+    upperArmL: [0, 0, 118],
+    foreArmL: [0, 0, 70],
+    handL: [0, 0, -20],
+    upperArmR: [-10, 0, -40],
+    foreArmR: [-100, 0, 0],
+    thighL: [-24, 0, 8],
+    shinL: [44, 0, 0],
+  });
+  return {
+    length: 40,
+    loop: true,
+    keys: [
+      { f: 0, p: a },
+      { f: 10, p: b, ease: 'smooth' },
+      { f: 20, p: a, ease: 'smooth' },
+      { f: 30, p: b, ease: 'smooth' },
+      { f: 40, p: a, ease: 'smooth' },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // library
 // ---------------------------------------------------------------------------
 export type ClipId = string;
@@ -984,6 +1458,21 @@ function buildLibrary(): Record<ClipId, Clip> {
     superVictim: superVictim(),
     // relaxed pose used by the select screen
     showcase: idle(),
+    superJump: superJump(),
+    airDash: airDash(),
+    wallSplat: wallSplat(),
+    wallBounce: wallBounce(),
+    groundBounce: groundBounce(),
+    blownAway: blownAway(),
+    'assist:enter': assistEnter(),
+    'assist:leave': assistLeave(),
+    'assist:rush': assistRushStart(),
+    'assist:rushRun': assistRushRun(),
+    'assist:rushPunch': assistRushPunch(),
+    dizzy: dizzy(),
+    'assist:launcher': assistLauncher(),
+    'assist:beam': assistBeam(),
+    'assist:stun': assistStun(),
   };
   for (const id of Object.keys(MOVES) as MoveId[]) lib['move:' + id] = moveClip(id);
   return lib;

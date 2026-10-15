@@ -35,7 +35,13 @@ export type SfxId =
   | 'crack'
   | 'dash'
   | 'flex'
-  | 'shine';
+  | 'shine'
+  // combat hit feel
+  | 'impact'
+  | 'bounce'
+  | 'wallBreak'
+  | 'superJump'
+  | 'airDash';
 
 export type AnnouncerLine =
   | 'round1'

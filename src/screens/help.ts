@@ -22,6 +22,24 @@ function moveRows(touch: boolean): [string, (HTMLElement | string)[]][] {
     ['Balayette', touch ? ['bas + ', tb('RK')] : ['bas + Pied D']],
     ['Grosse patate', touch ? ['avant + ', tb('RP')] : ['avant + Poing D']],
     ['Combos', ['tout coup qui touche s’enchaîne avec le suivant (jusqu’à 6)']],
+    [
+      'Auto-combo',
+      touch
+        ? ['martèle ', tb('LP'), ' (sans toucher au stick) : poings, pied, uppercut, super saut et smash, tout seul']
+        : ['martèle Poing G (sans direction) : poings, pied, uppercut, super saut et smash, tout seul'],
+    ],
+    [
+      'Combo aérien',
+      touch
+        ? ['après un lanceur : stick vers le haut = super saut · en l’air : poings / pieds, avant-avant = dash aérien, bas + ', tb('LK'), ' = smash au sol']
+        : ['après un lanceur : HAUT = super saut · en l’air : poings / pieds, avant-avant = dash aérien, bas + pied = smash au sol'],
+    ],
+    [
+      'ASSIST',
+      touch
+        ? [tb('ASSIST', 'pill teal'), ' ton pote débarque, place son attaque et repart · il faut attendre la recharge (bouton grisé)']
+        : ['touche ASSIST : ton pote débarque, place son attaque et repart · il faut attendre la recharge'],
+    ],
     ['BBL MAX', touch ? ['jauge pleine (le bouton clignote) + ', tb('BBL MAX', 'pill gold'), ', même en plein combo'] : ['jauge pleine + touche BBL MAX, même en plein combo']],
   ];
 }
@@ -36,6 +54,7 @@ export function touchControlsHelp(): HTMLElement {
     ['Poings', [tb('LP'), ' poing gauche · ', tb('RP'), ' poing droit']],
     ['Pieds', [tb('LK'), ' pied gauche · ', tb('RK'), ' pied droit']],
     ['BBL MAX', [tb('BBL MAX', 'pill gold'), ' quand la jauge BBL est pleine']],
+    ['Assist', [tb('ASSIST', 'pill teal'), ' appelle ton pote (son visage est sur le bouton) · grisé = en recharge']],
     ['Garde / parade', [tb('GARDE', 'pill'), ' maintenir pour se protéger, taper au bon moment pour parer']],
     ['Saisie', [tb('SAISIE', 'pill'), ' attrape l’adversaire, même s’il se protège']],
     ['Pause', [tb('II', 'pill'), ' met le combat en pause']],
@@ -54,15 +73,19 @@ export function touchControlsHelp(): HTMLElement {
 export function controlsHelp(versus: boolean, touch = false): HTMLElement {
   if (touch && !versus) return touchControlsHelp();
   const rows: [string, (HTMLElement | string)[]][] = [];
-  if (touch) rows.push(['J1 (écran tactile)', ['stick + boutons à l’écran : ', tb('LP'), ' ', tb('RP'), ' ', tb('LK'), ' ', tb('RK'), ' ', tb('BBL MAX', 'pill gold'), ' ', tb('GARDE', 'pill'), ' ', tb('SAISIE', 'pill')]]);
+  if (touch)
+    rows.push([
+      'J1 (écran tactile)',
+      ['stick + boutons à l’écran : ', tb('LP'), ' ', tb('RP'), ' ', tb('LK'), ' ', tb('RK'), ' ', tb('BBL MAX', 'pill gold'), ' ', tb('ASSIST', 'pill teal'), ' ', tb('GARDE', 'pill'), ' ', tb('SAISIE', 'pill')],
+    ]);
   if (versus) {
     rows.push(['J1 bouger', k([...P1_KEYS.up, ...P1_KEYS.left, ...P1_KEYS.down, ...P1_KEYS.right])]);
     rows.push(['J1 poings / pieds', [...k(P1_KEYS.lp), ' ', ...k(P1_KEYS.rp), ' / ', ...k(P1_KEYS.lk), ' ', ...k(P1_KEYS.rk)]]);
-    rows.push(['J1 BBL MAX (jauge pleine)', k(P1_KEYS.super)]);
+    rows.push(['J1 BBL MAX (jauge pleine) / assist', [...k(P1_KEYS.super), ' / ', ...k(P1_KEYS.assist)]]);
     rows.push(['J1 garde-parade / saisie', [...k(P1_KEYS.guard), ' / ', ...k(P1_KEYS.grab)]]);
     rows.push(['J2 bouger', k([...P2_KEYS.up, ...P2_KEYS.left, ...P2_KEYS.down, ...P2_KEYS.right])]);
     rows.push(['J2 poings / pieds', [...k([P2_KEYS.lp[0]]), ' ', ...k([P2_KEYS.rp[0]]), ' / ', ...k([P2_KEYS.lk[0]]), ' ', ...k([P2_KEYS.rk[0]])]]);
-    rows.push(['J2 BBL MAX (jauge pleine)', k([P2_KEYS.super[0]])]);
+    rows.push(['J2 BBL MAX (jauge pleine) / assist', [...k([P2_KEYS.super[0]]), ' / ', ...k([P2_KEYS.assist[0]])]]);
     rows.push(['J2 garde-parade / saisie', [...k([P2_KEYS.guard[0]]), ' / ', ...k([P2_KEYS.grab[0]])]]);
   } else {
     rows.push(['Bouger', [...k(['KeyW', 'KeyA', 'KeyS', 'KeyD']), ' ou flèches']]);
@@ -71,8 +94,9 @@ export function controlsHelp(versus: boolean, touch = false): HTMLElement {
     rows.push(['BBL MAX (jauge pleine)', [...k([SOLO_KEYS.super[0]]), ' ou ', ...k([SOLO_KEYS.super[1]])]]);
     rows.push(['Garde / parade', [...k([SOLO_KEYS.guard[0]]), ' ou ', ...k([SOLO_KEYS.guard[1]])]]);
     rows.push(['Saisie', [...k([SOLO_KEYS.grab[0]]), ' ou ', ...k([SOLO_KEYS.grab[1]])]]);
+    rows.push(['Assist (ton pote)', [...k([SOLO_KEYS.assist[0]]), ' ou ', ...k([SOLO_KEYS.assist[1]])]]);
   }
-  rows.push(['Manette', ['□ △ = poings · ✕ ○ = pieds · L1 = saisie · L2 = garde/parade · R1 / R2 = BBL MAX']]);
+  rows.push(['Manette', ['□ △ = poings · ✕ ○ = pieds · L1 = saisie · L2 = garde/parade · R1 = BBL MAX · R2 (ou R3) = ASSIST']]);
   rows.push(...moveRows(false));
   rows.push(['Pause', [...k(['Escape']), ' / Start']]);
   return table(rows);

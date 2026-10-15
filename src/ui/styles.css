@@ -359,6 +359,126 @@ button {
   margin-top: 6px;
 }
 
+/* --- assist pick (same grid): dashed cursor, your own face greyed out --- */
+.cell.a1 {
+  outline: 3px dashed #3aa0ff;
+  outline-offset: -5px;
+}
+
+.cell.a2 {
+  outline: 3px dashed var(--red);
+  outline-offset: -5px;
+}
+
+.cell.a1.a2 {
+  outline-color: #c040ff;
+}
+
+.cell .tag.ta {
+  background: #ffd23a;
+  color: #1a0a00;
+  box-shadow: inset 0 0 0 2px #3aa0ff;
+}
+
+.cell .tag.t2.ta {
+  box-shadow: inset 0 0 0 2px var(--red);
+}
+
+/* a friend can't assist themselves */
+.cell.own::after {
+  content: '✕';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.62);
+  color: #ff5050;
+  font-size: 28px;
+  text-shadow: 2px 2px 0 #000;
+  pointer-events: none;
+}
+
+.cell.nope {
+  animation: nope 0.35s;
+}
+
+@keyframes nope {
+  20%,
+  60% {
+    transform: translateX(-4px);
+  }
+  40%,
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+/* « ASSIST : ISIS » + move name under a player's name */
+.sel-assist {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-family: var(--pixel);
+  font-style: normal;
+  text-shadow: 2px 2px 0 #000;
+}
+
+.pname.p2 .sel-assist {
+  flex-direction: row-reverse;
+}
+
+.sel-assist .aph {
+  flex: none;
+  width: 34px;
+  height: 42px;
+  border: 2px solid var(--orange2);
+  background: #111 center / cover no-repeat;
+  image-rendering: pixelated;
+  box-shadow: 3px 3px 0 #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--arcade);
+  font-style: normal;
+  font-size: 18px;
+  color: var(--orange);
+}
+
+.sel-assist .atx {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sel-assist .ak {
+  font-size: 7px;
+  color: var(--orange2);
+  letter-spacing: 1px;
+}
+
+.sel-assist.picking .ak {
+  animation: blink 0.8s steps(2) infinite;
+}
+
+.sel-assist b {
+  font-size: clamp(11px, 1.6vw, 16px);
+  font-weight: normal;
+  color: #fff;
+}
+
+.sel-assist small {
+  font-size: 8px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.btn.sel-ok.as {
+  box-shadow: 0 0 0 3px var(--orange2);
+}
+
 /* ------------------------------------------------------------------ */
 /* stage select                                                        */
 /* ------------------------------------------------------------------ */
@@ -436,6 +556,57 @@ button {
   image-rendering: pixelated;
   border: 4px solid #fff;
   box-shadow: 8px 8px 0 #000;
+}
+
+/* the friend on call, under the fighter's name */
+.vs .vs-assist {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 14px;
+  font-family: var(--pixel);
+  font-style: normal;
+  text-shadow: 2px 2px 0 #000;
+  animation: pop 0.4s 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+
+.vs .vs-assist .aph {
+  flex: none;
+  width: 48px;
+  height: 60px;
+  border: 3px solid var(--teal);
+  background: #000 center / cover no-repeat;
+  image-rendering: pixelated;
+  box-shadow: 4px 4px 0 #000;
+}
+
+.vs .vs-assist .atx {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  min-width: 0;
+}
+
+.vs .vs-assist .ak {
+  font-size: 8px;
+  color: var(--teal);
+  letter-spacing: 1px;
+}
+
+.vs .vs-assist b {
+  font-family: var(--arcade);
+  font-style: italic;
+  font-weight: normal;
+  font-size: clamp(14px, 2vw, 24px);
+  color: #fff;
+}
+
+.vs .vs-assist small {
+  font-size: 8px;
+  color: #d8d2e8;
+  line-height: 1.4;
 }
 
 .vs .vsword {
@@ -643,6 +814,217 @@ button {
   color: var(--orange2);
 }
 
+/* assist: friend's face + recharge gauge, beside the BBL gauge (inner side) */
+.meter {
+  position: relative;
+}
+
+.assistw {
+  position: absolute;
+  bottom: -2px;
+  left: calc(100% + 12px);
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  width: 128px;
+}
+
+.assistw.right {
+  left: auto;
+  right: calc(100% + 12px);
+  flex-direction: row-reverse;
+}
+
+.assistw .aface {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: 2px solid #000;
+  box-shadow: 0 0 0 2px #2a8f86;
+  background: #111 center 20% / cover no-repeat;
+  image-rendering: pixelated;
+  filter: grayscale(1) brightness(0.6);
+  transition: filter 0.2s;
+}
+
+.assistw .acol {
+  flex: 1;
+  min-width: 0;
+}
+
+.assistw .albl {
+  font-size: 8px;
+  margin-bottom: 4px;
+  color: #8fd8cf;
+  white-space: nowrap;
+}
+
+.assistw.right .albl {
+  text-align: right;
+}
+
+.assistw .abar {
+  height: 6px;
+  background: #0d1a1c;
+  border: 2px solid #000;
+  box-shadow: 0 0 0 1px #3a6a66;
+  position: relative;
+  overflow: hidden;
+}
+
+.assistw .afill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  background: linear-gradient(90deg, #1a8f9a, #29d7c4);
+}
+
+.assistw.right .afill {
+  left: auto;
+  right: 0;
+}
+
+.assistw.ready .aface {
+  filter: none;
+  box-shadow: 0 0 0 2px var(--teal), 0 0 12px var(--teal);
+}
+
+.assistw.ready .albl {
+  color: #b8fff6;
+  text-shadow: 0 0 6px var(--teal), 1px 1px 0 #000;
+  animation: assistPulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes assistPulse {
+  from {
+    opacity: 0.6;
+  }
+}
+
+.assistw.ready .afill {
+  background: linear-gradient(90deg, #29d7c4, #d8fffa, #29d7c4);
+  background-size: 200% 100%;
+  animation: shimmer 0.9s linear infinite;
+}
+
+.assistw.busy .aface {
+  filter: none;
+  box-shadow: 0 0 0 2px var(--orange2);
+}
+
+.assistw.busy .albl {
+  color: var(--orange2);
+}
+
+/* « ISIS : UPPERCUT MUSCLÉ ! » when an assist is called */
+.assist-call {
+  position: absolute;
+  top: calc(max(10px, env(safe-area-inset-top)) + clamp(14px, 2.6vh, 24px) + 46px);
+  max-width: min(62%, 520px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px 6px 6px;
+  background: linear-gradient(90deg, rgba(10, 60, 70, 0.92), rgba(10, 60, 70, 0.55));
+  border: 2px solid var(--teal);
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.6);
+  transform: skewX(-8deg);
+  animation: callInL 0.25s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+.assist-call.left {
+  left: max(2%, env(safe-area-inset-left));
+}
+
+.assist-call.right {
+  right: max(2%, env(safe-area-inset-right));
+  flex-direction: row-reverse;
+  padding: 6px 6px 6px 14px;
+  text-align: right;
+  background: linear-gradient(270deg, rgba(10, 60, 70, 0.92), rgba(10, 60, 70, 0.55));
+  animation-name: callInR;
+}
+
+.assist-call.out {
+  opacity: 0;
+  transition: opacity 0.22s;
+}
+
+.assist-call .ph {
+  flex: none;
+  width: 40px;
+  height: 48px;
+  border: 2px solid #fff;
+  background: #000 center / cover no-repeat;
+  image-rendering: pixelated;
+  transform: skewX(8deg);
+}
+
+.assist-call .txt {
+  min-width: 0;
+  transform: skewX(8deg);
+}
+
+.assist-call .mv {
+  font-family: var(--arcade);
+  font-style: italic;
+  font-size: clamp(13px, 2vw, 22px);
+  line-height: 1.1;
+  color: #fff;
+  text-shadow: 2px 2px 0 #000;
+}
+
+.assist-call .mv b {
+  font-weight: normal;
+  color: var(--orange2);
+}
+
+.assist-call .shout {
+  margin-top: 4px;
+  font-size: clamp(8px, 1.1vw, 11px);
+  line-height: 1.4;
+  color: #c8fff8;
+  text-shadow: 1px 1px 0 #000;
+}
+
+@keyframes callInL {
+  from {
+    transform: translateX(-40vw) skewX(-8deg);
+    opacity: 0;
+  }
+}
+
+@keyframes callInR {
+  from {
+    transform: translateX(40vw) skewX(-8deg);
+    opacity: 0;
+  }
+}
+
+/* destruction finish: the K.O.'d fighter went through the scenery */
+.announce.destroy {
+  font-size: clamp(44px, 10vw, 140px);
+  background: linear-gradient(180deg, #fff 0%, #ffe34a 30%, #ff5a1c 62%, #7a0a00 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  letter-spacing: 0.02em;
+  animation: announceIn 0.35s cubic-bezier(0.2, 1.5, 0.4, 1) both, destroyShake 0.5s 0.35s steps(6) 1;
+}
+
+@keyframes destroyShake {
+  20% {
+    transform: translate(-1.5%, -52%) rotate(-1deg);
+  }
+  50% {
+    transform: translate(1.5%, -48%) rotate(1deg);
+  }
+  80% {
+    transform: translate(-0.8%, -50%);
+  }
+}
+
 @keyframes shimmer {
   to {
     background-position: -200% 0;
@@ -713,6 +1095,14 @@ button {
 .combo.right {
   right: 3%;
   text-align: right;
+}
+
+.combo em {
+  display: block;
+  margin-top: 4px;
+  font-style: normal;
+  font-size: clamp(8px, 1.1vw, 12px);
+  color: #8ff6e8;
 }
 
 .combo .ch {

@@ -165,6 +165,22 @@ export interface FighterState {
   /** victim: a wall bounce / ground bounce already happened in this combo (once each) */
   wallBounced: boolean;
   groundBounced: boolean;
+  /** frames left to start a super jump (UP, or LP in the auto-combo) after one of this fighter's launchers connected */
+  sjWindow: number;
+  /**
+   * special trajectory of an airborne victim:
+   *  'spike' = slammed to the floor by an airSmash (ground bounce, once per combo),
+   *  'wall'  = sent flying by a heavy ender (wall splat if it reaches the arena wall),
+   *  'bounce' = rebounding off the floor / the wall (floaty, until the next hit),
+   *  'ko'    = destruction finish flight (crashes through the wall, lands outside)
+   */
+  flight: 'none' | 'spike' | 'wall' | 'bounce' | 'ko';
+  /** destruction finish: this K.O.'d fighter crashed through the arena wall (no longer kept inside until the next round) */
+  wallBroken: boolean;
+  /** frames left to honour an assist button press */
+  assistReq: number;
+  /** the current hitstun is the 'stun' assist's dizzy distraction (long, no damage) */
+  dizzy: boolean;
 }
 
 /** What an assist does when called (see src/data/assists.ts for who does what). */

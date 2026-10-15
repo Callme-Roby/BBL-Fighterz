@@ -1,4 +1,4 @@
-import { MOVES, moveTotal, type MoveDef } from './moves';
+import { ASSIST_COOLDOWN, ASSIST_MOVES, BEAM_SPEED, BEAM_Y, MOVES, RUSH_SPEED, moveTotal, type AssistMove, type MoveDef, type Strike } from './moves';
 import { cineFrame, cineTime, curve, getUltimate } from './ultimates';
 import {
   ARENA_HALF_WIDTH,
@@ -13,6 +13,7 @@ import {
   IN_RK,
   IN_RP,
   IN_EXTRA,
+  IN_ASSIST,
   IN_GRAB,
   IN_GUARD,
   IN_SUPER,
@@ -77,6 +78,67 @@ const THROW_SLAM_FRAME = 34;
 const THROW_BREAK_WINDOW = 10;
 const HITSTOP = { light: 6, medium: 8, heavy: 12 } as const;
 
+// ---- combo system -------------------------------------------------------------
+/**
+ * Auto-combo: mashing LP (no direction) on the ground follows this route while every
+ * step connects (hit or block). 'superJump' = chase jump after the launcher.
+ */
+const AUTO_ROUTE: readonly (MoveId | 'superJump')[] = ['jab', 'jab', 'cross', 'frontKick', 'uppercut', 'superJump', 'jumpPunch', 'jumpKick', 'airSmash'];
+const AUTO_SJ_STEP = 5;
+/** damage multiplier of the moves picked by the auto-combo (manual combos stay more rewarding) */
+const AUTO_DAMAGE = 0.85;
+/** damage scaling: x(1 - SCALE_STEP * hits already in the combo), never below SCALE_MIN */
+const SCALE_STEP = 0.1;
+const SCALE_MIN = 0.3;
+const AIR_DAMAGE = 0.8;
+const COUNTER_DAMAGE = 1.25;
+/** ground hitstun decay: full for the first HITSTUN_FREE hits, then -HITSTUN_DECAY per hit (min HITSTUN_MIN_SCALE) */
+const HITSTUN_FREE = 3;
+const HITSTUN_DECAY = 0.085;
+const HITSTUN_MIN_SCALE = 0.2;
+/** juggles: every juggle hit lifts less (0 at JUGGLE_LIMIT) and the victim falls faster */
+const JUGGLE_LIMIT = 10;
+const JUGGLE_LIFT = 0.105;
+/** lift of an air attack on an airborne victim (air combos stay at about the same height) */
+const AIR_COMBO_LIFT = 0.05;
+const JUGGLE_GRAVITY_GROWTH = 0.06;
+/** super jump (chase jump after a launcher) */
+const SJ_WINDOW = 20;
+const SJ_FRAMES = 13;
+/** UP pressed this many frames before (e.g. during the launcher's hitstop) still counts (= dirHist length) */
+const SJ_BUFFER = 20;
+/** the super jumper can attack from this frame of the super jump */
+const SJ_ATTACK_FRAME = 5;
+/** distance kept in front of the victim while homing */
+const SJ_GAP = 0.5;
+/** a launcher only opens the super jump window while the juggle is fresh (one air combo per combo) */
+const SJ_MAX_JUGGLE = 1;
+/** air combos */
+const AIR_CHAIN_MAX = 4;
+const AIR_DASH_FRAMES = 14;
+const AIR_DASH_SPEED = 0.15;
+const AIR_DASH_ATTACK_FRAME = 4;
+const AIR_DASH_MIN_Y = 0.45;
+/** airSmash on an airborne victim: spike velocity, then the floor bounce */
+const SPIKE_VY = -0.24;
+const GROUND_BOUNCE_VY = 0.15;
+const GROUND_BOUNCE_GRAVITY = 0.0085;
+/** wall bounce: heavy enders send the victim flying; splat if it reaches the wall */
+const WALL_FLIGHT_VX = 0.15;
+const WALL_FLIGHT_VY = 0.07;
+const WALL_FLIGHT_GRAVITY = 0.006;
+const WALL_SPLAT_FRAMES = 16;
+const WALL_BOUNCE_VX = 0.07;
+const WALL_BOUNCE_VY = 0.12;
+/** destruction finish: K.O. flight through the arena wall, landing KO_FLIGHT_OUT metres outside */
+const KO_FLIGHT_VY = 0.1;
+const KO_FLIGHT_GRAVITY = 0.0045;
+const KO_FLIGHT_OUT = 3.2;
+/** assists */
+const ASSIST_BUFFER = 10;
+/** dizzy of the stun assist shrinks a lot when it lands mid-combo */
+const DIZZY_DECAY = 0.15;
+
 // ---------------------------------------------------------------------------
 // creation
 // ---------------------------------------------------------------------------
@@ -133,6 +195,11 @@ export function createFighter(side: 0 | 1): FighterState {
     airChain: 0,
     wallBounced: false,
     groundBounced: false,
+    sjWindow: 0,
+    flight: 'none',
+    wallBroken: false,
+    assistReq: 0,
+    dizzy: false,
   };
 }
 
@@ -201,7 +268,15 @@ function toRel(input: number, facing: 1 | -1): number {
 }
 
 function isAirborne(f: FighterState): boolean {
-  return f.action === 'jump' || f.action === 'airAttack' || f.action === 'juggle' || f.y > 0.12;
+  return (
+    f.action === 'jump' ||
+    f.action === 'airAttack' ||
+    f.action === 'juggle' ||
+    f.action === 'superJump' ||
+    f.action === 'airDash' ||
+    f.action === 'wallSplat' ||
+    f.y > 0.12
+  );
 }
 
 function isCrouching(f: FighterState): boolean {
@@ -255,22 +330,41 @@ function chooseGroundMove(f: FighterState, btn: number, dir: number, qcf: boolea
   return null;
 }
 
-function chooseAirMove(btn: number): MoveId | null {
-  if (btn & (IN_LK | IN_RK)) return 'jumpKick';
+function chooseAirMove(btn: number, dir: number): MoveId | null {
+  if (btn & (IN_LK | IN_RK)) return dir & R_D ? 'airSmash' : 'jumpKick';
   if (btn & (IN_LP | IN_RP)) return 'jumpPunch';
   return null;
+}
+
+/** a press that continues the auto-combo: LP alone, no direction */
+function isAutoPress(btn: number, dir: number): boolean {
+  return btn === IN_LP && (dir & R_DIRS) === 0;
+}
+
+/** next auto-combo move if the buffered press asks for it (null = manual input) */
+function autoNext(f: FighterState): MoveId | 'superJump' | null {
+  if (f.autoStep <= 0 || f.autoStep >= AUTO_ROUTE.length) return null;
+  if (!f.bufBtn || f.bufAge > BUFFER_FRAMES || !isAutoPress(f.bufBtn, f.bufDir | (f.rel & R_D))) return null;
+  return AUTO_ROUTE[f.autoStep];
+}
+
+/** auto-combo step of a move started from a fresh press (1 = the route's opening jab) */
+function openerStep(id: MoveId, btn: number, dir: number): number {
+  return id === 'jab' && isAutoPress(btn, dir) ? 1 : 0;
 }
 
 /**
  * @param skip  frames of startup skipped (chained moves come out faster and blend from the previous one)
  * @param chained true when the move cancels a previous one in a string
  */
-function startMove(s: GameState, f: FighterState, o: FighterState, id: MoveId, idx: number, skip = 0, chained = false) {
+function startMove(s: GameState, f: FighterState, o: FighterState, id: MoveId, idx: number, skip = 0, chained = false, auto = 0) {
   const m = MOVES[id];
   if (m.meterCost) {
     if (f.meter < m.meterCost) return;
     f.meter -= m.meterCost;
   }
+  // auto-combo: index of the next route step (0 = manual move)
+  f.autoStep = auto;
   f.chain = chained ? f.chain + 1 : 1;
   f.repeat = f.lastMove === id ? f.repeat + 1 : 1;
   f.lastMove = id;
@@ -279,8 +373,18 @@ function startMove(s: GameState, f: FighterState, o: FighterState, id: MoveId, i
   f.moveId = id;
   f.moveHit = false;
   f.crouching = !!m.crouching;
-  if (m.air) f.airAttackUsed = true;
+  if (m.air) {
+    f.airAttackUsed = true;
+    f.airChain++;
+  }
   if (!m.air) f.vx = 0;
+  // auto-combo steps glide toward the opponent so the route doesn't drop on pushback
+  if (auto > 1 && !m.air && !isAirborne(o)) {
+    // where the opponent's pushback will leave them (ground friction: x0.82 per frame)
+    const ox = o.x + o.vx / 0.18;
+    const gap = Math.abs(ox - f.x) - (m.reach + BODY_RADIUS * 0.4) - (m.advance ?? 0);
+    if (gap > 0) f.vx = f.facing * Math.min(gap, 0.6) * 0.3;
+  }
   if (m.invulnFrames) f.invuln = m.invulnFrames;
   if (m.freezeOpponent) {
     o.frozen = m.freezeOpponent;
@@ -312,6 +416,8 @@ function processInput(s: GameState, f: FighterState, input: number) {
 
   if (f.rel & IN_SUPER && !(f.prevRel & IN_SUPER)) f.superReq = SUPER_BUFFER;
   else if (f.superReq > 0) f.superReq--;
+  // assist call: buffered, consumed (or aged) by runFight outside hitstop
+  if (f.rel & IN_ASSIST && !(f.prevRel & IN_ASSIST)) f.assistReq = ASSIST_BUFFER;
 
   // guard tap = parry window (with an anti-mash cooldown)
   if (f.parryTimer > 0) f.parryTimer--;
@@ -330,7 +436,8 @@ function processInput(s: GameState, f: FighterState, input: number) {
     f.bufDir = dir;
     f.bufQcf = detectQcf(f.dirHist);
     f.bufAge = 0;
-  } else if (f.bufAge < 99) {
+  } else if (f.bufAge < 99 && s.hitstop === 0) {
+    // presses made during hitstop stay buffered until the action resumes
     f.bufAge++;
   }
 
@@ -363,6 +470,20 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
   if (f.invuln > 0) f.invuln--;
   const dir = f.rel & R_DIRS;
 
+  // super jump: UP (or the auto-combo's LP) right after a launcher connected
+  if (f.sjWindow > 0) {
+    f.sjWindow--;
+    if (canSuperJump(f, o)) {
+      const auto = f.autoStep === AUTO_SJ_STEP && autoNext(f) === 'superJump';
+      if (upRecently(f) || auto) {
+        const wasAuto = f.autoStep === AUTO_SJ_STEP;
+        startSuperJump(s, f, o, idx);
+        f.autoStep = wasAuto ? AUTO_SJ_STEP + 1 : 0;
+        return;
+      }
+    }
+  }
+
   switch (f.action) {
     case 'idle':
     case 'walkF':
@@ -379,7 +500,7 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
         if (b) {
           const id = chooseGroundMove(f, b.btn, b.dir, b.qcf);
           if (id) {
-            startMove(s, f, o, id, idx);
+            startMove(s, f, o, id, idx, 0, false, openerStep(id, b.btn, b.dir));
             break;
           }
         }
@@ -399,22 +520,68 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
         f.vx = f.jumpDir * f.facing * JUMP_VX;
         f.y = 0.01;
         f.airAttackUsed = false;
+        f.airChain = 0;
+        f.airDashUsed = false;
       }
       break;
 
-    case 'jump': {
-      const b = consumeBuffer(f);
-      if (b && !f.airAttackUsed) {
-        const id = chooseAirMove(b.btn);
-        if (id) startMove(s, f, o, id, idx);
+    case 'jump':
+      if (tryAirDash(s, f, idx)) break;
+      tryAirMove(s, f, o, idx);
+      break;
+
+    case 'superJump':
+      runSuperJump(s, f, o, idx);
+      break;
+
+    case 'airDash':
+      // fast horizontal dash, no gravity; can attack after a few frames
+      f.x += f.facing * AIR_DASH_SPEED * (1 - f.actionFrame / (AIR_DASH_FRAMES + 8));
+      if (f.actionFrame >= AIR_DASH_ATTACK_FRAME && tryAirMove(s, f, o, idx)) {
+        f.vx = f.facing * 0.06;
+        f.vy = 0;
+        break;
+      }
+      if (f.actionFrame >= AIR_DASH_FRAMES) toAirborne(f, f.facing * 0.05, 0);
+      break;
+
+    case 'airAttack': {
+      const m = MOVES[f.moveId!];
+      if (f.actionFrame === m.startup) s.events.push({ t: 'whiff', p: idx, heavy: m.strength === 'heavy' });
+      // air chains: a connecting air attack flows into the next one (max AIR_CHAIN_MAX per jump)
+      const inWindow = f.actionFrame >= m.startup && f.actionFrame <= m.startup + m.active + CHAIN_WINDOW;
+      if (f.moveHit && inWindow && f.airChain < AIR_CHAIN_MAX && f.bufBtn && f.bufAge <= BUFFER_FRAMES) {
+        const route = autoNext(f);
+        let next: MoveId | null = null;
+        let auto = 0;
+        if (route && route !== 'superJump' && MOVES[route].air) {
+          next = route;
+          auto = f.autoStep + 1;
+        } else if (!route) {
+          next = chooseAirMove(f.bufBtn, f.bufDir | (f.rel & R_D));
+          if (next === f.moveId && f.repeat >= 2) next = null;
+        }
+        if (next) {
+          startMove(s, f, o, next, idx, Math.floor(MOVES[next].startup * 0.4), true, auto);
+          break;
+        }
+      }
+      if (f.actionFrame >= moveTotal(m)) {
+        // recovered in the air: back to a plain jump (the jump clip starts on its airborne pose)
+        if (!f.moveHit) f.autoStep = 0;
+        toAirborne(f, f.vx, f.vy);
       }
       break;
     }
 
-    case 'airAttack':
-      if (f.moveId) {
-        const m = MOVES[f.moveId];
-        if (f.actionFrame === m.startup) s.events.push({ t: 'whiff', p: idx, heavy: m.strength === 'heavy' });
+    case 'wallSplat':
+      // pinned against the wall, then thrown back toward the middle into a juggle
+      if (f.actionFrame >= WALL_SPLAT_FRAMES) {
+        const side = f.x > 0 ? 1 : -1;
+        setAction(f, 'juggle');
+        f.vx = -side * WALL_BOUNCE_VX;
+        f.vy = WALL_BOUNCE_VY;
+        f.y = Math.max(f.y, 0.05);
       }
       break;
 
@@ -444,7 +611,7 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
         if (b) {
           const id = chooseGroundMove(f, b.btn, b.dir, b.qcf);
           if (id) {
-            startMove(s, f, o, id, idx);
+            startMove(s, f, o, id, idx, 0, false, openerStep(id, b.btn, b.dir));
             break;
           }
         }
@@ -475,20 +642,27 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
         // BBL MAX can cancel any connecting move
         if (f.moveHit && inWindow && tryStartSuper(s, f, o, idx)) break;
         if (f.bufBtn && f.bufAge <= BUFFER_FRAMES) {
+          // auto-combo: LP mashed while the previous step connected follows the route
+          const route = f.moveHit && inWindow ? autoNext(f) : null;
+          if (route && route !== 'superJump') {
+            startMove(s, f, o, route, idx, Math.floor(MOVES[route].startup * 0.4), true, f.autoStep + 1);
+            break;
+          }
           const next = chooseGroundMove(f, f.bufBtn, f.bufDir | (f.rel & R_D), false);
           // chains: any move that connected (hit or block) can flow into another one
-          if (next && next !== 'throw' && f.moveHit && inWindow && f.chain < MAX_CHAIN && !(next === f.moveId && f.repeat >= 2)) {
+          if (!route && next && next !== 'throw' && f.moveHit && inWindow && f.chain < MAX_CHAIN && !(next === f.moveId && f.repeat >= 2)) {
             startMove(s, f, o, next, idx, Math.floor(MOVES[next].startup * 0.4), true);
             break;
           }
           // whiffs: the second half of the recovery can be interrupted by the next attack
           if (next && !f.moveHit && f.actionFrame >= m.startup + m.active + Math.ceil(m.recovery * 0.5)) {
-            startMove(s, f, o, next, idx);
+            startMove(s, f, o, next, idx, 0, false, openerStep(next, f.bufBtn, f.bufDir));
             break;
           }
         }
       }
       if (f.actionFrame >= moveTotal(m)) {
+        if (!f.moveHit) f.autoStep = 0;
         toNeutral(f);
         neutral(s, f, o, idx, dir);
       }
@@ -524,8 +698,7 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
     case 'getup':
       if (f.actionFrame >= GETUP_FRAMES) {
         toNeutral(f);
-        f.comboCount = 0;
-        f.comboDamage = 0;
+        endCombo(f);
       }
       break;
 
@@ -585,18 +758,30 @@ function toNeutral(f: FighterState) {
   setAction(f, 'idle');
   f.crouching = false;
   f.moveHit = false;
+  f.dizzy = false;
   f.vy = 0;
   if (f.y < 0.001) f.y = 0;
 }
 
-function neutral(s: GameState, f: FighterState, o: FighterState, idx: number, dir: number) {
-  // combo counter resets once the victim is back in control
+/** The victim is back in control: the combo (and its once-per-combo bounces) is over. */
+function endCombo(f: FighterState) {
   f.comboCount = 0;
   f.comboDamage = 0;
   f.juggleCount = 0;
+  f.wallBounced = false;
+  f.groundBounced = false;
+  f.dizzy = false;
+  if (!f.koed) f.flight = 'none';
+}
+
+function neutral(s: GameState, f: FighterState, o: FighterState, idx: number, dir: number) {
+  // combo counter resets once the victim is back in control
+  endCombo(f);
   f.chain = 0;
   f.lastMove = null;
   f.repeat = 0;
+  // back in neutral: the auto-combo is over (unless its super jump step is still possible)
+  if (!(f.autoStep === AUTO_SJ_STEP && f.sjWindow > 0)) f.autoStep = 0;
 
   if (tryStartSuper(s, f, o, idx)) return;
 
@@ -606,7 +791,7 @@ function neutral(s: GameState, f: FighterState, o: FighterState, idx: number, di
     const d = b.dir | (f.action === 'crouch' ? dir & R_D : 0);
     const id = chooseGroundMove(f, b.btn, d, b.qcf);
     if (id) {
-      startMove(s, f, o, id, idx);
+      startMove(s, f, o, id, idx, 0, false, openerStep(id, b.btn, d));
       if (f.action === 'attack') return;
     }
   }
@@ -648,6 +833,117 @@ function neutral(s: GameState, f: FighterState, o: FighterState, idx: number, di
   } else if (f.action !== 'idle') {
     setAction(f, 'idle');
   }
+}
+
+// ---------------------------------------------------------------------------
+// air combos: super jump, air dash, air strings
+// ---------------------------------------------------------------------------
+/** UP held or pressed during the last few frames (super jump input, buffered through hitstop) */
+function upRecently(f: FighterState): boolean {
+  const h = f.dirHist;
+  for (let i = Math.max(0, h.length - SJ_BUFFER); i < h.length; i++) if (h[i] & R_U) return true;
+  return false;
+}
+
+/** A super jump can start from these states while the launched victim is still juggled. */
+function canSuperJump(f: FighterState, o: FighterState): boolean {
+  if ((o.action !== 'juggle' && o.action !== 'wallSplat') || o.koed || o.flight === 'ko') return false;
+  switch (f.action) {
+    case 'attack':
+      return f.moveHit;
+    case 'idle':
+    case 'walkF':
+    case 'walkB':
+    case 'crouch':
+    case 'guard':
+    case 'land':
+    case 'prejump':
+    case 'dashF':
+      return true;
+  }
+  return false;
+}
+
+function startSuperJump(s: GameState, f: FighterState, o: FighterState, idx: number) {
+  setAction(f, 'superJump');
+  f.sjWindow = 0;
+  f.facing = o.x >= f.x ? 1 : -1;
+  f.vx = 0;
+  f.vy = 0;
+  f.y = Math.max(f.y, 0.01);
+  f.crouching = false;
+  f.airAttackUsed = false;
+  f.airChain = 0;
+  f.airDashUsed = false;
+  f.chain = 0;
+  f.lastMove = null;
+  f.repeat = 0;
+  f.dashReq = 0;
+  f.bufBtn = 0;
+  f.bufAge = 99;
+  s.events.push({ t: 'superJump', p: idx });
+}
+
+function clampAbs(v: number, lo: number, hi: number) {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+/** Super jump: homes in fast on the airborne victim, then can attack (or ends as a normal jump). */
+function runSuperJump(s: GameState, f: FighterState, o: FighterState, idx: number) {
+  const lead = 4;
+  const tx = o.x + o.vx * lead - f.facing * SJ_GAP;
+  const ty = Math.max(0.35, o.y + o.vy * lead - 0.2);
+  const dx = clampAbs((tx - f.x) * 0.3, -0.25, 0.25);
+  const dy = clampAbs((ty - f.y) * 0.3, -0.2, 0.32);
+  f.x += dx;
+  f.y += dy;
+  if (f.actionFrame >= SJ_ATTACK_FRAME && tryAirMove(s, f, o, idx)) {
+    // match the victim's motion so the air string connects
+    f.vx = o.vx;
+    f.vy = o.action === 'juggle' ? o.vy : 0;
+    return;
+  }
+  if (f.actionFrame >= SJ_FRAMES) toAirborne(f, o.vx, o.action === 'juggle' ? Math.max(0, o.vy) : 0);
+}
+
+/** back to a plain jump in mid-air (the jump clip starts on its airborne pose) */
+function toAirborne(f: FighterState, vx: number, vy: number) {
+  setAction(f, 'jump');
+  f.actionFrame = 10;
+  f.vx = vx;
+  f.vy = vy;
+}
+
+/** double-tap forward in the air: one air dash per jump */
+function tryAirDash(s: GameState, f: FighterState, idx: number): boolean {
+  if (f.dashReq === 0) return false;
+  const req = f.dashReq;
+  f.dashReq = 0;
+  if (req < 0 || f.airDashUsed || f.y < AIR_DASH_MIN_Y) return false;
+  setAction(f, 'airDash');
+  f.airDashUsed = true;
+  // a fresh air attack is allowed after the dash
+  f.airAttackUsed = false;
+  f.vx = 0;
+  f.vy = 0;
+  s.events.push({ t: 'airDash', p: idx });
+  return true;
+}
+
+/** start an air attack from a buffered press (auto-combo route or manual) */
+function tryAirMove(s: GameState, f: FighterState, o: FighterState, idx: number): boolean {
+  const route = autoNext(f);
+  const b = consumeBuffer(f);
+  if (!b || f.airAttackUsed || f.airChain >= AIR_CHAIN_MAX) return false;
+  let id: MoveId | null;
+  let auto = 0;
+  if (route && route !== 'superJump' && MOVES[route].air) {
+    id = route;
+    auto = f.autoStep + 1;
+  } else id = chooseAirMove(b.btn, b.dir | (f.rel & R_D));
+  if (!id) return false;
+  startMove(s, f, o, id, idx, 0, false, auto);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -775,18 +1071,72 @@ function runSuperCombo(s: GameState, a: FighterState, v: FighterState, idx: numb
 // ---------------------------------------------------------------------------
 // physics
 // ---------------------------------------------------------------------------
+function gravityOf(f: FighterState): number {
+  if (f.action !== 'juggle') return GRAVITY;
+  switch (f.flight) {
+    case 'wall':
+      return WALL_FLIGHT_GRAVITY;
+    case 'ko':
+      return KO_FLIGHT_GRAVITY;
+    case 'bounce':
+      return GROUND_BOUNCE_GRAVITY;
+    case 'spike':
+      return JUGGLE_GRAVITY;
+  }
+  // juggle decay: the longer the juggle, the faster the fall
+  return JUGGLE_GRAVITY * (1 + JUGGLE_GRAVITY_GROWTH * f.juggleCount);
+}
+
 function physics(s: GameState, f: FighterState, idx: number) {
   if (f.frozen > 0 || f.action === 'superCombo' || f.action === 'superVictim') return;
+  // moved by the state machine
+  if (f.action === 'superJump' || f.action === 'airDash' || f.action === 'wallSplat') return;
   const airborne = f.action === 'jump' || f.action === 'airAttack' || f.action === 'juggle' || f.y > 0;
   if (airborne) {
     f.x += f.vx;
     f.y += f.vy;
-    f.vy -= f.action === 'juggle' ? JUGGLE_GRAVITY : GRAVITY;
+    f.vy -= gravityOf(f);
+    if (f.action === 'juggle') {
+      const lim = ARENA_HALF_WIDTH;
+      // heavy ender: splat against the wall
+      if (f.flight === 'wall' && Math.abs(f.x) >= lim - 0.02 && f.x * f.vx > 0) {
+        wallSplat(s, f, idx);
+        return;
+      }
+      // destruction finish: crash through the wall and keep flying a few metres outside
+      if (f.flight === 'ko') {
+        const side = f.x > 0 ? 1 : -1;
+        if (!f.wallBroken && Math.abs(f.x) > lim) {
+          f.wallBroken = true;
+          s.events.push({ t: 'wallBreak', p: idx, x: side * lim, y: f.y });
+        }
+        if (Math.abs(f.x) > lim + KO_FLIGHT_OUT) {
+          f.x = side * (lim + KO_FLIGHT_OUT);
+          f.vx = 0;
+        }
+      }
+    }
     if (f.y <= 0) {
       f.y = 0;
       f.vy = 0;
       if (f.action === 'juggle') {
-        f.vx *= 0.4;
+        // airSmash spike: bounce back up once per combo
+        if (f.flight === 'spike' && !f.groundBounced && !f.koed) {
+          setAction(f, 'juggle');
+          f.groundBounced = true;
+          f.flight = 'bounce';
+          f.y = 0.02;
+          f.vy = GROUND_BOUNCE_VY;
+          f.vx *= 0.5;
+          s.hitstop = Math.max(s.hitstop, 4);
+          s.events.push({ t: 'groundBounce', p: idx, x: f.x });
+          return;
+        }
+        if (f.flight === 'ko') f.vx = 0;
+        else {
+          f.flight = 'none';
+          f.vx *= 0.4;
+        }
         s.events.push({ t: 'fall', p: idx });
         if (f.koed) {
           setAction(f, 'ko');
@@ -795,6 +1145,9 @@ function physics(s: GameState, f: FighterState, idx: number) {
         }
       } else if (f.action === 'jump' || f.action === 'airAttack') {
         f.vx = 0;
+        f.airChain = 0;
+        f.airDashUsed = false;
+        f.autoStep = 0;
         setAction(f, 'land');
         s.events.push({ t: 'land', p: idx });
       }
@@ -806,15 +1159,34 @@ function physics(s: GameState, f: FighterState, idx: number) {
   }
 }
 
+/** Pinned against the wall by a heavy ender (then thrown back into a juggle by the state machine). */
+function wallSplat(s: GameState, f: FighterState, idx: number) {
+  const side = f.x > 0 ? 1 : -1;
+  setAction(f, 'wallSplat');
+  f.x = side * ARENA_HALF_WIDTH;
+  f.y = Math.max(f.y, 0.3);
+  f.vx = 0;
+  f.vy = 0;
+  f.flight = 'bounce';
+  f.wallBounced = true;
+  s.hitstop = Math.max(s.hitstop, 6);
+  s.events.push({ t: 'wallBounce', p: idx, x: f.x, y: f.y });
+}
+
 function resolvePositions(s: GameState) {
   const [a, b] = s.fighters;
   const lim = ARENA_HALF_WIDTH;
+  // a K.O.'d fighter in its destruction flight leaves the arena
+  const free0 = a.flight === 'ko';
+  const free1 = b.flight === 'ko';
   for (const f of s.fighters) {
+    if (f.flight === 'ko') continue;
     if (f.x < -lim) f.x = -lim;
     if (f.x > lim) f.x = lim;
   }
   // push boxes (only when both are close to the ground, so jumps can cross a little)
-  const thrown = a.action === 'thrown' || b.action === 'thrown' || a.action === 'superVictim' || b.action === 'superVictim';
+  const thrown =
+    a.action === 'thrown' || b.action === 'thrown' || a.action === 'superVictim' || b.action === 'superVictim' || free0 || free1;
   if (!thrown) {
     const dx = b.x - a.x;
     const dist = Math.abs(dx);
@@ -842,6 +1214,7 @@ function resolvePositions(s: GameState) {
     }
   }
   for (const f of s.fighters) {
+    if (f.flight === 'ko') continue;
     if (f.x < -lim) f.x = -lim;
     if (f.x > lim) f.x = lim;
   }
@@ -874,6 +1247,35 @@ interface PendingHit {
   parried?: boolean;
 }
 
+/** standing/crouching guard is possible in this state */
+function canBlockNow(d: FighterState): boolean {
+  return (
+    !isAirborne(d) &&
+    (d.action === 'idle' ||
+      d.action === 'walkB' ||
+      d.action === 'crouch' ||
+      d.action === 'guard' ||
+      d.action === 'blockstun' ||
+      d.action === 'parry' ||
+      d.action === 'land')
+  );
+}
+
+/** standing guard stops highs & mids, crouching guard stops lows */
+function guardsHeight(d: FighterState, level: Strike['level']): boolean {
+  const crouchBlock = isCrouching(d) || (d.rel & R_D) !== 0;
+  return level === 'low' ? crouchBlock : !crouchBlock;
+}
+
+function isHoldingGuard(d: FighterState): boolean {
+  return (d.rel & (R_B | IN_GUARD)) !== 0;
+}
+
+/** caught during the startup of an attack (or reeling from a parry) */
+function isCounterState(d: FighterState): boolean {
+  return ((d.action === 'attack' || d.action === 'airAttack') && !!d.moveId && d.actionFrame < MOVES[d.moveId].startup) || d.action === 'parried';
+}
+
 function checkHit(a: FighterState, d: FighterState, ai: number): PendingHit | null {
   if ((a.action !== 'attack' && a.action !== 'airAttack') || !a.moveId || a.moveHit || a.frozen > 0) return null;
   const m = MOVES[a.moveId];
@@ -883,7 +1285,7 @@ function checkHit(a: FighterState, d: FighterState, ai: number): PendingHit | nu
   if (dx < -0.1) return null;
   if (dx - BODY_RADIUS > m.reach) return null;
 
-  if (d.invuln > 0) return null;
+  if (d.invuln > 0 || d.flight === 'ko') return null;
   switch (d.action) {
     case 'knockdown':
     case 'getup':
@@ -907,36 +1309,158 @@ function checkHit(a: FighterState, d: FighterState, ai: number): PendingHit | nu
     return { a: ai, d: 1 - ai, move: m, blocked: false, counter: false, grab: true };
   }
 
-  // jumping attacks only connect when the attacker is low enough
-  if (m.air && a.y > 1.5) return null;
+  if (m.air) {
+    // air vs air (air combos): both must be at about the same height
+    if (dAir) {
+      if (Math.abs(a.y - d.y) > 0.95) return null;
+    }
+    // jumping attacks on a grounded opponent only connect when the attacker is low enough
+    else if (a.y > 1.5) return null;
+  }
   if (m.level === 'high' && dCrouch && !dAir) return null;
   if (m.level === 'low' && dAir && d.y > 0.3) return null;
   // vertical distance for juggles
   if (dAir && d.y > 1.6 && !m.air) return null;
 
-  // guard: hold back (or the guard button). Standing guard stops highs & mids, crouching guard stops lows
-  const holdingBack = (d.rel & (R_B | IN_GUARD)) !== 0;
-  const canBlock =
-    !dAir &&
-    (d.action === 'idle' ||
-      d.action === 'walkB' ||
-      d.action === 'crouch' ||
-      d.action === 'guard' ||
-      d.action === 'blockstun' ||
-      d.action === 'parry' ||
-      d.action === 'land');
-  const crouchBlock = dCrouch || (d.rel & R_D) !== 0;
-  const rightHeight = m.level === 'low' ? crouchBlock : !crouchBlock;
+  // guard: hold back (or the guard button)
+  const rightHeight = guardsHeight(d, m.level);
   // parry: guard tapped just before the hit, at the right height
-  const canParry = canBlock || d.action === 'walkF' || d.action === 'dashB';
+  const canParry = canBlockNow(d) || d.action === 'walkF' || d.action === 'dashB';
   if (d.parryTimer > 0 && canParry && rightHeight) {
     return { a: ai, d: 1 - ai, move: m, blocked: false, counter: false, grab: false, parried: true };
   }
-  const blocked = canBlock && holdingBack && rightHeight;
-  const counter =
-    !blocked &&
-    (((d.action === 'attack' || d.action === 'airAttack') && !!d.moveId && d.actionFrame < MOVES[d.moveId].startup) || d.action === 'parried');
+  const blocked = canBlockNow(d) && isHoldingGuard(d) && rightHeight;
+  const counter = !blocked && isCounterState(d);
   return { a: ai, d: 1 - ai, move: m, blocked, counter, grab: false };
+}
+
+/** blockstun + pushback for a guarded blow (fighters and assists) */
+function applyBlock(s: GameState, di: number, d: FighterState, m: Strike, dir: 1 | -1, hx: number, hy: number) {
+  d.action = 'blockstun';
+  d.actionFrame = 0;
+  d.moveId = null;
+  d.crouching = isCrouching(d) || (d.rel & R_D) !== 0;
+  d.stun = m.blockstun;
+  d.stunTotal = m.blockstun;
+  d.hitLevel = m.level;
+  d.vx = dir * m.pushBlock;
+  d.meter = Math.min(MAX_METER, d.meter + 3);
+  s.hitstop = Math.max(s.hitstop, 5);
+  s.events.push({ t: 'block', p: di, x: hx, y: hy });
+}
+
+interface HitOpts {
+  counter: boolean;
+  /** extra damage multiplier (auto-combo steps) */
+  scale: number;
+  /** heavy ender: sends the victim flying toward the wall (wall bounce, once per combo) */
+  wallBounce: boolean;
+  /** the blow is a destruction-finish candidate even if not heavy (assists) */
+  finisher: boolean;
+}
+
+function comboScale(n: number): number {
+  return Math.max(SCALE_MIN, 1 - SCALE_STEP * n);
+}
+
+/** ground hitstun decay: long combos drop by themselves */
+function hitstunScale(n: number): number {
+  return n <= HITSTUN_FREE ? 1 : Math.max(HITSTUN_MIN_SCALE, 1 - HITSTUN_DECAY * (n - HITSTUN_FREE));
+}
+
+/**
+ * A blow connects (not blocked): damage with combo scaling, then the victim's reaction
+ * (hitstun with decay, juggle with decay, spike / wall flight, K.O. flight).
+ * `oi` = index of the fighter credited with the hit (the attacker, or an assist's caller).
+ * Returns the damage dealt.
+ */
+function landHit(s: GameState, oi: number, d: FighterState, m: Strike, dir: 1 | -1, hx: number, hy: number, o: HitOpts): number {
+  const owner = s.fighters[oi];
+  const dAir = isAirborne(d);
+  const n = d.comboCount;
+  let scale = comboScale(n) * o.scale;
+  if (dAir) scale *= AIR_DAMAGE;
+  if (o.counter) scale *= COUNTER_DAMAGE;
+  const dmg = m.damage > 0 ? Math.max(1, Math.round(m.damage * scale)) : 0;
+  d.hp = Math.max(0, d.hp - dmg);
+  d.comboCount++;
+  d.comboDamage += dmg;
+  d.meter = Math.min(MAX_METER, d.meter + dmg * 0.45);
+  d.counterHit = o.counter;
+  d.hitLevel = m.level;
+  d.moveHit = false;
+  d.frozen = 0;
+  d.dizzy = false;
+  // the victim's own pending options are gone
+  d.autoStep = 0;
+  d.sjWindow = 0;
+  const wasCrouch = isCrouching(d);
+  const jc = d.juggleCount;
+  const lift = Math.max(0, 1 - jc / JUGGLE_LIMIT);
+
+  if (d.hp <= 0) {
+    d.koed = true;
+    setAction(d, 'juggle');
+    d.crouching = false;
+    d.y = Math.max(d.y, 0.02);
+    if (m.strength === 'heavy' || !!m.launch || o.wallBounce || o.counter || o.finisher) {
+      // destruction finish: blown away through the arena wall (slow motion during the K.O. phase)
+      d.flight = 'ko';
+      d.vy = KO_FLIGHT_VY;
+      const target = dir * (ARENA_HALF_WIDTH + KO_FLIGHT_OUT);
+      const t = (2 * KO_FLIGHT_VY) / KO_FLIGHT_GRAVITY;
+      d.vx = dir * Math.max(0.12, Math.abs(target - d.x) / t);
+    } else {
+      d.flight = 'none';
+      d.vy = Math.max(m.launch ?? 0, 0.11);
+      d.vx = dir * 0.055;
+    }
+  } else if (m.id === 'airSmash' && dAir) {
+    // spiked to the floor: bounces once per combo (see physics), a second spike is a plain knockdown
+    setAction(d, 'juggle');
+    d.flight = 'spike';
+    d.vy = SPIKE_VY;
+    d.vx = dir * 0.02;
+    d.y = Math.max(d.y, 0.02);
+    d.juggleCount++;
+    d.crouching = false;
+  } else if (o.wallBounce && !d.wallBounced) {
+    // heavy ender: flies toward the wall (splat if it gets there, knockdown otherwise)
+    setAction(d, 'juggle');
+    d.flight = 'wall';
+    d.vy = WALL_FLIGHT_VY;
+    d.vx = dir * WALL_FLIGHT_VX;
+    d.y = Math.max(d.y, 0.02);
+    d.juggleCount++;
+    d.crouching = false;
+  } else if (m.launch || dAir || m.knockdown) {
+    setAction(d, 'juggle');
+    d.flight = 'none';
+    // juggle decay: the lift fades with every juggle hit, and a falling victim keeps
+    // (part of) its fall instead of being caught in mid-air
+    const fall = (1 - lift) * Math.min(d.vy, 0);
+    if (m.launch) {
+      d.vy = m.launch * lift + fall;
+      // a fresh launch opens the super jump window (one air combo per combo)
+      if (jc <= SJ_MAX_JUGGLE) owner.sjWindow = SJ_WINDOW;
+    } else if (dAir) d.vy = (m.air ? AIR_COMBO_LIFT : JUGGLE_LIFT) * lift + fall;
+    else d.vy = 0.075;
+    d.vx = dir * (m.knockdown && !m.launch ? 0.05 : m.pushHit * 0.35 + 0.012);
+    d.y = Math.max(d.y, 0.02);
+    d.juggleCount++;
+    d.crouching = false;
+  } else {
+    setAction(d, 'hitstun');
+    d.flight = 'none';
+    d.crouching = wasCrouch;
+    d.stun = Math.max(1, Math.round((m.hitstun + (o.counter ? 6 : 0)) * hitstunScale(n)));
+    d.stunTotal = d.stun;
+    d.vx = dir * m.pushHit;
+  }
+
+  s.hitstop = Math.max(s.hitstop, HITSTOP[m.strength] + (o.counter ? 3 : 0));
+  s.events.push({ t: 'hit', p: oi, x: hx, y: hy, strength: m.strength, counter: o.counter, dmg });
+  return dmg;
 }
 
 function applyHit(s: GameState, h: PendingHit) {
@@ -978,70 +1502,254 @@ function applyHit(s: GameState, h: PendingHit) {
   }
 
   if (h.blocked) {
-    d.action = 'blockstun';
-    d.actionFrame = 0;
-    d.moveId = null;
-    d.crouching = isCrouching(d) || (d.rel & R_D) !== 0;
-    d.stun = m.blockstun;
-    d.stunTotal = m.blockstun;
-    d.hitLevel = m.level;
-    d.vx = a.facing * m.pushBlock;
+    applyBlock(s, h.d, d, m, a.facing, hx, hy);
     if (Math.abs(d.x) > ARENA_HALF_WIDTH - 0.3 && Math.sign(d.x) === a.facing) a.vx = -a.facing * m.pushBlock * 0.8;
     a.meter = Math.min(MAX_METER, a.meter + 2);
-    d.meter = Math.min(MAX_METER, d.meter + 3);
-    s.hitstop = Math.max(s.hitstop, 5);
-    s.events.push({ t: 'block', p: h.d, x: hx, y: hy });
     return;
   }
 
-  const dAir = isAirborne(d);
-  let scale = Math.max(0.35, 1 - 0.1 * d.comboCount);
-  if (dAir) scale *= 0.8;
-  if (h.counter) scale *= 1.25;
-  const dmg = Math.max(1, Math.round(m.damage * scale));
-  d.hp = Math.max(0, d.hp - dmg);
-  d.comboCount++;
-  d.comboDamage += dmg;
-  a.meter = Math.min(MAX_METER, a.meter + dmg * 0.6);
-  d.meter = Math.min(MAX_METER, d.meter + dmg * 0.45);
-  d.counterHit = h.counter;
-  d.hitLevel = m.level;
-  d.moveHit = false;
-  d.frozen = 0;
-
   const atWall = Math.abs(d.x) > ARENA_HALF_WIDTH - 0.3 && Math.sign(d.x) === a.facing;
-
-  if (d.hp <= 0) {
-    d.koed = true;
-    setAction(d, 'juggle');
-    d.vy = Math.max(m.launch ?? 0, 0.11);
-    d.vx = a.facing * 0.055;
-    d.y = Math.max(d.y, 0.02);
-    d.crouching = false;
-  } else if (m.launch || dAir || m.knockdown) {
-    setAction(d, 'juggle');
-    if (m.launch) d.vy = m.launch;
-    else if (dAir) d.vy = Math.max(0.02, 0.105 - 0.014 * d.juggleCount);
-    else d.vy = 0.075;
-    d.vx = a.facing * (m.knockdown && !m.launch ? 0.05 : m.pushHit * 0.35 + 0.012);
-    d.y = Math.max(d.y, 0.02);
-    d.juggleCount++;
-    d.crouching = false;
-  } else {
-    const wasCrouch = isCrouching(d);
-    setAction(d, 'hitstun');
-    d.crouching = wasCrouch;
-    d.stun = m.hitstun + (h.counter ? 6 : 0);
-    d.stunTotal = d.stun;
-    d.vx = a.facing * m.pushHit;
-  }
+  const dAir = isAirborne(d);
+  // heavy enders: powerPunch / roundhouse at the end of a chain or on a counter hit send the victim flying
+  const ender = (m.id === 'powerPunch' || m.id === 'roundhouse') && (a.chain >= 2 || h.counter);
+  const dmg = landHit(s, h.a, d, m, a.facing, hx, hy, {
+    counter: h.counter,
+    scale: a.autoStep >= 2 ? AUTO_DAMAGE : 1,
+    wallBounce: ender,
+    finisher: false,
+  });
+  a.meter = Math.min(MAX_METER, a.meter + dmg * 0.6);
   if (atWall) a.vx = -a.facing * m.pushHit * 0.7;
-
-  s.hitstop = Math.max(s.hitstop, HITSTOP[m.strength] + (h.counter ? 3 : 0));
-  s.events.push({ t: 'hit', p: h.a, x: hx, y: hy, strength: m.strength, counter: h.counter, dmg });
+  if (m.air && dAir && d.action === 'juggle' && !d.koed) {
+    if (d.flight === 'spike') {
+      // after the smash the attacker drops down to follow the bounce
+      a.vy = Math.min(a.vy, -0.04);
+    } else {
+      // air combos: the attacker floats along with the victim (it falls a little slower)
+      a.vy = d.vy * 0.85;
+      a.vx = d.vx;
+    }
+  }
 
   // BBL MAX dash strike connected: cinematic combo
   if (m.id === 'super' && d.hp > 0) startSuperCombo(s, a, d, h.a);
+}
+
+// ---------------------------------------------------------------------------
+// assists
+// ---------------------------------------------------------------------------
+function superRunning(s: GameState): boolean {
+  return isSuperAction(s.fighters[0].action) || isSuperAction(s.fighters[1].action);
+}
+
+/** the caller must be free (not hit, not knocked down, not thrown, not in a cinematic) */
+function canCallAssist(f: FighterState): boolean {
+  if (f.koed || f.frozen > 0) return false;
+  switch (f.action) {
+    case 'hitstun':
+    case 'blockstun':
+    case 'juggle':
+    case 'knockdown':
+    case 'getup':
+    case 'thrown':
+    case 'throwing':
+    case 'throwBreak':
+    case 'wallSplat':
+    case 'parried':
+    case 'superFlash':
+    case 'superCombo':
+    case 'superVictim':
+    case 'ko':
+    case 'win':
+    case 'lose':
+    case 'intro':
+      return false;
+  }
+  return true;
+}
+
+function callAssist(s: GameState, i: number, as: AssistState) {
+  const f = s.fighters[i];
+  const o = s.fighters[1 - i];
+  const dir: 1 | -1 = o.x >= f.x ? 1 : -1;
+  as.phase = 'enter';
+  as.frame = 0;
+  as.hit = false;
+  as.shot = false;
+  as.shotX = 0;
+  as.cooldown = ASSIST_COOLDOWN;
+  as.facing = dir;
+  // launcher / stun pop up right in front of the opponent, rush / beam come from behind the caller
+  as.x = as.kind === 'launcher' || as.kind === 'stun' ? o.x - dir * 0.7 : f.x - dir * 0.85;
+  as.x = clampAbs(as.x, -ARENA_HALF_WIDTH, ARENA_HALF_WIDTH);
+  as.y = 0;
+  f.assistReq = 0;
+  s.events.push({ t: 'assist', p: i });
+}
+
+function assistLeave(s: GameState, i: number, as: AssistState) {
+  as.phase = 'leave';
+  as.frame = 0;
+  s.events.push({ t: 'assistLeave', p: i });
+}
+
+/** can an assist's blow touch this fighter right now? */
+function assistCanTouch(d: FighterState): boolean {
+  if (d.invuln > 0 || d.flight === 'ko' || d.koed) return false;
+  switch (d.action) {
+    case 'knockdown':
+    case 'getup':
+    case 'ko':
+    case 'thrown':
+    case 'throwing':
+    case 'throwBreak':
+    case 'superFlash':
+    case 'superCombo':
+    case 'superVictim':
+    case 'win':
+    case 'lose':
+      return false;
+  }
+  return true;
+}
+
+/** an assist's blow reaches the opponent: normal hit pipeline (blockable, never parried), counts in the caller's combo */
+function assistStrike(s: GameState, i: number, as: AssistState, m: AssistMove, hx: number) {
+  const d = s.fighters[1 - i];
+  const caller = s.fighters[i];
+  as.hit = true;
+  const hy = isAirborne(d) ? d.y + 0.9 : m.hitY;
+  if (canBlockNow(d) && isHoldingGuard(d) && guardsHeight(d, m.level)) {
+    applyBlock(s, 1 - i, d, m, as.facing, hx, hy);
+    caller.meter = Math.min(MAX_METER, caller.meter + 1);
+    return;
+  }
+  const dmg = landHit(s, i, d, m, as.facing, hx, hy, {
+    counter: isCounterState(d),
+    scale: 1,
+    wallBounce: as.kind === 'rush',
+    finisher: as.kind !== 'stun',
+  });
+  caller.meter = Math.min(MAX_METER, caller.meter + dmg * 0.3);
+}
+
+/** stun assist: a goofy distraction. Guarded = pushback, otherwise a long dizzy (no damage) */
+function assistDizzy(s: GameState, i: number, as: AssistState, m: AssistMove) {
+  const d = s.fighters[1 - i];
+  as.hit = true;
+  const hx = d.x - as.facing * 0.2;
+  if (canBlockNow(d) && isHoldingGuard(d)) {
+    applyBlock(s, 1 - i, d, m, as.facing, hx, 1.5);
+    return;
+  }
+  const n = d.comboCount;
+  setAction(d, 'hitstun');
+  d.crouching = false;
+  // a free opener; it shrinks a lot when used to extend a combo
+  d.stun = Math.max(8, Math.round(m.hitstun * Math.max(DIZZY_DECAY, 1 - DIZZY_DECAY * n)));
+  d.stunTotal = d.stun;
+  d.hitLevel = 'mid';
+  d.dizzy = true;
+  d.vx = 0;
+  d.counterHit = false;
+  d.moveHit = false;
+  d.frozen = 0;
+  d.autoStep = 0;
+  d.sjWindow = 0;
+  d.flight = 'none';
+  d.comboCount++;
+  s.hitstop = Math.max(s.hitstop, 6);
+  // a verbal blow: no spark (see HitKind 'word')
+  s.events.push({ t: 'hit', p: i, x: hx, y: 1.6, strength: 'light', counter: false, dmg: 0, kind: 'word' });
+}
+
+function runAssistAttack(s: GameState, i: number, as: AssistState, m: AssistMove, o: FighterState) {
+  const t = as.frame;
+  switch (as.kind) {
+    case 'rush': {
+      if (as.hit || t <= m.startup || t > m.startup + m.active) return;
+      as.x = clampAbs(as.x + as.facing * RUSH_SPEED, -ARENA_HALF_WIDTH, ARENA_HALF_WIDTH);
+      const dx = (o.x - as.x) * as.facing;
+      if (dx <= m.reach + BODY_RADIUS && dx >= -0.2 && o.y < 1.6 && assistCanTouch(o)) assistStrike(s, i, as, m, as.x + as.facing * Math.max(0, dx - 0.1));
+      return;
+    }
+    case 'launcher':
+    case 'stun': {
+      if (as.hit || t < m.startup || t >= m.startup + m.active) return;
+      const dx = (o.x - as.x) * as.facing;
+      if (dx > m.reach + BODY_RADIUS || dx < -0.3 || !assistCanTouch(o)) return;
+      if (as.kind === 'launcher') {
+        if (o.y < 1.6) assistStrike(s, i, as, m, as.x + as.facing * Math.max(0, dx - 0.1));
+      } else if (!isAirborne(o)) assistDizzy(s, i, as, m);
+      return;
+    }
+    case 'beam':
+      if (t === m.startup) {
+        as.shot = true;
+        as.shotX = as.x + as.facing * 0.5;
+      }
+      return;
+  }
+}
+
+/**
+ * Assists: enter (poof in, untouchable) -> attack -> leave -> off. `live` = during the fight
+ * (otherwise: K.O. / round over, the assists just leave).
+ */
+function updateAssists(s: GameState, live: boolean) {
+  const sup = superRunning(s);
+  for (let i = 0; i < 2; i++) {
+    const as = s.assists[i];
+    if (!as) continue;
+    if (live && as.cooldown > 0) as.cooldown--;
+    const o = s.fighters[1 - i];
+    const m = ASSIST_MOVES[as.kind];
+    // a BBL MAX cinematic or the end of the round sends the assist away
+    if (!live || sup) {
+      as.shot = false;
+      if (as.phase === 'enter' || as.phase === 'attack') assistLeave(s, i, as);
+    }
+    // beam projectile: travels until the first contact or the edge of the arena
+    if (as.shot) {
+      as.shotX += as.facing * BEAM_SPEED;
+      const dx = (o.x - as.shotX) * as.facing;
+      if (dx <= m.reach && dx >= -m.reach && o.y < BEAM_Y - 0.3 && assistCanTouch(o)) {
+        as.shot = false;
+        assistStrike(s, i, as, m, as.shotX);
+      } else if (Math.abs(as.shotX) > ARENA_HALF_WIDTH + 0.5) as.shot = false;
+    }
+    if (as.phase === 'off') continue;
+    as.frame++;
+    switch (as.phase) {
+      case 'enter':
+        if (as.frame >= m.enter) {
+          as.phase = 'attack';
+          as.frame = 0;
+        }
+        break;
+      case 'attack':
+        runAssistAttack(s, i, as, m, o);
+        if (as.frame >= m.total) assistLeave(s, i, as);
+        break;
+      case 'leave':
+        if (as.frame >= m.leave) {
+          as.phase = 'off';
+          as.frame = 0;
+        }
+        break;
+    }
+  }
+}
+
+function tryCallAssists(s: GameState) {
+  const sup = superRunning(s);
+  for (let i = 0; i < 2; i++) {
+    const f = s.fighters[i];
+    if (f.assistReq <= 0) continue;
+    const as = s.assists[i];
+    if (as && !sup && as.phase === 'off' && as.cooldown === 0 && !as.shot && canCallAssist(f)) callAssist(s, i, as);
+    else f.assistReq--;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1063,6 +1771,15 @@ function resetRound(s: GameState) {
     f.wins = wins;
     f.meter = meter;
     f.ult = ult;
+  }
+  for (const as of s.assists) {
+    if (!as) continue;
+    as.phase = 'off';
+    as.frame = 0;
+    as.hit = false;
+    as.shot = false;
+    as.shotX = 0;
+    as.cooldown = 0;
   }
   s.timer = ROUND_TIME;
   s.hitstop = 0;
@@ -1142,6 +1859,7 @@ export function step(s: GameState, inputs: readonly [number, number]) {
       if (!slow) {
         for (let i = 0; i < 2; i++) processInput(s, s.fighters[i], 0);
         simulateFighters(s);
+        updateAssists(s, false);
       }
       if (s.phaseFrame >= KO_FRAMES) {
         let winner: number;
@@ -1154,6 +1872,7 @@ export function step(s: GameState, inputs: readonly [number, number]) {
 
     case 'roundOver':
       simulateFighters(s);
+      updateAssists(s, false);
       // a winner that was still on the floor celebrates once back up
       for (let i = 0; i < 2; i++) {
         const f = s.fighters[i];
@@ -1227,6 +1946,7 @@ function runFight(s: GameState, inputs: readonly [number, number]) {
     return;
   }
 
+  tryCallAssists(s);
   updateFighter(s, a, b, 0);
   updateFighter(s, b, a, 1);
   physics(s, a, 0);
@@ -1244,6 +1964,7 @@ function runFight(s: GameState, inputs: readonly [number, number]) {
     if (h1) applyHit(s, h1);
     if (h2) applyHit(s, h2);
   }
+  updateAssists(s, true);
 
   // the clock and KOs wait for the BBL MAX cinematic to finish
   if (isSuperAction(a.action) || isSuperAction(b.action)) return;
@@ -1285,6 +2006,13 @@ export function checksum(s: GameState): number {
     mix(f.hp);
     mix(f.actionFrame);
     mix(f.meter);
+  }
+  for (const as of s.assists) {
+    if (!as) continue;
+    mix(as.frame);
+    mix(as.x);
+    mix(as.cooldown);
+    mix(as.shot ? as.shotX : -99);
   }
   mix(s.timer);
   return h >>> 0;
