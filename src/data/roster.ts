@@ -248,7 +248,7 @@ export const ROSTER: FighterDef[] = [
   {
     id: 'alex',
     name: 'ALEX',
-    title: 'Boucles et uppercuts',
+    title: 'Mèche rebelle, droite fatale',
     face: 'faces/alex.jpg',
     hair: { style: 'midlong', color: '#6f4f32' },
     outfit: {
