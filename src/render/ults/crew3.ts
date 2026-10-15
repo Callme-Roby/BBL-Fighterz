@@ -1,5 +1,6 @@
 import type { Clip, Euler3, Pose } from '../poses';
 import { kit } from '../ultimatePoses';
+import { META_STRETCH } from '../../sim/ults/timing';
 
 /**
  * Clips of the BBL MAX cinematics of src/sim/ults/crew3.ts, keyed by full clip name:
@@ -17,8 +18,16 @@ export function crew3Clips(): Record<string, Clip> {
     for (const [role, cl] of Object.entries(c)) out[`ult:${id}:${role}`] = cl;
   };
   add('pacifist', pacifist());
-  add('meta', meta());
+  // same time stretch as the script (src/sim/ults/crew3.ts META_STRETCH)
+  const m = meta();
+  for (const k of Object.keys(m) as (keyof typeof m)[]) m[k] = stretchClip(m[k], META_STRETCH);
+  add('meta', m);
   return out;
+}
+
+/** Every key frame multiplied by `k` (rounded the same way as the script's frames). */
+function stretchClip(c: Clip, k: number): Clip {
+  return { ...c, length: Math.round(c.length * k), keys: c.keys.map((key) => ({ ...key, f: Math.round(key.f * k) })) };
 }
 
 const { P, K, clip, rewrap, mirror, plant, strike, react, crash, J, OPEN_LEGS, DAZED, TWIST_L, TWIST_L2, TWIST_R2, CHIN_UP, DOUBLE, SIT, SMASHED, KNEEL, LYING_BOUNCE, STANCE, LYING, HIT_HIGH, HIT_MID, ATTACKS } = kit;

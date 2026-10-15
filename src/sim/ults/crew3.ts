@@ -1,4 +1,5 @@
 import { relDist, type CineEvent, type CurveKeys, type UltimateScript } from '../ultimates';
+import { META_STRETCH } from './timing';
 
 /**
  * BBL MAX scripts: Rayan (pacifist… then boxer) and Billel (League of Legends meta monologue).
@@ -9,7 +10,44 @@ import { relDist, type CineEvent, type CurveKeys, type UltimateScript } from '..
  * One script frame lasts 1/36 s (cinematics play at 3/5 speed).
  */
 export function crew3Scripts(): UltimateScript[] {
-  return [pacifist(), meta()];
+  // Billel's monologue is played 1.5× slower so the voice has time to say every line
+  return [pacifist(), stretchScript(meta(), META_STRETCH)];
+}
+
+
+/** Every frame number of a script multiplied by `k` (rounded): same story, slower. */
+function stretchScript(u: UltimateScript, k: number): UltimateScript {
+  const F = (f: number) => Math.round(f * k);
+  const keys = (c: CurveKeys | undefined) => c?.map(([f, v]) => [F(f), v] as [number, number]);
+  const range = (r: [number, number]) => [F(r[0]), F(r[1])] as [number, number];
+  const c = u.cine;
+  return {
+    ...u,
+    length: F(u.length),
+    hits: u.hits.map((h) => ({ ...h, f: F(h.f) })),
+    ay: keys(u.ay)!,
+    vy: keys(u.vy)!,
+    ax: keys(u.ax),
+    dist: keys(u.dist)!,
+    fall: F(u.fall),
+    cams: u.cams.map(([f, shot]) => [F(f), shot]),
+    victimTurn: u.victimTurn?.map(range),
+    selfHits: u.selfHits?.map((h) => ({ ...h, f: F(h.f) })),
+    cine: c && {
+      ...c,
+      swaps: c.swaps?.map((w) => ({ ...w, from: F(w.from), to: F(w.to) })),
+      actors: c.actors?.map((a) => ({ ...a, from: F(a.from), to: F(a.to), x: keys(a.x)!, y: keys(a.y), turn: a.turn?.map(range) })),
+      props: c.props?.map((p) => ({ ...p, from: F(p.from), to: F(p.to) })),
+      fade: keys(c.fade),
+      light: keys(c.light),
+      backdrop: c.backdrop?.map((b) => ({ ...b, from: F(b.from), to: F(b.to) })),
+      events: c.events?.map((e) => {
+        const o = { ...e, f: F(e.f) } as CineEvent & { dur?: number };
+        if (o.dur !== undefined) o.dur = F(o.dur);
+        return o;
+      }),
+    },
+  };
 }
 
 // (function declarations: hoisted, so they are usable even through the import cycle with '../ultimates')
@@ -231,7 +269,7 @@ function meta(): UltimateScript {
         { kind: 'tunnel', from: 312, to: 330 },
       ],
       events: [
-        { f: 4, t: 'say', who: 'a', text: 'Alors en fait, la bot c’est full enchanteurs, à cause des power spikes…', rate: 1.3, dur: 110 },
+        { f: 4, t: 'say', who: 'a', text: 'Alors en fait, la bot c’est full enchanteurs, à cause des power spikes…', rate: 1.0, dur: 110 },
         { f: 22, t: 'flash', color: '#b46cff', amt: 0.45 },
         sfx(22, 'powerUp', 0.6, 1.2),
         txt(26, 'PATCH 14.3', 'caption', 50, '#7ad0ff'),
@@ -242,7 +280,7 @@ function meta(): UltimateScript {
         txt(100, 'POWER SPIKE', 'punch', 30, '#ffd23a'),
         sfx(100, 'whiff', 0.5, 1.2),
         { f: 102, t: 'fx', fx: 'stars', at: 'v', bone: 'head' },
-        { f: 116, t: 'say', who: 'a', text: '…donc ton jungler invade niveau un, sinon adieu grubs, tempo et drake…', rate: 1.3, dur: 108 },
+        { f: 116, t: 'say', who: 'a', text: '…donc ton jungler invade niveau un, sinon adieu grubs, tempo et drake…', rate: 1.0, dur: 108 },
         { f: 124, t: 'flash', color: '#b46cff', amt: 0.3 },
         txt(148, 'INVADE NIV. 1', 'punch', 30, '#7ad0ff'),
         sfx(148, 'whiff', 0.5, 1.4),
@@ -252,7 +290,7 @@ function meta(): UltimateScript {
         sfx(206, 'bonk', 0.5, 1.3),
         { f: 210, t: 'fx', fx: 'stars', at: 'v', bone: 'head' },
         { f: 222, t: 'flash', color: '#b46cff', amt: 0.3 },
-        { f: 226, t: 'say', who: 'a', text: '…wave management, freeze, slow push, crash : zéro prio. Jungle gap.', rate: 1.3, dur: 110 },
+        { f: 226, t: 'say', who: 'a', text: '…wave management, freeze, slow push, crash : zéro prio. Jungle gap.', rate: 1.0, dur: 110 },
         txt(252, 'WAVE MANAGEMENT', 'punch', 28, '#7ad0ff'),
         sfx(252, 'whiff', 0.5, 1.4),
         { f: 262, t: 'fx', fx: 'smoke', at: 'v', bone: 'head', scale: 0.6 },
@@ -266,7 +304,7 @@ function meta(): UltimateScript {
         sfx(330, 'recordStop'),
         { f: 330, t: 'flash', color: '#ffffff', amt: 0.25 },
         { f: 336, t: 'fx', fx: 'question', at: 'a' },
-        { f: 338, t: 'say', who: 'a', text: '…Hé ? T’es où ?', rate: 1.0, dur: 40 },
+        { f: 338, t: 'say', who: 'a', text: '…Hé ? T’es où ?', rate: 0.95, dur: 40 },
         // the victim, K.O. on the floor
         { f: 358, t: 'fx', fx: 'stars', at: 'v', bone: 'head' },
         txt(360, 'K.O. PAR SURCHARGE D’INFORMATIONS', 'punch', 40, '#ffd23a'),
