@@ -1,4 +1,5 @@
-import Peer, { type DataConnection, type PeerOptions } from 'peerjs';
+// PeerJS (+ its WebRTC shims) is only downloaded when a game goes online
+import type { DataConnection, Peer, PeerOptions } from 'peerjs';
 import type { FighterDef } from '../data/roster';
 import type { Tournament } from '../game/tournament';
 
@@ -6,10 +7,15 @@ import type { Tournament } from '../game/tournament';
  * Peer-to-peer link between two browsers (WebRTC data channel via PeerJS).
  * The free public PeerJS broker is only used for the initial handshake; the
  * game traffic then goes directly between the two players.
+ *
+ * Two channels share the connection: PeerJS's reliable ordered one for
+ * everything, plus a lossy unordered one for the fight inputs and pings (a lost
+ * packet must not hold back the ones behind it: the rollback session repeats the
+ * unacknowledged inputs in every packet anyway).
  */
 
 /** bump when the messages or the simulation change (both browsers must run the same game) */
-export const NET_VERSION = 'bbl-3';
+export const NET_VERSION = 'bbl-4';
 const ID_PREFIX = 'bblfighterz-';
 /** online tournaments: the organiser's peer id is ID_PREFIX + TN_TAG + code */
 const TN_TAG = 't';
@@ -58,7 +64,8 @@ export type NetMsg =
   | { t: 'stage'; id: string; locked: boolean }
   /** host → guest: the fight starts (a1 / a2 = assists of P1 / P2, the same on both browsers) */
   | { t: 'start'; stage: string; p1: FighterDef; p2: FighterDef; a1: FighterDef | null; a2: FighterDef | null; seed: number; rounds: number }
-  | { t: 'in'; f: number; b: number[]; adv: number }
+  /** inputs of frames f.. (b), frame advantage, a = last of your frames I have (contiguous), d = my input delay */
+  | { t: 'in'; f: number; b: number[]; adv: number; a: number; d: number }
   | { t: 'sum'; f: number; h: number }
   | { t: 'ready' }
   | { t: 'rematch' }
@@ -101,13 +108,22 @@ function randomCode(): string {
   return s;
 }
 
+/** SCTP stream id of the inputs channel (negotiated: both sides create it, no handshake) */
+const FAST_CHANNEL_ID = 42;
+
 export class NetLink {
   private listeners = new Set<NetListener>();
   private closeListeners = new Set<(reason: string) => void>();
   private conn: DataConnection | null = null;
   private closed = false;
+  /** lossy unordered channel (inputs, pings) */
+  private fast: RTCDataChannel | null = null;
+  /** something arrived on `fast`: the other side has it too (until then the reliable channel carries a copy) */
+  private fastOk = false;
   /** smoothed round-trip time in ms */
   rtt = 0;
+  /** last round-trip times (ms) */
+  private rttSamples: number[] = [];
   private pingTimer = 0;
 
   private constructor(
@@ -174,23 +190,62 @@ export class NetLink {
 
   private attach(c: DataConnection) {
     this.conn = c;
-    c.on('data', (d) => {
-      const m = d as NetMsg;
-      if (m.t === 'ping') {
-        this.send({ t: 'pong', ts: m.ts });
-        return;
-      }
-      if (m.t === 'pong') {
-        const r = performance.now() - m.ts;
-        this.rtt = this.rtt ? this.rtt * 0.8 + r * 0.2 : r;
-        return;
-      }
-      // snapshot: a listener may (un)subscribe others while handling the message
-      for (const l of [...this.listeners]) l(m);
-    });
+    c.on('data', (d) => this.receive(d as NetMsg));
     c.on('close', () => this.handleClose("L'adversaire s'est déconnecté."));
     c.on('error', () => this.handleClose('Erreur de connexion.'));
-    this.pingTimer = window.setInterval(() => this.send({ t: 'ping', ts: performance.now() }), 1000);
+    const ping = () => this.sendFast({ t: 'ping', ts: performance.now() });
+    const opened = () => {
+      this.openFast(c);
+      // first ping right away: the input delay of a fight is chosen from the ping
+      ping();
+    };
+    if (c.open) opened();
+    else c.on('open', opened);
+    this.pingTimer = window.setInterval(ping, 1000);
+  }
+
+  private receive(m: NetMsg) {
+    if (m.t === 'ping') {
+      this.sendFast({ t: 'pong', ts: m.ts });
+      return;
+    }
+    if (m.t === 'pong') {
+      const r = performance.now() - m.ts;
+      this.rtt = this.rtt ? this.rtt * 0.8 + r * 0.2 : r;
+      this.rttSamples.push(r);
+      if (this.rttSamples.length > 9) this.rttSamples.shift();
+      return;
+    }
+    // snapshot: a listener may (un)subscribe others while handling the message
+    for (const l of [...this.listeners]) l(m);
+  }
+
+  /** Inputs channel on the same WebRTC connection (unordered, never re-sent). */
+  private openFast(c: DataConnection) {
+    if (this.fast) return;
+    try {
+      const pc = c.peerConnection;
+      if (!pc) return;
+      const dc = pc.createDataChannel('bbl-in', { negotiated: true, id: FAST_CHANNEL_ID, ordered: false, maxRetransmits: 0 });
+      dc.onmessage = (e) => {
+        this.fastOk = true;
+        try {
+          this.receive(JSON.parse(e.data as string) as NetMsg);
+        } catch {
+          /* ignore */
+        }
+      };
+      dc.onclose = () => {
+        if (this.fast === dc) {
+          this.fast = null;
+          this.fastOk = false;
+        }
+      };
+      this.fast = dc;
+    } catch {
+      // not supported: everything goes through the reliable channel
+      this.fast = null;
+    }
   }
 
   private handleClose(reason: string) {
@@ -198,6 +253,15 @@ export class NetLink {
     this.closed = true;
     window.clearInterval(this.pingTimer);
     for (const l of [...this.closeListeners]) l(reason);
+  }
+
+  /**
+   * Typical round-trip time (median of the last pings, ms; 0 = unknown): a page
+   * busy loading a fight answers late, a single slow pong must not raise the input delay.
+   */
+  get rttTypical(): number {
+    const s = [...this.rttSamples].sort((a, b) => a - b);
+    return s.length ? s[(s.length - 1) >> 1] : 0;
   }
 
   get connected() {
@@ -212,6 +276,25 @@ export class NetLink {
         console.warn('send failed', e);
       }
     }
+  }
+
+  /**
+   * Lossy, unordered send (fight inputs, pings): may be lost or overtaken.
+   * Until the other side has proven it listens on that channel, a copy also
+   * goes through the reliable one.
+   */
+  sendFast(m: NetMsg) {
+    if (this.closed) return;
+    const dc = this.fast;
+    if (dc && dc.readyState === 'open') {
+      try {
+        dc.send(JSON.stringify(m));
+      } catch {
+        /* buffer full or closing: the next packet repeats the inputs */
+      }
+      if (this.fastOk) return;
+    }
+    this.send(m);
   }
 
   on(l: NetListener): () => void {
@@ -230,6 +313,7 @@ export class NetLink {
     window.clearInterval(this.pingTimer);
     setTimeout(() => {
       try {
+        this.fast?.close();
         this.conn?.close();
         if (this.ownsPeer) this.peer.destroy();
       } catch {
@@ -303,7 +387,19 @@ function peerOptions(): PeerOptions {
   return opts;
 }
 
-function openPeer(id?: string): Promise<Peer> {
+let peerLib: Promise<typeof import('peerjs')> | null = null;
+
+/** Starts downloading PeerJS (e.g. when the online menu opens). */
+export function preloadNet(): Promise<typeof import('peerjs')> {
+  peerLib ??= import('peerjs').catch((e) => {
+    peerLib = null;
+    throw e;
+  });
+  return peerLib;
+}
+
+async function openPeer(id?: string): Promise<Peer> {
+  const { Peer } = await preloadNet();
   return new Promise((resolve, reject) => {
     const peer = id ? new Peer(id, peerOptions()) : new Peer(peerOptions());
     const timer = window.setTimeout(() => reject(new Error('Le serveur de mise en relation ne répond pas.')), 12000);

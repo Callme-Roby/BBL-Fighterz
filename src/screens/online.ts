@@ -1,7 +1,7 @@
 import { audio } from '../audio/audio';
 import type { App, Screen } from '../app';
 import { input } from '../input/input';
-import { inviteUrl, NET_VERSION, NetLink, type NetMsg } from '../net/peer';
+import { inviteUrl, NET_VERSION, NetLink, preloadNet, type NetMsg } from '../net/peer';
 import { Showroom } from '../render/showroom';
 import { h, Menu, uiRoot } from '../ui/dom';
 import { goMenu, goSelect } from './flow';
@@ -21,6 +21,8 @@ export class OnlineScreen implements Screen {
 
   enter() {
     audio.playMusic('select');
+    // the network code is downloaded while the player reads the menu
+    preloadNet().catch(() => undefined);
     this.body = h('div', { class: 'screen dim online-screen' });
     uiRoot().append(this.body);
     if (this.autoJoin) this.join(this.autoJoin);

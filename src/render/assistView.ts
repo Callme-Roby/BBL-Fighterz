@@ -103,8 +103,25 @@ export class AssistView {
     this.shotKind = assistOf(def).shot ?? 'words';
   }
 
+  private loading: Promise<void> | null = null;
+
   /** Loads the face and builds the model (the assist stays invisible until then). */
-  async load(): Promise<void> {
+  load(): Promise<void> {
+    this.loading ??= this.build();
+    return this.loading;
+  }
+
+  /** Model + projectile built ahead of the first call (both hidden). */
+  async prepare(): Promise<void> {
+    try {
+      await this.load();
+    } catch {
+      /* missing photo: the projectile is still prepared */
+    }
+    if (!this.disposed && assistOf(this.def).kind === 'beam') this.ensureShot().visible = false;
+  }
+
+  private async build(): Promise<void> {
     const face = await loadFace(this.def);
     if (this.disposed) return;
     this.view = new FighterView(this.def, face);

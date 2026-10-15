@@ -215,6 +215,40 @@ export class RetroPipeline {
     this.renderer.render(this.postScene, this.postCam);
   }
 
+  /**
+   * Compiles the shaders of everything in `scene` (hidden objects included) for
+   * the low-res target and uploads its textures, so that the first frame showing
+   * something new does not stall.
+   */
+  async prewarm(scene: THREE.Scene, camera: THREE.Camera): Promise<void> {
+    const r = this.renderer;
+    // same render target as the real frames: same shader variants
+    r.setRenderTarget(this.rt);
+    let ready: Promise<unknown>;
+    try {
+      ready = r.compileAsync(scene, camera);
+    } finally {
+      r.setRenderTarget(null);
+    }
+    await ready;
+    const textures = new Set<THREE.Texture>();
+    const tex = (v: unknown) => {
+      if (v && (v as THREE.Texture).isTexture && !(v as { isRenderTargetTexture?: boolean }).isRenderTargetTexture) textures.add(v as THREE.Texture);
+    };
+    scene.traverse((o) => {
+      const m = (o as THREE.Mesh).material;
+      if (!m) return;
+      for (const mat of Array.isArray(m) ? m : [m]) {
+        // without KHR_parallel_shader_compile the driver links a program on its first use: now
+        (r.properties.get(mat) as { currentProgram?: { getUniforms(): unknown } }).currentProgram?.getUniforms();
+        for (const v of Object.values(mat)) tex(v);
+        const u = (mat as THREE.ShaderMaterial).uniforms;
+        if (u) for (const x of Object.values(u)) tex(x?.value);
+      }
+    });
+    for (const t of textures) r.initTexture(t);
+  }
+
   /** Render directly at low res into an offscreen canvas (thumbnails). */
   snapshot(scene: THREE.Scene, camera: THREE.Camera, clearColor: THREE.Color, w: number, h: number): string {
     const rt = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });

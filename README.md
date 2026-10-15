@@ -165,6 +165,12 @@ automatiquement à l'adversaire en ligne.
 - Le combat utilise un netcode **rollback** (style GGPO) : chaque joueur voit ses propres
   coups sans délai, les entrées de l'adversaire sont prédites puis corrigées.
   La simulation est 100 % déterministe (60 images/s, mêmes calculs des deux côtés).
+- Les touches passent par un canal rapide sans ordre ni renvoi : chaque paquet répète toutes les
+  touches pas encore confirmées, donc un paquet perdu est couvert par le suivant (16 ms plus tard)
+  au lieu de bloquer tous les autres. Le délai de touche (2 à 5 images) est choisi au début de
+  chaque combat d'après le ping.
+- Pendant l'écran VS, tout ce que le combat peut afficher (assists, effets, accessoires des
+  BBL MAX) est préparé à l'avance : pas de micro-gel la première fois qu'un effet apparaît.
 - Si la connexion échoue derrière certains réseaux d'entreprise / 4G très filtrés, réessaie sur
   un autre réseau (les relais TURN publics de PeerJS sont utilisés en secours).
 - Option : ton propre serveur PeerJS (`npx peerjs --port 9000`) via les variables d'environnement

@@ -298,6 +298,25 @@ function tex() {
   return textures;
 }
 
+/** every cinematic effect (a missing one is a compile error) */
+const ALL_CINE_FX = Object.keys({
+  explosion: 1,
+  muzzle: 1,
+  poof: 1,
+  powerAura: 1,
+  stars: 1,
+  sweat: 1,
+  question: 1,
+  exclaim: 1,
+  shine: 1,
+  smoke: 1,
+  confetti: 1,
+  pain: 1,
+  veins: 1,
+  web: 1,
+  speed: 1,
+} satisfies Record<CineFxId, 1>) as CineFxId[];
+
 export class Effects {
   readonly group = new THREE.Group();
   private parts: Particle[] = [];
@@ -659,6 +678,32 @@ export class Effects {
       (d.mesh.material as THREE.Material).dispose();
     }
     this.decals.length = 0;
+  }
+
+  /**
+   * One of every effect (shader / texture warm-up before a fight). The instance
+   * is never drawn nor updated: it only keeps those materials, and so their
+   * compiled shaders, alive until it is disposed.
+   */
+  sampleAll(stageId: string) {
+    const p = new THREE.Vector3(0, 1, 0);
+    this.hit(0, 1, 'heavy', true);
+    this.hit(0, 1, 'light', false);
+    this.block(0, 1);
+    this.parry(0, 1);
+    this.dust(0, true);
+    this.aura(p);
+    for (const fx of ALL_CINE_FX) this.cine(fx, p);
+    this.trail(p);
+    this.impactBurst(0, 1, 3, 1, true);
+    this.wallCrack(0, 1, 1, true);
+    this.wallBreak(0, 1, 1, stageId);
+    this.groundSlam(0, true);
+    this.burst(0, 1, 1, 'superJump');
+    this.burst(0, 1, 1, 'airDash');
+    this.dizzyStars(p, 60);
+    for (const g of ['heart', 'note', 'question', 'exclaim'] as const) this.glyph(g, p);
+    for (const k of ['grenade', 'web', 'words'] as const) this.shotImpact(k, p);
   }
 
   /** Frees everything (geometries and materials owned by this instance). */

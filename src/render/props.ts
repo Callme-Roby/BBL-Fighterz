@@ -173,6 +173,20 @@ function headgear(hs: number): THREE.Group {
   return g;
 }
 
+/** every prop / projectile (a missing one is a compile error) */
+export const ALL_PROPS = Object.keys({
+  smg: 1,
+  grenade: 1,
+  bazooka: 1,
+  mic: 1,
+  shades: 1,
+  phone: 1,
+  rose: 1,
+  glove: 1,
+  headgear: 1,
+} satisfies Record<PropId, 1>) as PropId[];
+export const ALL_PROJECTILES = Object.keys({ grenade: 1, rocket: 1, web: 1, bullet: 1 } satisfies Record<ProjectileKind, 1>) as ProjectileKind[];
+
 /** Builds a prop; `headScale` sizes the head props to the wearer's head. */
 export function buildProp(id: PropId, headScale = 1.15): THREE.Object3D {
   switch (id) {

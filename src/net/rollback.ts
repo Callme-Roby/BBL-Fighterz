@@ -1,18 +1,49 @@
 import { checksum, cloneState, step } from '../sim/sim';
 import type { GameState, SimEvent } from '../sim/types';
-import type { NetLink, NetMsg } from './peer';
+import type { NetMsg } from './peer';
 
 /**
  * GGPO-style rollback session for 2 players.
- *  - local inputs are delayed by INPUT_DELAY frames (hides small latencies)
+ *  - local inputs are delayed by a few frames (hides small latencies); each side
+ *    picks its own delay from the ping when the fight starts (see `delayForPing`)
  *  - missing remote inputs are predicted (= last known input)
  *  - when a real remote input differs from the prediction, the game state is
  *    restored to that frame and re-simulated up to the present
+ *  - inputs travel on a lossy, unordered channel: every packet repeats all the
+ *    inputs the other side has not acknowledged yet, so a lost packet is covered
+ *    by the next one (16 ms later) instead of being re-sent after a round trip
  */
 
-const INPUT_DELAY = 2;
 const MAX_PREDICTION = 10;
 const RING = 256;
+/** at most this many inputs per packet (the oldest unacknowledged first) */
+const MAX_BATCH = 64;
+/** time sync: frame advantages averaged over this many ticks before deciding to wait */
+const SYNC_SAMPLES = 30;
+/** time sync: ticks ignored after waiting (the other side sees the change one round trip later) */
+const SYNC_SETTLE = 20;
+
+/**
+ * Input delay (frames) for a round-trip time: 2 frames up to ~120 ms of ping,
+ * then one more per ~33 ms so rollbacks stay short (at most 5 frames).
+ */
+export function delayForPing(rttMs: number): number {
+  if (!(rttMs > 0)) return 2;
+  const oneWay = rttMs / 2 / (1000 / 60);
+  return Math.max(2, Math.min(5, Math.round(oneWay) - 2));
+}
+
+/** What the session needs from the network link. */
+export interface InputLink {
+  /** smoothed round-trip time (ms, shown in the HUD) */
+  readonly rtt: number;
+  /** typical round-trip time (ms) for the input delay (default: rtt) */
+  readonly rttTypical?: number;
+  send(m: NetMsg): void;
+  /** lossy, unordered channel for the inputs (falls back to `send`) */
+  sendFast(m: NetMsg): void;
+  on(l: (m: NetMsg) => void): () => void;
+}
 
 export interface TimedEvent {
   frame: number;
@@ -21,6 +52,8 @@ export interface TimedEvent {
 
 export class RollbackSession {
   state: GameState;
+  /** local input delay (frames), chosen at the first tick */
+  delay = 0;
   private local = new Int16Array(RING).fill(-1);
   private remote = new Int16Array(RING).fill(-1);
   private usedRemote = new Int16Array(RING).fill(-1);
@@ -28,11 +61,23 @@ export class RollbackSession {
   /** highest frame index for which the remote input is known (contiguous) */
   private remoteConfirmed = -1;
   private remoteHighest = -1;
+  /** the other side's input delay (frames) */
+  private remoteDelay = 2;
+  /** highest of our frames the other side has acknowledged (contiguous) */
+  private remoteAck = -1;
+  /** last frame of the newest input packet received (older packets arriving late are ignored for the time sync) */
+  private remoteNewest = -1;
   private lastRemoteInput = 0;
   private rollbackFrom = -1;
   private remoteAdvantage = 0;
   private localAdvantage = 0;
   private stallCounter = 0;
+  /** time sync: sums of the local / remote frame advantages since the last decision */
+  private syncLocal = 0;
+  private syncRemote = 0;
+  private syncSamples = -SYNC_SETTLE;
+  /** frames still to wait for the other side */
+  private syncWait = 0;
   private unsub: () => void;
   private pendingSums = new Map<number, number>();
   desynced = false;
@@ -41,15 +86,20 @@ export class RollbackSession {
   constructor(
     initial: GameState,
     readonly localPlayer: 0 | 1,
-    private link: NetLink,
+    private link: InputLink,
+    /** fixed delay (tests); default: from the ping at the first tick */
+    delay?: number,
   ) {
     this.state = initial;
-    for (let f = 0; f < INPUT_DELAY; f++) {
-      this.local[f % RING] = 0;
-      this.remote[f % RING] = 0;
-    }
-    this.remoteConfirmed = INPUT_DELAY - 1;
+    if (delay) this.setDelay(delay);
     this.unsub = link.on((m) => this.onMessage(m));
+  }
+
+  /** The first `delay` frames have no local input (sent as 0 like any other). */
+  private setDelay(d: number) {
+    this.delay = d;
+    for (let f = 0; f < d; f++) this.local[f % RING] = 0;
+    this.localSentUpTo = d - 1;
   }
 
   dispose() {
@@ -67,7 +117,13 @@ export class RollbackSession {
   private onMessage(m: NetMsg) {
     if (m.t === 'in') {
       for (let i = 0; i < m.b.length; i++) this.receiveRemote(m.f + i, m.b[i]);
-      this.remoteAdvantage = m.adv;
+      if (m.a > this.remoteAck) this.remoteAck = m.a;
+      const last = m.f + m.b.length - 1;
+      if (last >= this.remoteNewest) {
+        this.remoteNewest = last;
+        this.remoteAdvantage = m.adv;
+        this.remoteDelay = m.d;
+      }
     } else if (m.t === 'sum') {
       const mine = this.pendingSums.get(m.f);
       if (mine !== undefined && mine !== m.h && !this.desynced) {
@@ -109,6 +165,7 @@ export class RollbackSession {
    */
   tick(localBits: number): TimedEvent[] {
     const out: TimedEvent[] = [];
+    if (!this.delay) this.setDelay(delayForPing(this.link.rttTypical || this.link.rtt));
 
     // 1. rollback if a misprediction was detected
     if (this.rollbackFrom >= 0 && this.rollbackFrom < this.frame) {
@@ -123,15 +180,27 @@ export class RollbackSession {
     }
     this.rollbackFrom = -1;
 
-    // 2. time sync: if we are ahead of the other player, wait a frame now and then
-    this.localAdvantage = this.frame - (this.remoteHighest - INPUT_DELAY);
-    const diff = (this.localAdvantage - this.remoteAdvantage) / 2;
-    if (diff >= 1.5 && this.stallCounter <= 0) {
-      this.stallCounter = 4;
-      this.sendLocal();
-      return out;
-    }
+    // 2. time sync: if we run ahead of the other player, wait a frame now and then.
+    // The advantages are averaged so that network jitter alone never makes both sides wait.
+    this.localAdvantage = this.frame - (this.remoteHighest - this.remoteDelay);
     if (this.stallCounter > 0) this.stallCounter--;
+    if (this.syncWait > 0) {
+      if (this.stallCounter <= 0) {
+        this.syncWait--;
+        this.stallCounter = 3;
+        if (this.syncWait === 0) this.syncSamples = -SYNC_SETTLE;
+        this.sendLocal();
+        return out;
+      }
+    } else if (this.remoteNewest >= 0 && ++this.syncSamples > 0) {
+      this.syncLocal += this.localAdvantage;
+      this.syncRemote += this.remoteAdvantage;
+      if (this.syncSamples >= SYNC_SAMPLES) {
+        const diff = (this.syncLocal - this.syncRemote) / this.syncSamples / 2;
+        this.syncLocal = this.syncRemote = this.syncSamples = 0;
+        if (diff >= 1) this.syncWait = Math.min(6, Math.round(diff));
+      }
+    }
 
     // 3. too far ahead of confirmed remote inputs: wait
     if (this.frame - this.remoteConfirmed > MAX_PREDICTION) {
@@ -140,7 +209,7 @@ export class RollbackSession {
     }
 
     // 4. register local input (with delay) and advance
-    const target = this.frame + INPUT_DELAY;
+    const target = this.frame + this.delay;
     if (target > this.localSentUpTo) {
       this.local[target % RING] = localBits;
       this.localSentUpTo = target;
@@ -184,15 +253,16 @@ export class RollbackSession {
     return f;
   }
 
-  private localSentUpTo = INPUT_DELAY - 1;
+  private localSentUpTo = -1;
   private nextSumFrame = 120;
 
   private sendLocal() {
-    // reliable ordered channel: send the newest inputs (plus a small redundancy window)
-    const start = Math.max(INPUT_DELAY, this.localSentUpTo - 3);
+    // every input not acknowledged yet (a lost packet is covered by the next one)
+    const start = Math.max(0, this.remoteAck + 1, this.localSentUpTo - (RING / 2 - 1));
+    const end = Math.min(this.localSentUpTo, start + MAX_BATCH - 1);
     const b: number[] = [];
-    for (let f = start; f <= this.localSentUpTo; f++) b.push(Math.max(0, this.local[f % RING]));
-    if (b.length) this.link.send({ t: 'in', f: start, b, adv: this.localAdvantage });
+    for (let f = start; f <= end; f++) b.push(Math.max(0, this.local[f % RING]));
+    this.link.sendFast({ t: 'in', f: start, b, adv: this.localAdvantage, a: this.remoteConfirmed, d: this.delay });
   }
 
   private advanceOne(out: TimedEvent[]) {

@@ -10,6 +10,7 @@ import { getStage } from '../render/stages';
 import type { StageEnv } from '../render/stages/types';
 import type { RetroPipeline } from '../render/pipeline';
 import { AssistView } from '../render/assistView';
+import { disposeProp } from '../render/props';
 import { ROSTER } from '../data/roster';
 import { ARENA_HALF_WIDTH, INTRO_SPLIT, type FighterState, type GameState, type SimEvent } from '../sim/types';
 import { fullRoster } from './settings';
@@ -132,6 +133,8 @@ export class FightWorld {
   private dizzy = [false, false];
   // ---- assists ----
   private assistViews: [AssistView | null, AssistView | null] = [null, null];
+  /** one of every effect, never drawn: keeps their shaders compiled (see prewarm) */
+  private warmFx: Effects | null = null;
   /** explicit friend look per side (else resolved from the roster by the state's id) */
   private assistDefs: [FighterDef | null, FighterDef | null] = [null, null];
 
@@ -212,6 +215,35 @@ export class FightWorld {
     });
     this.assistViews[i] = v;
     return v;
+  }
+
+  /**
+   * Builds now everything the fight may show later (the friends on call, every
+   * effect, the cinematics' props) and compiles their shaders / uploads their
+   * textures, so that nothing freezes the game the first time it shows up.
+   * Called while the VS screen is up (call `setAssistDefs` first).
+   */
+  async prewarm(pipeline: RetroPipeline): Promise<void> {
+    await Promise.all(
+      [0, 1].map(async (i) => {
+        const def = this.assistDefs[i];
+        if (def) await this.assistView(i, def.id)?.prepare();
+      }),
+    );
+    this.warmFx ??= new Effects();
+    this.warmFx.sampleAll(this.stageId);
+    const samples = this.cine.warmUp();
+    const temp = new THREE.Group();
+    temp.add(this.warmFx.group, ...samples);
+    this.scene.add(temp);
+    this.applyLighting();
+    try {
+      await pipeline.prewarm(this.scene, this.camera);
+    } finally {
+      this.scene.remove(temp);
+      temp.remove(this.warmFx.group);
+      for (const o of samples) disposeProp(o);
+    }
   }
 
   applyLighting() {
@@ -869,6 +901,8 @@ export class FightWorld {
     for (const a of this.assistViews) a?.dispose();
     this.assistViews = [null, null];
     this.effects.dispose();
+    this.warmFx?.dispose();
+    this.warmFx = null;
     this.stage.dispose();
   }
 }

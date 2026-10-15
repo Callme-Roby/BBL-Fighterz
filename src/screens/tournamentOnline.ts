@@ -12,7 +12,7 @@ import { entryFighter, OnlineTournament, savedPlayerName } from '../game/onlineT
 import { fullRoster, settings } from '../game/settings';
 import { assistOfParticipant, fighterOf, humansIn, matchTitle, MAX_PARTICIPANTS, NAME_MAX, totalMatches } from '../game/tournament';
 import { input } from '../input/input';
-import { tournamentInviteUrl } from '../net/peer';
+import { preloadNet, tournamentInviteUrl } from '../net/peer';
 import { loadFace } from '../render/faceTexture';
 import { Showroom } from '../render/showroom';
 import { backButton, h, Menu, uiRoot, type MenuItem } from '../ui/dom';
@@ -64,6 +64,7 @@ export class TournamentHomeScreen implements Screen {
   ) {}
 
   enter() {
+    preloadNet().catch(() => undefined);
     audio.playMusic('select');
     this.root = h('div', { class: 'screen dim tn-center' });
     guardButtons(this.root);

@@ -6,7 +6,7 @@ import type { Effects } from '../render/effects';
 import { loadFace, type FaceAssets } from '../render/faceTexture';
 import { FighterView } from '../render/fighterView';
 import { CLIPS } from '../render/poses';
-import { buildProjectile, buildProp, disposeProp } from '../render/props';
+import { ALL_PROJECTILES, ALL_PROPS, buildProjectile, buildProp, disposeProp } from '../render/props';
 import type { FighterState, GameState } from '../sim/types';
 import { CINE_SPEED, cineTime, curve, getUltimate, type CineEvent, type CineRef, type PropBone, type UltimateScript } from '../sim/ultimates';
 
@@ -200,6 +200,20 @@ export class CineDirector {
       }
     }
     return d;
+  }
+
+  /**
+   * Builds now what the cinematics build on the fly: the tunnel backdrop (kept,
+   * hidden) and a sample of every prop / projectile, returned for a shader warm-up
+   * (dispose them with `disposeProp`: their materials are shared and stay).
+   */
+  warmUp(): THREE.Object3D[] {
+    if (!this.tunnel && this.scripts.some((u) => u.cine?.backdrop?.length)) {
+      this.tunnel = makeTunnel();
+      this.tunnel.visible = false;
+      this.scene.add(this.tunnel);
+    }
+    return [...ALL_PROPS.map((id) => buildProp(id)), ...ALL_PROJECTILES.map((k) => buildProjectile(k))];
   }
 
   /** The model currently showing fighter i (a swap look during a cinematic). */

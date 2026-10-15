@@ -148,12 +148,11 @@ export class FightScreen implements Screen {
     }
     // console access for testing: open the game with ?debug
     if (location.search.includes('debug') || (window as unknown as { bblDebug?: boolean }).bblDebug) (window as unknown as { bblFight: unknown }).bblFight = this;
-    FightWorld.create(setup.p1, setup.p2, setup.stageId).then((w) => {
+    FightWorld.create(setup.p1, setup.p2, setup.stageId).then(async (w) => {
       if (this.disposed) {
         w.dispose();
         return;
       }
-      this.world = w;
       // the friends' look (lab creations received online are not in the local roster)
       w.setAssistDefs([setup.assists?.[0] ?? null, setup.assists?.[1] ?? null]);
       w.setCineHooks({
@@ -170,6 +169,17 @@ export class FightScreen implements Screen {
         music: (id) => audio.playMusic(id ?? getStage(this.setup.stageId).music, { fade: id ? 0.25 : 0.8 }),
         rename: (i, name) => this.hud.setName(i, name),
       });
+      // while the VS screen is up: everything the fight may show is built and its shaders compiled
+      try {
+        await w.prewarm(this.app.pipeline);
+      } catch (e) {
+        console.warn('prewarm', e);
+      }
+      if (this.disposed) {
+        w.dispose();
+        return;
+      }
+      this.world = w;
     });
   }
 
