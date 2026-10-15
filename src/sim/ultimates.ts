@@ -2,6 +2,7 @@ import type { MusicId, SfxId } from '../audio/types';
 import type { Strength } from './types';
 import { crew1Scripts } from './ults/crew1';
 import { crew2Scripts } from './ults/crew2';
+import { crew3Scripts } from './ults/crew3';
 
 /**
  * BBL MAX cinematic combos ("ultimates").
@@ -71,7 +72,13 @@ export type CamShot =
   /** close-up on the first extra actor present (cine.actors) */
   | 'actor'
   /** slow dramatic low-angle orbit around the attacker (transformations, poses) */
-  | 'hero';
+  | 'hero'
+  /** straight in front of the attacker, face to face with the camera (monologues); keep the victim out of the way (dist ≥ 2) */
+  | 'face'
+  /** looking down at the floor around the victim (someone lying K.O.) */
+  | 'floor'
+  /** medium full-body shot of the attacker at the height of the model shown (a toddler stays big in frame) */
+  | 'amid';
 
 export interface UltimateScript {
   id: string;
@@ -132,8 +139,10 @@ export type PropBone = 'handR' | 'handL' | 'head' | 'chest' | 'shoulderR' | 'sho
  *  shades   – sunglasses (attach to head; default offset sits on the eyes)
  *  phone    – smartphone
  *  rose     – a red rose
+ *  glove    – boxing glove (attach one to handL and one to handR; it wraps the fist)
+ *  headgear – amateur boxing headgear (attach to 'head'; the face stays visible)
  */
-export type PropId = 'smg' | 'grenade' | 'bazooka' | 'mic' | 'shades' | 'phone' | 'rose';
+export type PropId = 'smg' | 'grenade' | 'bazooka' | 'mic' | 'shades' | 'phone' | 'rose' | 'glove' | 'headgear';
 
 /**
  * One-shot visual effects (src/render/effects.ts):
@@ -196,7 +205,7 @@ export interface CineActor {
 export interface CineSwap {
   /** whose model is replaced: the attacker or the victim */
   who: 'a' | 'v';
-  /** CAST id of the replacement look (it plays the same animation) */
+  /** replacement look (it plays the same animation): a CAST id (src/data/cast.ts) or a roster fighter id (e.g. 'dylan') */
   cast: string;
   /** active during [from, to) */
   from: number;
@@ -251,7 +260,9 @@ export type CineEvent =
     }
   | { f: number; t: 'shake'; amt: number }
   /** full-screen colour flash (amt 0..1) */
-  | { f: number; t: 'flash'; color?: string; amt?: number };
+  | { f: number; t: 'flash'; color?: string; amt?: number }
+  /** change the name shown in the HUD for the attacker / victim (null = back to normal; restored at the end anyway) */
+  | { f: number; t: 'rename'; who: 'a' | 'v'; name: string | null };
 
 export interface Cinematic {
   swaps?: CineSwap[];
@@ -263,6 +274,12 @@ export interface Cinematic {
   light?: CurveKeys;
   /** one-shot events (any order) */
   events?: CineEvent[];
+  /**
+   * scenery replaced during [from, to):
+   *  tunnel – the arena disappears, the attacker stands in a psychedelic tunnel that goes
+   *           away behind them (seen from the 'face' camera: it converges behind their head)
+   */
+  backdrop?: { kind: 'tunnel'; from: number; to: number }[];
 }
 
 /**
@@ -1339,7 +1356,7 @@ export const ULTIMATES: Record<string, UltimateScript> = {
   handbag,
 };
 
-for (const u of [...crew1Scripts(), ...crew2Scripts()]) ULTIMATES[u.id] = u;
+for (const u of [...crew1Scripts(), ...crew2Scripts(), ...crew3Scripts()]) ULTIMATES[u.id] = u;
 
 export function getUltimate(id: string | undefined): UltimateScript {
   return (id && ULTIMATES[id]) || rush;

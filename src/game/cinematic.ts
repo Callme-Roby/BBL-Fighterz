@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { MusicId, SfxId } from '../audio/types';
 import { CAST } from '../data/cast';
-import type { FighterDef } from '../data/roster';
+import { ROSTER, type FighterDef } from '../data/roster';
 import type { Effects } from '../render/effects';
 import { loadFace, type FaceAssets } from '../render/faceTexture';
 import { FighterView } from '../render/fighterView';
@@ -25,6 +25,62 @@ export interface CineHooks {
   sfx(id: SfxId, x: number, volume?: number, pitch?: number): void;
   flash(color: string, amount: number): void;
   shake(amount: number): void;
+  /** HUD name of fighter i (null = the normal one) */
+  rename(i: number, name: string | null): void;
+  /** hide / show the arena (a backdrop replaces it) */
+  scenery(visible: boolean): void;
+}
+
+/** A look usable in a cinematic: a CAST entry or a roster fighter. */
+function castDef(id: string): FighterDef | undefined {
+  return CAST[id] ?? ROSTER.find((d) => d.id === id);
+}
+
+/**
+ * Psychedelic tunnel (the inside of a long open cylinder along X), drawn unlit.
+ * Rings rush toward the viewer, a spiral turns, the far end glows.
+ */
+function makeTunnel(): THREE.Mesh {
+  const geo = new THREE.CylinderGeometry(2.6, 2.6, 30, 32, 1, true);
+  geo.rotateZ(Math.PI / 2); // axis along X
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uDir: { value: 1 } },
+    side: THREE.BackSide,
+    depthWrite: false,
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uTime;
+      uniform float uDir;
+      varying vec2 vUv;
+      void main() {
+        // depth along the tunnel: 0 near the attacker, 1 far away
+        float d = uDir > 0.0 ? vUv.y : 1.0 - vUv.y;
+        float a = vUv.x * 6.2831853;
+        float z = d * 30.0;
+        float rings = smoothstep(0.35, 0.5, abs(fract(z * 0.9 - uTime * 2.2) - 0.5) * 2.0);
+        float spiral = smoothstep(0.55, 0.9, sin(a * 6.0 + z * 1.4 - uTime * 3.0) * 0.5 + 0.5);
+        vec3 c1 = vec3(0.35, 0.08, 0.75);
+        vec3 c2 = vec3(0.05, 0.85, 1.0);
+        vec3 c3 = vec3(1.0, 0.35, 0.85);
+        vec3 col = mix(c1, c2, rings);
+        col = mix(col, c3, spiral * 0.65);
+        // darker near the viewer, glowing at the vanishing point
+        float glow = smoothstep(0.35, 1.0, d);
+        col = mix(col * 0.55, vec3(1.0, 0.95, 1.0), glow * glow * 0.8);
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  });
+  const m = new THREE.Mesh(geo, mat);
+  m.frustumCulled = false;
+  m.renderOrder = -1;
+  return m;
 }
 
 interface CastView {
@@ -76,6 +132,9 @@ export class CineDirector {
   private script: UltimateScript | null = null;
   private lastK = 0;
   private musicChanged = false;
+  private renamed = false;
+  private tunnel: THREE.Mesh | null = null;
+  private sceneryHidden = false;
   /** per fighter: the view currently shown (base or swap) */
   private shownViews: [FighterView, FighterView];
   fade = 0;
@@ -104,19 +163,19 @@ export class CineDirector {
     scripts: [UltimateScript, UltimateScript],
   ): Promise<CineDirector> {
     const d = new CineDirector(scene, effects, views, defs, faces, scripts);
-    const ids = [...new Set(scripts.flatMap(castIds))].filter((id) => CAST[id]);
+    const ids = [...new Set(scripts.flatMap(castIds))].filter((id) => castDef(id));
     const loaded = new Map<string, FaceAssets>();
     await Promise.all(
       ids.map(async (id) => {
         try {
-          loaded.set(id, await loadFace(CAST[id]));
+          loaded.set(id, await loadFace(castDef(id)!));
         } catch {
           // missing photo: the cast member is skipped
         }
       }),
     );
     const make = (cast: string): CastView | null => {
-      const def = CAST[cast];
+      const def = castDef(cast);
       const face = loaded.get(cast);
       if (!def || !face) return null;
       const view = new FighterView(def, face);
@@ -225,6 +284,32 @@ export class CineDirector {
       const sh = Math.max(0.35, 1 - y * 0.35);
       cv.view.shadow.position.set(x, 0.015, 0);
       cv.view.shadow.scale.set(0.95 * sh, 1, 0.75 * sh);
+    }
+
+    // ---- backdrop (the arena is replaced) ----
+    const bd = c.backdrop?.find((b) => k >= b.from && k < b.to);
+    if (bd) {
+      if (!this.tunnel) {
+        this.tunnel = makeTunnel();
+        this.scene.add(this.tunnel);
+      }
+      const av = this.shownViews[sc];
+      av.headWorld(tmp);
+      // the tunnel starts at the attacker and goes away behind them
+      this.tunnel.visible = true;
+      this.tunnel.position.set(tmp.x - A.facing * 15.2, tmp.y - 0.15, 0);
+      const u2 = (this.tunnel.material as THREE.ShaderMaterial).uniforms;
+      u2.uTime.value = time;
+      // cylinder uv.y runs along +X after the rotation: tell the shader which end is far
+      u2.uDir.value = A.facing > 0 ? 1 : -1;
+      if (!this.sceneryHidden) {
+        this.sceneryHidden = true;
+        this.hooks?.scenery(false);
+      }
+      for (const v of this.views) v.shadow.visible = false;
+    } else if (this.tunnel?.visible || this.sceneryHidden) {
+      if (this.tunnel) this.tunnel.visible = false;
+      this.restoreScenery();
     }
 
     // ---- props ----
@@ -361,6 +446,10 @@ export class CineDirector {
       case 'flash':
         h?.flash(e.color ?? '#ffffff', e.amt ?? 0.6);
         break;
+      case 'rename':
+        h?.rename(e.who === 'a' ? sc : 1 - sc, e.name);
+        this.renamed = true;
+        break;
       case 'fx': {
         const v = this.refView(e.at, sc);
         if (!v) break;
@@ -491,6 +580,13 @@ export class CineDirector {
     this.shownViews = [this.views[0], this.views[1]];
     if (this.musicChanged) this.hooks?.music(null);
     this.musicChanged = false;
+    if (this.renamed) {
+      this.hooks?.rename(0, null);
+      this.hooks?.rename(1, null);
+    }
+    this.renamed = false;
+    if (this.tunnel) this.tunnel.visible = false;
+    this.restoreScenery();
     this.active = -1;
     this.script = null;
     this.fade = 0;
@@ -498,8 +594,20 @@ export class CineDirector {
     void this.scripts;
   }
 
+  private restoreScenery() {
+    if (!this.sceneryHidden) return;
+    this.sceneryHidden = false;
+    this.hooks?.scenery(true);
+    for (const v of this.views) v.shadow.visible = true;
+  }
+
   dispose() {
     this.stop();
+    if (this.tunnel) {
+      this.tunnel.removeFromParent();
+      this.tunnel.geometry.dispose();
+      (this.tunnel.material as THREE.Material).dispose();
+    }
     for (const p of [...this.flying]) {
       p.obj.removeFromParent();
       disposeProp(p.obj);

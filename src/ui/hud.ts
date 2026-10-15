@@ -19,6 +19,8 @@ export class Hud {
   private comics: { el: HTMLDivElement; t: number }[] = [];
   private comicSeq = 0;
   private netEl: HTMLDivElement;
+  private plates: HTMLDivElement[] = [];
+  private names: [string, string];
   private bars: HTMLDivElement;
   private meterRow: HTMLDivElement;
 
@@ -30,6 +32,7 @@ export class Hud {
     names: [string, string],
     private superKeys: [string, string] = ['E', 'P'],
   ) {
+    this.names = [names[0], names[1]];
     const side = (i: number) => {
       const fill = h('div', { class: 'fill' });
       const trail = h('div', { class: 'trail' });
@@ -37,7 +40,9 @@ export class Hud {
       this.hp.push({ box, fill, trail });
       const wins = h('div', { class: 'wins' });
       this.wins.push(wins);
-      return h('div', null, box, h('div', { class: 'label' + (i === 1 ? ' right' : '') }, h('div', { class: 'nameplate' }, names[i]), wins));
+      const plate = h('div', { class: 'nameplate' }, names[i]);
+      this.plates.push(plate);
+      return h('div', null, box, h('div', { class: 'label' + (i === 1 ? ' right' : '') }, plate, wins));
     };
     this.timer = h('div', { class: 'timer' }, '60');
     this.bars = h('div', { class: 'bars' }, side(0), this.timer, side(1));
@@ -55,6 +60,14 @@ export class Hud {
   setVisible(bars: boolean) {
     this.bars.style.visibility = bars ? 'visible' : 'hidden';
     this.meterRow.style.visibility = bars ? 'visible' : 'hidden';
+  }
+
+  /** Temporary name on a nameplate (BBL MAX gags); null = the real one. */
+  setName(i: number, name: string | null) {
+    const el = this.plates[i];
+    if (!el) return;
+    el.textContent = name ?? this.names[i];
+    el.classList.toggle('renamed', name !== null);
   }
 
   setNetInfo(text: string) {

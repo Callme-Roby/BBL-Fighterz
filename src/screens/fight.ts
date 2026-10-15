@@ -134,6 +134,7 @@ export class FightScreen implements Screen {
         },
         text: (t, style, dur, color) => this.hud.comic(t, style, dur, color),
         music: (id) => audio.playMusic(id ?? getStage(this.setup.stageId).music, { fade: id ? 0.25 : 0.8 }),
+        rename: (i, name) => this.hud.setName(i, name),
       });
     });
   }

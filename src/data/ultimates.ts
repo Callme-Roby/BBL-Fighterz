@@ -16,6 +16,8 @@ export const FIGHTER_ULTIMATES: Record<string, { script: string; name: string }>
   zia: { script: 'rap', name: 'RAP CONTENDERS' },
   clement: { script: 'arsenal', name: 'ARSENAL BARBU' },
   enola: { script: 'spider', name: 'SPIDER-POTE' },
+  rayan: { script: 'pacifist', name: 'PACIFISTE… OU PAS' },
+  billel: { script: 'meta', name: 'LA MÉTA' },
 };
 
 export function ultimateOf(def: FighterDef): { script: string; name: string } {

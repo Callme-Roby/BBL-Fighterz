@@ -24,6 +24,8 @@ export interface WorldCineHooks {
   say(speaker: CineSpeaker, text: string, opts: { pitch?: number; rate?: number; dur: number }): void;
   text(text: string, style: 'boom' | 'punch' | 'caption', dur: number, color?: string): void;
   music(id: MusicId | null): void;
+  /** HUD name of fighter i (null = the normal one) */
+  rename(i: number, name: string | null): void;
 }
 
 function altCostume(def: FighterDef): FighterDef {
@@ -44,6 +46,7 @@ function altCostume(def: FighterDef): FighterDef {
 
 const tmpV = new THREE.Vector3();
 const tmpV2 = new THREE.Vector3();
+const tmpV3 = new THREE.Vector3();
 
 /**
  * Everything visual about a match: stage, fighters, effects, cinematic camera.
@@ -108,6 +111,10 @@ export class FightWorld {
       },
       shake: (amt) => {
         this.shake = Math.max(this.shake, amt);
+      },
+      rename: (i, name) => h?.rename(i, name),
+      scenery: (visible) => {
+        this.stage.group.visible = visible;
       },
     };
   }
@@ -363,6 +370,27 @@ export class FightWorld {
           else this.faceShot(sc, targetPos, targetLook, 1.25, 0.95, 0.02);
           break;
         }
+        case 'face':
+          // face to face with the attacker (the victim has to stand back)
+          this.faceShot(sc, targetPos, targetLook, 1.65, 0.3, -0.02);
+          targetLook.y -= 0.12;
+          break;
+        case 'floor': {
+          // looking down at the victim lying on the floor
+          const bx = V.x - V.facing * 0.45;
+          targetPos.set(bx + fa * 0.35, 2.7, 1.35);
+          targetLook.set(bx, 0.12, 0);
+          break;
+        }
+        case 'amid': {
+          // full body of the attacker at the scale of the model shown (toddler included)
+          const hv = this.cine.shown(sc);
+          const hy = hv.headWorld(tmpV3).y;
+          const sz = Math.max(0.5, hy / 1.75);
+          targetPos.set(A.x + fa * 0.95 * sz, Math.max(0.3, hy * 0.62), 1.05 + 1.25 * sz);
+          targetLook.set(A.x + fa * 0.2 * sz, hy * 0.55, 0);
+          break;
+        }
         case 'hero': {
           // slow low-angle orbit around the attacker
           const t = (k - (cams[seg]?.[0] ?? 0)) * 0.006;
@@ -374,12 +402,16 @@ export class FightWorld {
           break;
         }
       }
+      const shot = cams[seg]?.[1];
       if (seg !== this.superSeg) {
         this.superSeg = seg;
-        this.camPos.copy(targetPos);
-        this.camLook.copy(targetLook);
+        // 'floor' tilts down smoothly from the previous shot instead of cutting
+        if (shot !== 'floor') {
+          this.camPos.copy(targetPos);
+          this.camLook.copy(targetLook);
+        }
       }
-      snap = 1 - Math.exp(-dt * 5);
+      snap = 1 - Math.exp(-dt * (shot === 'floor' ? 1.8 : 5));
     } else if (s.phase === 'intro') {
       const who = pf < INTRO_SPLIT ? 0 : 1;
       const local = who === 0 ? pf : pf - INTRO_SPLIT;

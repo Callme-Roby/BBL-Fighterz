@@ -1131,3 +1131,9 @@ kbd {
     opacity: 0;
   }
 }
+
+/* BBL MAX gag: the nameplate suddenly shows another name */
+.nameplate.renamed {
+  color: #ff5a5a;
+  animation: announceIn 0.3s both;
+}

@@ -130,7 +130,49 @@ function rose(): THREE.Group {
   return g;
 }
 
-/** Builds a prop; `headScale` sizes the shades to the wearer's head. */
+const GLOVE_RED = 0xc8141e;
+
+/** Boxing glove around the fist (hand bone origin = wrist, the fist hangs along -Y). */
+function glove(): THREE.Group {
+  const g = new THREE.Group();
+  const fist = new THREE.Mesh(new THREE.IcosahedronGeometry(0.075, 1), mat(GLOVE_RED));
+  fist.scale.set(1, 1.25, 1.1);
+  fist.position.set(0, -0.07, 0.01);
+  const thumb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.032, 0), mat(GLOVE_RED));
+  thumb.position.set(0, -0.04, 0.07);
+  // white cuff + lace
+  g.add(fist, thumb, cyl(0.058, 0.064, 0.07, 0xf2f2ee, 0, 0.02, 0, 8), box(0.012, 0.06, 0.01, 0xf2f2ee, 0, 0.0, 0.064));
+  return g;
+}
+
+/** Amateur boxing headgear: padded cap, cheek pads, chin strap (the face stays visible). */
+function headgear(hs: number): THREE.Group {
+  const g = new THREE.Group();
+  const cy = 0.12 * hs; // head centre above the head bone
+  const rx = 0.1 * hs + 0.018;
+  const ry = 0.125 * hs + 0.018;
+  const rz = 0.112 * hs + 0.018;
+  // top + back of the skull (a sphere cut open in front)
+  const shellGeo = new THREE.SphereGeometry(1, 12, 8, Math.PI * 0.18, Math.PI * 1.64, 0, Math.PI * 0.62);
+  const shell = new THREE.Mesh(shellGeo, mat(0x1c3fb0));
+  shell.scale.set(rx, ry, rz);
+  shell.rotation.y = Math.PI; // opening toward +Z (the face)
+  shell.position.y = cy;
+  shellGeo.computeVertexNormals();
+  (shell.material as THREE.Material).side = THREE.DoubleSide;
+  // brow pad, cheek pads, chin strap
+  g.add(
+    shell,
+    box(0.15 * hs, 0.035 * hs, 0.04, 0x1c3fb0, 0, cy + 0.075 * hs, rz - 0.01),
+    box(0.03, 0.09 * hs, 0.06, 0x1c3fb0, rx - 0.008, cy - 0.03 * hs, rz * 0.45),
+    box(0.03, 0.09 * hs, 0.06, 0x1c3fb0, -rx + 0.008, cy - 0.03 * hs, rz * 0.45),
+    box(0.17 * hs, 0.018, 0.02, 0x10101a, 0, cy - 0.125 * hs, rz * 0.35),
+    box(0.06 * hs, 0.02 * hs, 0.012, 0xffffff, 0, cy + 0.075 * hs, rz + 0.012, 1),
+  );
+  return g;
+}
+
+/** Builds a prop; `headScale` sizes the head props to the wearer's head. */
 export function buildProp(id: PropId, headScale = 1.15): THREE.Object3D {
   switch (id) {
     case 'smg':
@@ -147,6 +189,10 @@ export function buildProp(id: PropId, headScale = 1.15): THREE.Object3D {
       return phone();
     case 'rose':
       return rose();
+    case 'glove':
+      return glove();
+    case 'headgear':
+      return headgear(headScale);
   }
 }
 
