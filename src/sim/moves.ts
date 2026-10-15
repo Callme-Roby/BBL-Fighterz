@@ -109,6 +109,12 @@ export const MOVES: Record<MoveId, MoveDef> = {
     reach: 0.95, hitY: 1.3, hitstun: 20, blockstun: 12, pushHit: 0.07, pushBlock: 0.06,
     strength: 'heavy', air: true,
   }),
+  // placeholder frame data (tuned by the combat-engine work)
+  airSmash: M({
+    id: 'airSmash', name: 'Smash aérien', startup: 10, active: 6, recovery: 10, damage: 18, level: 'mid',
+    reach: 0.9, hitY: 1.2, hitstun: 24, blockstun: 14, pushHit: 0.04, pushBlock: 0.06,
+    strength: 'heavy', air: true,
+  }),
   throw: M({
     id: 'throw', name: 'Choppe', startup: 10, active: 3, recovery: 26, damage: 30, level: 'high',
     reach: 0.68, hitY: 1.3, hitstun: 0, blockstun: 0, pushHit: 0, pushBlock: 0,

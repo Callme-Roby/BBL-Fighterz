@@ -21,8 +21,10 @@ export const IN_SUPER = 256;
 export const IN_GUARD = 512;
 /** grab button (throw) */
 export const IN_GRAB = 1024;
+/** assist button: calls the friend chosen before the fight */
+export const IN_ASSIST = 2048;
 /** buttons that are forwarded to the relative input */
-export const IN_EXTRA = IN_SUPER | IN_GUARD | IN_GRAB;
+export const IN_EXTRA = IN_SUPER | IN_GUARD | IN_GRAB | IN_ASSIST;
 
 // ---- relative bits (B/F depend on which side the fighter faces) ----
 export const R_U = 1;
@@ -45,6 +47,8 @@ export type MoveId =
   | 'sweep'
   | 'jumpPunch'
   | 'jumpKick'
+  /** air: down + kick — spikes an airborne opponent to the floor (ground bounce, once per combo) */
+  | 'airSmash'
   | 'throw'
   | 'super';
 
@@ -77,6 +81,12 @@ export type Action =
   | 'guard'
   | 'parry'
   | 'parried'
+  /** chase jump after a launcher: rises toward the airborne opponent (air combos) */
+  | 'superJump'
+  /** air dash (double-tap forward in the air) */
+  | 'airDash'
+  /** victim splatted against the wall for a few frames, then falls back into a juggle */
+  | 'wallSplat'
   | 'ko'
   | 'intro'
   | 'win'
@@ -146,6 +156,53 @@ export interface FighterState {
   parryTimer: number;
   /** anti-mash: frames before another parry window can open */
   parryCooldown: number;
+  /** auto-combo: index of the next step of the mash-LP route (0 = not in an auto-combo) */
+  autoStep: number;
+  /** air dash already used during this jump */
+  airDashUsed: boolean;
+  /** number of air attacks chained during this jump */
+  airChain: number;
+  /** victim: a wall bounce / ground bounce already happened in this combo (once each) */
+  wallBounced: boolean;
+  groundBounced: boolean;
+}
+
+/** What an assist does when called (see src/data/assists.ts for who does what). */
+export type AssistKind =
+  /** dashes in from behind the caller and lands a heavy blow (knockdown) */
+  | 'rush'
+  /** pops up next to the opponent and launches them (follow up with an air combo) */
+  | 'launcher'
+  /** throws a projectile from behind the caller, travels across the screen */
+  | 'beam'
+  /** a goofy distraction that stuns the opponent in place for a moment */
+  | 'stun';
+
+/** The friend chosen before the fight, per side. */
+export interface AssistSpec {
+  /** roster id of the friend (visual / name only for the sim) */
+  id: string;
+  kind: AssistKind;
+}
+
+/** Runtime state of a side's assist (part of GameState: rollback-safe). */
+export interface AssistState {
+  id: string;
+  kind: AssistKind;
+  /** 'off' = not on screen; enter → attack → leave */
+  phase: 'off' | 'enter' | 'attack' | 'leave';
+  /** frames since the current phase started */
+  frame: number;
+  x: number;
+  y: number;
+  facing: 1 | -1;
+  /** the attack already connected (one hit per call) */
+  hit: boolean;
+  /** projectile position (beam), meaningful while `shot` is true */
+  shot: boolean;
+  shotX: number;
+  /** frames before the assist can be called again (0 = ready) */
+  cooldown: number;
 }
 
 export type Phase = 'intro' | 'roundIntro' | 'fight' | 'ko' | 'roundOver' | 'matchOver';
@@ -162,6 +219,18 @@ export type SimEvent =
   | { t: 'parry'; p: number; x: number; y: number }
   | { t: 'super'; p: number }
   | { t: 'superCombo'; p: number }
+  /** p called their assist */
+  | { t: 'assist'; p: number }
+  /** p's assist leaves the screen */
+  | { t: 'assistLeave'; p: number }
+  /** p (the victim) bounced off the wall / the floor */
+  | { t: 'wallBounce'; p: number; x: number; y: number }
+  | { t: 'groundBounce'; p: number; x: number }
+  /** destruction finish: the K.O.'d fighter p crashed through the arena wall */
+  | { t: 'wallBreak'; p: number; x: number; y: number }
+  /** p started a chase super jump / an air dash */
+  | { t: 'superJump'; p: number }
+  | { t: 'airDash'; p: number }
   | { t: 'ko'; p: number }
   | { t: 'phase'; phase: Phase; round: number }
   | { t: 'fight' }
@@ -178,6 +247,8 @@ export interface GameState {
   timer: number;
   hitstop: number;
   fighters: [FighterState, FighterState];
+  /** each side's assist (null = no assist chosen) */
+  assists: [AssistState | null, AssistState | null];
   events: SimEvent[];
   /** winner of the last round: 0, 1, or 2 = draw, -1 = none yet */
   roundWinner: number;

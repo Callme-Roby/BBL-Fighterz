@@ -388,6 +388,12 @@ export const ATTACKS: Record<MoveId, AttackPoses> = {
       upperArmR: [-20, 0, -50],
     }),
   },
+  // placeholder (animated by the rendering work): downward axe kick in the air
+  airSmash: {
+    base: AIR,
+    windup: merge(AIR, { thighR: [-150, 0, -6], shinR: [10, 0, 0], hips: [-10, 0, 0], upperArmL: [-120, 0, 30], upperArmR: [-120, 0, -30] }),
+    strike: merge(AIR, { thighR: [-20, 0, -6], shinR: [0, 0, 0], hips: [20, 0, 0], spine: [16, 0, 0], upperArmL: [-40, 0, 40], upperArmR: [-40, 0, -40] }),
+  },
   throw: {
     windup: merge(STANCE, { upperArmL: [-80, 0, 20], foreArmL: [-40, 0, 0], upperArmR: [-80, 0, -20], foreArmR: [-40, 0, 0], hips: [0, -10, 0] }),
     strike: merge(STANCE, {

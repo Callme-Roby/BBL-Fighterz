@@ -17,6 +17,8 @@ import {
   IN_GUARD,
   IN_SUPER,
   IN_UP,
+  type AssistSpec,
+  type AssistState,
   INTRO_FRAMES,
   KO_FRAMES,
   MAX_HP,
@@ -126,7 +128,16 @@ export function createFighter(side: 0 | 1): FighterState {
     ultBy: 'rush',
     parryTimer: 0,
     parryCooldown: 0,
+    autoStep: 0,
+    airDashUsed: false,
+    airChain: 0,
+    wallBounced: false,
+    groundBounced: false,
   };
+}
+
+export function createAssist(spec: AssistSpec): AssistState {
+  return { id: spec.id, kind: spec.kind, phase: 'off', frame: 0, x: 0, y: 0, facing: 1, hit: false, shot: false, shotX: 0, cooldown: 0 };
 }
 
 export interface MatchOptions {
@@ -134,6 +145,8 @@ export interface MatchOptions {
   skipIntro?: boolean;
   /** BBL MAX script id of each side (sim/ultimates.ts) */
   ultimates?: [string, string];
+  /** friend called with the assist button, per side (null / missing = none) */
+  assists?: [AssistSpec | null, AssistSpec | null];
 }
 
 export function createGame(opts: MatchOptions = {}): GameState {
@@ -146,6 +159,7 @@ export function createGame(opts: MatchOptions = {}): GameState {
     timer: ROUND_TIME,
     hitstop: 0,
     fighters: [createFighter(0), createFighter(1)],
+    assists: [opts.assists?.[0] ? createAssist(opts.assists[0]) : null, opts.assists?.[1] ? createAssist(opts.assists[1]) : null],
     events: [],
     roundWinner: -1,
     matchWinner: -1,
