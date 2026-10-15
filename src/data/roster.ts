@@ -250,7 +250,7 @@ export const ROSTER: FighterDef[] = [
     name: 'ALEX',
     title: 'Boucles et uppercuts',
     face: 'faces/alex.jpg',
-    hair: { style: 'curlymid', color: '#9a7448' },
+    hair: { style: 'midlong', color: '#6f4f32' },
     outfit: {
       top: 'hoodie',
       topColor: '#e0742a',
@@ -273,7 +273,7 @@ export const ROSTER: FighterDef[] = [
     name: 'BENJI',
     title: 'Brushing tropical',
     face: 'faces/benji.jpg',
-    hair: { style: 'tahiti', color: '#1c140e' },
+    hair: { style: 'afro', color: '#1c140e' },
     outfit: {
       top: 'tshirt',
       topColor: '#2c64c8',
@@ -448,8 +448,8 @@ export const ROSTER: FighterDef[] = [
       shoesColor: '#f2f2f2',
       beltColor: '#2a1c14',
     },
-    // medium height, medium build
-    height: 1,
+    // same build as Elies: tall, medium build
+    height: 1.09,
     build: 1,
     headScale: 1.18,
     introLines: ['Je vais te tuer… pacifiquement.', 'Moi, je suis pacifiste. Mais toi, je vais te tuer.', 'Peace and love… et crochet du droit.'],
