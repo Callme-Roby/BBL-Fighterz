@@ -23,7 +23,7 @@ import {
 import { input } from '../input/input';
 import { Showroom } from '../render/showroom';
 import { STAGES } from '../render/stages';
-import { backButton, h, Menu, uiRoot } from '../ui/dom';
+import { backButton, h, isTouchUi, Menu, uiRoot } from '../ui/dom';
 import { goMenu, goTournamentBracket, goTournamentChampion, startFight } from './flow';
 import { bracketTree, controlsEl, guardButtons, portrait, syncMenuFocus } from './tournamentShared';
 
@@ -131,12 +131,13 @@ export class TournamentBracketScreen implements Screen {
       h('div', { class: 'tn-vs' }, vsSide(a, 'l'), h('div', { class: 'tn-vs-word' }, 'VS'), vsSide(b, 'r')),
       controlsEl(humans),
     );
-    const items = [{ label: 'COMBATTRE !', sub: humans ? 'Entrée pour lancer le match' : 'Regarder le match', action: () => this.fight() }];
+    const touch = isTouchUi();
+    const items = [{ label: 'COMBATTRE !', sub: humans ? (touch ? 'Lancer le match' : 'Entrée pour lancer le match') : 'Regarder le match', action: () => this.fight() }];
     if (humans === 0) items.push({ label: 'SIMULER', sub: 'Résultat instantané', action: () => this.simulate() });
     items.push({ label: 'ABANDONNER LE TOURNOI', sub: 'Le tournoi sera effacé', action: () => this.askAbandon() });
     this.menu = new Menu(items, () => audio.sfx('cursor'));
     syncMenuFocus(this.menu);
-    panel.append(this.menu.el, h('div', { class: 'tn-saved' }, 'Sauvegarde automatique · Échap = menu principal'));
+    panel.append(this.menu.el, h('div', { class: 'tn-saved' }, touch ? 'Sauvegarde automatique · RETOUR = menu principal' : 'Sauvegarde automatique · Échap = menu principal'));
     return panel;
   }
 

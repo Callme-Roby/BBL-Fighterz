@@ -292,6 +292,9 @@ export class FightWorld {
 
   private updateCamera(s: GameState, dt: number, aspect: number) {
     const [a, b] = s.fighters;
+    // narrow (portrait) views get a wider vertical field so the horizontal one does not collapse
+    this.camera.aspect = aspect;
+    this.camera.fov = aspect < 1.2 ? 38 + (1.2 - aspect) * 30 : 38;
     const targetPos = tmpV;
     const targetLook = tmpV2;
     let snap = 1 - Math.exp(-dt * 6);
@@ -340,7 +343,8 @@ export class FightWorld {
           targetLook.set(V.x, V.y * 0.5 + 0.45, 0);
           break;
         case 'side':
-          targetPos.set(mid, 1.25 + Math.max(A.y, V.y) * 0.4, 3.4);
+          // (portrait views: pulled back just enough to keep both fighters)
+          targetPos.set(mid, 1.25 + Math.max(A.y, V.y) * 0.4, Math.max(3.4, this.fitDist(Math.abs(A.x - V.x) / 2 + 0.6)));
           targetLook.set(mid, 1.05 + Math.max(A.y, V.y) * 0.5, 0);
           break;
         case 'close':
@@ -353,12 +357,12 @@ export class FightWorld {
           break;
         case 'wide': {
           const sep = Math.abs(A.x - V.x);
-          targetPos.set(mid, 2.1, Math.max(7.5, 3 + sep * 0.95));
+          targetPos.set(mid, 2.1, Math.max(7.5, 3 + sep * 0.95, this.fitDist(sep / 2 + 0.9)));
           targetLook.set(mid, 1.0 + Math.max(A.y, V.y) * 0.4, 0);
           break;
         }
         case 'two':
-          targetPos.set(mid - fa * 0.15, 1.45 + Math.max(A.y, V.y) * 0.3, 2.6 + Math.abs(A.x - V.x) * 0.55);
+          targetPos.set(mid - fa * 0.15, 1.45 + Math.max(A.y, V.y) * 0.3, Math.max(2.6 + Math.abs(A.x - V.x) * 0.55, this.fitDist(Math.abs(A.x - V.x) / 2 + 0.6)));
           targetLook.set(mid, 1.3 + Math.max(A.y, V.y) * 0.4, 0);
           break;
         case 'vface':
@@ -468,18 +472,25 @@ export class FightWorld {
       this.shake *= Math.exp(-dt * 12);
     }
     this.camera.lookAt(this.camLook);
-    this.camera.aspect = aspect;
-    // keep both fighters visible on narrow (portrait) screens
-    this.camera.fov = aspect < 1.2 ? 38 + (1.2 - aspect) * 30 : 38;
     this.camera.updateProjectionMatrix();
     void b;
+  }
+
+  /** Distance at which a width of 2 * halfW metres (centred) fills the current horizontal field of view. */
+  private fitDist(halfW: number) {
+    const tanH = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * this.camera.aspect;
+    return halfW / Math.max(0.05, tanH);
   }
 
   private gameplayCam(s: GameState, pos: THREE.Vector3, look: THREE.Vector3) {
     const [a, b] = s.fighters;
     const mid = (a.x + b.x) / 2;
     const sep = Math.abs(a.x - b.x);
-    const dist = Math.min(8.5, Math.max(3.7, 2.6 + sep * 0.85));
+    let dist = Math.min(8.5, Math.max(3.7, 2.6 + sep * 0.85));
+    // narrow views (portrait phones, 4:3): pull back until both fighters fit, with a margin
+    // (half a body + a stretched limb on each side); never changes 16:9 and wider framing
+    const fit = this.fitDist(sep / 2 + 0.95);
+    if (fit > dist) dist = Math.min(16, fit);
     const maxY = Math.max(a.y, b.y);
     pos.set(mid, 1.3 + sep * 0.05 + maxY * 0.25, dist);
     look.set(mid, 1.0 + maxY * 0.3, 0);

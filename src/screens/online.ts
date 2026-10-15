@@ -21,7 +21,7 @@ export class OnlineScreen implements Screen {
 
   enter() {
     audio.playMusic('select');
-    this.body = h('div', { class: 'screen dim' });
+    this.body = h('div', { class: 'screen dim online-screen' });
     uiRoot().append(this.body);
     if (this.autoJoin) this.join(this.autoJoin);
     else this.home();

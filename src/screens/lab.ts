@@ -5,7 +5,7 @@ import { loadCustoms, saveCustoms } from '../game/settings';
 import { input } from '../input/input';
 import { cropFileToDataUrl } from '../render/faceTexture';
 import { Showroom } from '../render/showroom';
-import { h, uiRoot } from '../ui/dom';
+import { backButton, h, phoneLayout, uiRoot } from '../ui/dom';
 import { goMenu } from './flow';
 
 function blank(): FighterDef {
@@ -41,6 +41,7 @@ export class LabScreen implements Screen {
   private listEl!: HTMLDivElement;
   private rebuildTimer = 0;
   private msg!: HTMLDivElement;
+  private previewEl!: HTMLDivElement;
 
   constructor(private app: App) {
     this.showroom.positions = [0, 1.15];
@@ -54,7 +55,8 @@ export class LabScreen implements Screen {
     this.form = h('div', { class: 'form' });
     this.listEl = h('div', { class: 'customs' });
     this.msg = h('div', { class: 'status' });
-    uiRoot().append(h('div', { class: 'lab' }, this.form, h('div', { class: 'preview passthrough' })));
+    this.previewEl = h('div', { class: 'preview passthrough' });
+    uiRoot().append(h('div', { class: 'lab' }, this.form, this.previewEl));
     this.renderForm();
     this.preview();
   }
@@ -212,7 +214,7 @@ export class LabScreen implements Screen {
     back.addEventListener('click', () => goMenu());
 
     this.form.replaceChildren(
-      h('div', { class: 'h1', style: 'font-size:26px' }, 'LABO'),
+      h('div', { class: 'lab-head' }, backButton(() => goMenu()), h('div', { class: 'h1' }, 'LABO')),
       field('1. PHOTO DU VISAGE (de face, bien éclairée)', file),
       this.cropCanvas,
       this.src ? cropRange('ZOOM', 'zoom', 1, 4) : '',
@@ -395,6 +397,9 @@ export class LabScreen implements Screen {
         return;
       }
     }
+    // phones: the fighter (head to knees) fills the preview box, above / beside the form
+    const r = phoneLayout() ? this.previewEl.getBoundingClientRect() : null;
+    this.showroom.fit = r && r.width > 40 && r.height > 40 ? { box: r, worldH: 1.65, worldW: 1.3, centerY: 1.36, slotX: [r.left + r.width / 2, r.right + r.width] } : null;
     this.showroom.render(this.app.pipeline, dt, this.app.aspect);
   }
 }

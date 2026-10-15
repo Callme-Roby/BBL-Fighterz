@@ -8,7 +8,7 @@ import { STAGES } from '../render/stages';
 import { CpuBrain } from '../sim/ai';
 import { createGame, step } from '../sim/sim';
 import type { GameState } from '../sim/types';
-import { h, Menu, uiRoot } from '../ui/dom';
+import { h, isTouchUi, Menu, uiRoot } from '../ui/dom';
 import { goLab, goOnline, goOptions, goSelect, goTournamentHome } from './flow';
 
 /** CPU vs CPU match playing behind the title menu. */
@@ -84,18 +84,18 @@ export class TitleScreen implements Screen {
 
   enter() {
     audio.playMusic('title');
-    this.root = h('div', { class: 'screen' });
+    this.root = h('div', { class: 'screen title' });
     uiRoot().append(this.root);
     const logo = h('div', { class: 'logo' }, 'BBL', h('br'), 'FIGHTERZ', h('small', null, 'TOURNOI DES POTES'));
     this.root.append(logo);
     if (this.skipPress) this.showMenu();
     else {
-      const touch = window.matchMedia?.('(pointer: coarse)').matches;
-      this.pressEl = h('div', { class: 'title-hint blink', style: 'font-size:14px;margin-top:20px' }, touch ? "TOUCHE L'ÉCRAN" : 'APPUIE SUR ENTRÉE');
+      this.pressEl = h('div', { class: 'title-hint title-press blink' }, isTouchUi() ? "TOUCHE L'ÉCRAN" : 'APPUIE SUR ENTRÉE');
+      this.root.classList.add('press');
       this.root.append(this.pressEl);
       this.root.addEventListener('click', () => this.press(), { once: true });
     }
-    this.root.append(h('div', { class: 'footer-hint' }, '© BBL CREW · jeu de combat fait maison · photos des potes non contractuelles'));
+    this.root.append(h('div', { class: 'footer-hint title-foot' }, '© BBL CREW · jeu de combat fait maison · photos des potes non contractuelles'));
   }
 
   exit() {
@@ -108,6 +108,7 @@ export class TitleScreen implements Screen {
     audio.sfx('confirm');
     void audio.announcer('gameTitle');
     this.pressEl?.remove();
+    this.root.classList.remove('press');
     this.showMenu();
   }
 
@@ -123,7 +124,9 @@ export class TitleScreen implements Screen {
       ],
       () => audio.sfx('cursor'),
     );
-    this.root.append(this.menu.el);
+    this.menu.el.classList.add('title-menu');
+    // logo, menu, footer: in this order (CSS grid / flex on phones)
+    this.root.insertBefore(this.menu.el, this.root.querySelector('.title-foot'));
   }
 
   frame(dt: number) {

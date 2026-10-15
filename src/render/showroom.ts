@@ -6,6 +6,23 @@ import type { RetroPipeline } from './pipeline';
 import { createPS1Material, makeCanvasTexture, PS1Globals } from './ps1Material';
 
 /**
+ * Frames the studio in a box of the screen instead of the whole canvas
+ * (phone layouts: the fighters stand in the free space between the menus).
+ */
+export interface ShowroomFit {
+  /** screen box in CSS px, e.g. an element's getBoundingClientRect() */
+  box: { left: number; top: number; width: number; height: number };
+  /** world height shown in the box (default 2.35: a whole fighter, feet to hair) */
+  worldH?: number;
+  /** minimum world width shown in the box (default 1.5: one fighter) */
+  worldW?: number;
+  /** world height at the centre of the box (default 1.08) */
+  centerY?: number;
+  /** screen x (CSS px) where each slot stands; overrides `positions` */
+  slotX?: [number, number];
+}
+
+/**
  * Small studio scene used by menus (select screen, lab): fighters face the
  * camera on a lit platform in front of a gradient backdrop.
  */
@@ -24,6 +41,9 @@ export class Showroom {
   positions: [number, number] = [-1.15, 1.15];
   cameraPos = new THREE.Vector3(0, 1.42, 4.6);
   cameraLook = new THREE.Vector3(0, 1.08, 0);
+  /** set (every frame) by screens with a phone layout; null = classic full-screen framing */
+  fit: ShowroomFit | null = null;
+  private discs: THREE.Mesh[] = [];
 
   constructor() {
     // backdrop: big curved gradient wall
@@ -73,6 +93,7 @@ export class Showroom {
       const disc = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6).rotateX(-Math.PI / 2), m);
       disc.position.set(x, 0.01, 0);
       this.scene.add(disc);
+      this.discs.push(disc);
       this.disposables.push(m);
     }
     this.disposables.push(wallGeo, wallMat, floorTex, floorMat, discTex, floor.geometry);
@@ -143,14 +164,55 @@ export class Showroom {
     PS1Globals.uFogColor.value.copy(this.clear);
     PS1Globals.uFogNear.value = 12;
     PS1Globals.uFogFar.value = 30;
-    this.camera.aspect = aspect;
-    const narrow = aspect < 1.1;
-    this.camera.fov = narrow ? 50 : 32;
-    this.camera.position.copy(this.cameraPos);
-    if (narrow) this.camera.position.z += 1.5;
-    this.camera.lookAt(this.cameraLook);
+    let xs: [number, number] = this.positions;
+    if (this.fit && this.fit.box.width > 8 && this.fit.box.height > 8) xs = this.applyFit(this.fit, pipeline.renderer.domElement) ?? xs;
+    else {
+      this.camera.clearViewOffset();
+      this.camera.aspect = aspect;
+      const narrow = aspect < 1.1;
+      this.camera.fov = narrow ? 50 : 32;
+      this.camera.position.copy(this.cameraPos);
+      if (narrow) this.camera.position.z += 1.5;
+      this.camera.lookAt(this.cameraLook);
+    }
+    // slots (and their floor discs) follow `positions` (or the fit), which may change with the layout
+    for (let i = 0; i < 2; i++) {
+      const x = xs[i];
+      const v = this.slots[i];
+      if (v) {
+        v.root.position.x = x;
+        v.shadow.position.x = x;
+      }
+      if (this.discs[i]) this.discs[i].position.x = x;
+    }
     this.camera.updateProjectionMatrix();
     pipeline.render(this.scene, this.camera, this.clear);
+  }
+
+  /**
+   * Camera for a screen box: the subject (worldW × worldH) fills the box, and
+   * the projection is shifted (view offset) so the box lands where it is on screen.
+   */
+  private applyFit(f: ShowroomFit, canvas: HTMLCanvasElement): [number, number] | null {
+    const b = f.box;
+    const fov = 30;
+    const t = Math.tan((fov * Math.PI) / 360);
+    const ra = b.width / b.height;
+    const worldH = f.worldH ?? 2.35;
+    const worldW = f.worldW ?? 1.5;
+    const d = Math.min(9, Math.max(2, worldH / 2 / t, worldW / 2 / (t * ra)));
+    const cy = f.centerY ?? 1.08;
+    this.camera.fov = fov;
+    this.camera.aspect = ra;
+    this.camera.position.set(0, cy + d * 0.07, d);
+    this.camera.lookAt(0, cy, 0);
+    // the box is in viewport px: place it relative to the canvas
+    const c = canvas.getBoundingClientRect();
+    this.camera.setViewOffset(b.width, b.height, c.left - b.left, c.top - b.top, Math.max(1, c.width), Math.max(1, c.height));
+    if (!f.slotX) return null;
+    const halfW = d * t * ra;
+    const cx = b.left + b.width / 2;
+    return [((f.slotX[0] - cx) / (b.width / 2)) * halfW, ((f.slotX[1] - cx) / (b.width / 2)) * halfW];
   }
 
   dispose() {

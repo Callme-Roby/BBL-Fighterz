@@ -3,7 +3,7 @@ import type { App, Screen } from '../app';
 import { saveSettings, settings } from '../game/settings';
 import { input } from '../input/input';
 import { Showroom } from '../render/showroom';
-import { h, uiRoot } from '../ui/dom';
+import { backButton, h, syncTouchUi, uiRoot } from '../ui/dom';
 import { goMenu } from './flow';
 import { controlsHelp } from './help';
 
@@ -45,17 +45,18 @@ export class OptionsScreen implements Screen {
       saveSettings();
       this.app.applySettings();
       this.app.touch.refresh();
+      syncTouchUi();
     };
     const back = h('button', { class: 'btn primary' }, 'RETOUR');
     back.addEventListener('click', () => goMenu());
     uiRoot().append(
       h(
         'div',
-        { class: 'screen dim', style: 'overflow-y:auto;justify-content:flex-start;touch-action:pan-y' },
+        { class: 'screen dim options-screen', style: 'overflow-y:auto;justify-content:flex-start;touch-action:pan-y' },
         h('div', { class: 'h1' }, 'OPTIONS'),
         h(
           'div',
-          { class: 'panel options' },
+          { class: 'panel options options-main' },
           h('div', { class: 'field' }, 'DIFFICULTÉ DU CPU', chips([['easy', 'FACILE'], ['normal', 'NORMAL'], ['hard', 'DUR']], () => settings.difficulty, (v) => ((settings.difficulty = v), apply()))),
           h('div', { class: 'field' }, 'ROUNDS POUR GAGNER', chips([[1, '1'], [2, '2'], [3, '3']], () => settings.rounds, (v) => ((settings.rounds = v), apply()))),
           h(
@@ -71,9 +72,17 @@ export class OptionsScreen implements Screen {
           slider('BRUITAGES', 'sfx'),
           slider('VOIX', 'voice'),
         ),
-        h('div', { class: 'panel options' }, h('div', { class: 'field' }, 'COMMANDES (1 JOUEUR)'), controlsHelp(false)),
-        h('div', { class: 'panel options' }, h('div', { class: 'field' }, 'COMMANDES (2 JOUEURS, MÊME CLAVIER)'), controlsHelp(true)),
+        h(
+          'div',
+          { class: 'options-keys-wrap' },
+          // touch screens: the on-screen controls; keyboards: the keys (the CSS follows the setting live)
+          h('div', { class: 'panel options touch-only' }, controlsHelp(false, true)),
+          h('div', { class: 'panel options kbd-only' }, h('div', { class: 'field' }, 'COMMANDES (1 JOUEUR)'), controlsHelp(false)),
+          h('div', { class: 'panel options kbd-only' }, h('div', { class: 'field' }, 'COMMANDES (2 JOUEURS, MÊME CLAVIER)'), controlsHelp(true)),
+        ),
         back,
+        // scrolls away with the page (RETOUR again at the bottom)
+        backButton(() => goMenu()),
       ),
     );
   }

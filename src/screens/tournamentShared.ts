@@ -79,7 +79,8 @@ export function controlsEl(humans: number): HTMLElement {
         : [{ chunks: ['Match entre CPU'] }];
   return h(
     'div',
-    { class: 'tn-controls' },
+    // keyboard / gamepad reminder: hidden on touch screens (on-screen controls)
+    { class: 'tn-controls kbd-only' },
     ...lines.map((l) =>
       h(
         'div',

@@ -90,6 +90,8 @@ export class FightScreen implements Screen {
   private endReported = false;
   /** spectator: playback started (a small buffer is filled first) */
   private spectating = false;
+  /** the first frame after loading has been presented (HUD shown, round announced) */
+  private started = false;
 
   constructor(
     private app: App,
@@ -113,7 +115,8 @@ export class FightScreen implements Screen {
       this.unsubs.push(setup.link.on((m) => this.onNet(m)));
       this.unsubs.push(setup.link.onClose((reason) => this.disconnected(reason)));
     }
-    this.hud = new Hud(this.labels(), this.superKeys());
+    const [names, tags] = this.labels();
+    this.hud = new Hud(names, this.superKeys(), tags);
     // console access for testing: open the game with ?debug
     if (location.search.includes('debug') || (window as unknown as { bblDebug?: boolean }).bblDebug) (window as unknown as { bblFight: unknown }).bblFight = this;
     FightWorld.create(setup.p1, setup.p2, setup.stageId).then((w) => {
@@ -156,7 +159,7 @@ export class FightScreen implements Screen {
     uiRoot().append(this.hud.el);
     this.hud.setVisible(false);
     if (!this.setup.skipIntro) this.showVs();
-    this.loadingEl = h('div', { class: 'screen passthrough' }, h('div', { class: 'title-hint blink' }, 'CHARGEMENT…'));
+    this.loadingEl = h('div', { class: 'screen passthrough fight-loading' }, h('div', { class: 'title-hint blink' }, 'CHARGEMENT…'));
     uiRoot().append(this.loadingEl);
     audio.playMusic(getStage(this.setup.stageId).music, { fade: 1 });
     this.app.touch.setGameplay(true);
@@ -169,6 +172,8 @@ export class FightScreen implements Screen {
     this.session?.dispose();
     this.world?.dispose();
     this.app.touch.onPause = null;
+    this.app.touch.setCovered(false);
+    this.app.touch.setIdle(false);
     audio.duck(false);
   }
 
@@ -180,10 +185,12 @@ export class FightScreen implements Screen {
       const ph = h('div', { class: 'portrait' });
       import('../render/faceTexture').then(({ loadFace }) => loadFace(def).then((f) => (ph.style.backgroundImage = `url(${f.portraitUrl})`)));
       const sub = who && who.toUpperCase() !== def.name.toUpperCase() ? `avec ${def.name} — ${def.title}` : def.title;
-      return h('div', { class: 'side ' + cls }, ph, h('div', { class: 'pname ' + (cls === 'l' ? 'p1' : 'p2') }, who ? who.toUpperCase() : def.name, h('span', { class: 'ttl' }, sub)));
+      const shown = who ? who.toUpperCase() : def.name;
+      const long = shown.length > 9 ? ' long' : '';
+      return h('div', { class: 'side ' + cls }, ph, h('div', { class: 'pname ' + (cls === 'l' ? 'p1' : 'p2') + long }, h('span', { class: 'nm' }, shown), h('span', { class: 'ttl' }, sub)));
     };
-    const mid = h('div', { style: 'display:flex;flex-direction:column;align-items:center;gap:10px' });
-    if (this.setup.tournament) mid.append(h('div', { class: 'title-hint', style: 'color:#fff;font-size:12px' }, this.setup.tournament.title));
+    const mid = h('div', { class: 'mid' });
+    if (this.setup.tournament) mid.append(h('div', { class: 'title-hint vstitle' }, this.setup.tournament.title));
     mid.append(h('div', { class: 'vsword' }, 'VS'));
     this.vsEl = h('div', { class: 'vs' }, side(this.setup.p1, 'l'), mid, side(this.setup.p2, 'r'));
     uiRoot().append(this.vsEl);
@@ -216,8 +223,7 @@ export class FightScreen implements Screen {
       [t ? { label: 'RETOUR AU TABLEAU', action: () => this.quitToMenu() } : { label: 'RETOUR AU MENU', action: () => this.quitToMenu() }],
       () => audio.sfx('cursor'),
     );
-    this.overlay = h('div', { class: 'overlay' }, h('div', { class: 'h1' }, 'DÉCONNEXION'), h('div', { class: 'status err' }, reason), this.menu.el);
-    uiRoot().append(this.overlay);
+    this.openOverlay(h('div', { class: 'overlay' }, h('div', { class: 'h1' }, 'DÉCONNEXION'), h('div', { class: 'status err' }, reason), this.menu.el));
   }
 
   private quitToMenu() {
@@ -226,11 +232,16 @@ export class FightScreen implements Screen {
     else goMenu();
   }
 
-  /** HUD / result labels: participant names when given, otherwise fighter names */
-  private labels(): [string, string] {
+  /** HUD labels: participant names when given (+ the fighter played), otherwise fighter names */
+  private labels(): [[string, string], [string, string]] {
     const [n1, n2] = this.setup.names ?? [this.setup.p1.name, this.setup.p2.name];
-    const tag = (n: string, def: FighterDef) => (n.toUpperCase() === def.name.toUpperCase() ? def.name : `${n.toUpperCase()} (${def.name})`);
-    return [tag(n1, this.setup.p1), tag(n2, this.setup.p2)];
+    const same = (n: string, def: FighterDef) => n.toUpperCase() === def.name.toUpperCase();
+    const name = (n: string, def: FighterDef) => (same(n, def) ? def.name : n.toUpperCase());
+    const tag = (n: string, def: FighterDef) => (same(n, def) ? '' : def.name);
+    return [
+      [name(n1, this.setup.p1), name(n2, this.setup.p2)],
+      [tag(n1, this.setup.p1), tag(n2, this.setup.p2)],
+    ];
   }
 
   // ---------------------------------------------------------------- input
@@ -247,6 +258,14 @@ export class FightScreen implements Screen {
 
   /** key shown in the HUD next to "BBL MAX !" for each side */
   private superKeys(): [string, string] {
+    const keys = this.superKeysRaw();
+    // the side played with the touch controls has its BBL button right there: no key to press
+    const side = this.localSide;
+    if (this.app.touch.enabled && (side === 0 || side === 1)) keys[side] = '';
+    return keys;
+  }
+
+  private superKeysRaw(): [string, string] {
     if (this.setup.mode === 'spectate') return ['', ''];
     if (this.setup.mode === 'online') return this.setup.localPlayer === 1 ? ['', 'E'] : ['E', ''];
     if (this.humans >= 2) return ['E', 'P'];
@@ -289,8 +308,7 @@ export class FightScreen implements Screen {
           ],
           () => audio.sfx('cursor'),
         );
-        this.overlay = h('div', { class: 'overlay' }, h('div', { class: 'h1' }, 'SPECTATEUR'), this.menu.el);
-        uiRoot().append(this.overlay);
+        this.openOverlay(h('div', { class: 'overlay' }, h('div', { class: 'h1' }, 'SPECTATEUR'), this.menu.el));
       }
       return;
     }
@@ -304,8 +322,9 @@ export class FightScreen implements Screen {
           ],
           () => audio.sfx('cursor'),
         );
-        this.overlay = h('div', { class: 'overlay' }, h('div', { class: 'h1' }, 'EN LIGNE'), h('div', { class: 'status' }, 'Le match continue pendant ce menu !'), this.menu.el);
-        uiRoot().append(this.overlay);
+        this.openOverlay(
+          h('div', { class: 'overlay' }, h('div', { class: 'h1' }, 'EN LIGNE'), h('div', { class: 'status' }, 'Le match continue pendant ce menu !'), this.menu.el),
+        );
       }
       return;
     }
@@ -340,21 +359,28 @@ export class FightScreen implements Screen {
           ],
       () => audio.sfx('cursor'),
     );
-    this.overlay = h('div', { class: 'overlay' }, h('div', { class: 'h1' }, 'PAUSE'), this.menu.el);
-    uiRoot().append(this.overlay);
+    this.openOverlay(h('div', { class: 'overlay' }, h('div', { class: 'h1' }, 'PAUSE'), this.menu.el));
   }
 
   private showHelp() {
     this.closeOverlay();
     this.menu = new Menu([{ label: 'RETOUR', action: () => (this.togglePause(), this.togglePause()) }], () => audio.sfx('cursor'));
-    this.overlay = h('div', { class: 'overlay' }, h('div', { class: 'panel options' }, controlsHelp(this.humans >= 2 && this.setup.mode !== 'online')), this.menu.el);
-    uiRoot().append(this.overlay);
+    const touch = this.app.touch.enabled && this.setup.mode !== 'spectate';
+    const help = controlsHelp(this.humans >= 2 && this.setup.mode !== 'online', touch);
+    this.openOverlay(h('div', { class: 'overlay help' }, h('div', { class: 'panel helppanel' }, help), this.menu.el));
+  }
+
+  private openOverlay(el: HTMLElement) {
+    this.overlay = el;
+    uiRoot().append(el);
+    this.app.touch.setCovered(true);
   }
 
   private closeOverlay() {
     this.overlay?.remove();
     this.overlay = null;
     this.menu = null;
+    this.app.touch.setCovered(false);
   }
 
   private restart(skipIntro: boolean) {
@@ -418,8 +444,7 @@ export class FightScreen implements Screen {
     this.menu = new Menu(items, () => audio.sfx('cursor'));
     const w = this.state.matchWinner;
     const title = w === 2 ? 'MATCH NUL' : this.winnerName(w) + ' GAGNE';
-    this.overlay = h('div', { class: 'overlay', style: 'background:rgba(4,4,12,0.35);justify-content:flex-end;padding-bottom:12vh' }, h('div', { class: 'h1' }, title), this.menu.el);
-    uiRoot().append(this.overlay);
+    this.openOverlay(h('div', { class: 'overlay results' }, h('div', { class: 'h1' }, title), this.menu.el));
   }
 
   // ---------------------------------------------------------------- loop
@@ -443,6 +468,12 @@ export class FightScreen implements Screen {
       this.hud.setNetInfo("En attente de l'adversaire…");
       this.world.render(this.app.pipeline, this.state, dt, this.app.aspect);
       return;
+    }
+    if (!this.started) {
+      this.started = true;
+      // rematch / tournament replay / debug start: the match begins straight at the round intro,
+      // whose phase event (HUD + "ROUND 1") is never emitted
+      if (this.state.phase === 'roundIntro' && this.state.frame === 0) this.roundIntro();
     }
     let maxSteps = 5;
     const feed = this.setup.mode === 'spectate' ? this.setup.feed : undefined;
@@ -476,6 +507,8 @@ export class FightScreen implements Screen {
     this.hud.update(this.state, dt * 60);
     const side = this.localSide;
     this.app.touch.setSuperReady(side >= 0 && this.state.fighters[side].meter >= 100);
+    // spectators / CPU vs CPU: the controls do nothing (only the pause button matters)
+    this.app.touch.setIdle(side < 0 || !this.interactive());
     if (online && this.session) {
       this.hud.setNetInfo(`${this.session.pingMs} ms${this.session.desynced ? ' · DESYNC!' : ''}`);
     }
@@ -522,19 +555,29 @@ export class FightScreen implements Screen {
     return i === 0 ? this.setup.p1.name : this.setup.p2.name;
   }
 
+  /** false while the controls do nothing: intros, BBL MAX cinematics, K.O., results */
+  private interactive(): boolean {
+    const s = this.state;
+    if (s.phase !== 'fight') return false;
+    return !s.fighters.some((f) => f.action === 'superFlash' || f.action === 'superCombo');
+  }
+
+  private roundIntro() {
+    const s = this.state;
+    this.hud.clearSubtitle();
+    this.hud.setVisible(true);
+    audio.duck(false);
+    const last = s.fighters[0].wins === s.roundsToWin - 1 && s.fighters[1].wins === s.roundsToWin - 1;
+    const label = last && s.round > 1 ? 'FINAL ROUND' : `ROUND ${s.round}`;
+    this.hud.announce(label, 'small', 60);
+    void audio.announcer(last && s.round > 1 ? 'finalRound' : s.round === 1 ? 'round1' : s.round === 2 ? 'round2' : 'round3');
+  }
+
   private onEvent(ev: SimEvent) {
     const s = this.state;
     switch (ev.t) {
       case 'phase':
-        if (ev.phase === 'roundIntro') {
-          this.hud.clearSubtitle();
-          this.hud.setVisible(true);
-          audio.duck(false);
-          const last = s.fighters[0].wins === s.roundsToWin - 1 && s.fighters[1].wins === s.roundsToWin - 1;
-          const label = last && s.round > 1 ? 'FINAL ROUND' : `ROUND ${s.round}`;
-          this.hud.announce(label, 'small', 60);
-          void audio.announcer(last && s.round > 1 ? 'finalRound' : s.round === 1 ? 'round1' : s.round === 2 ? 'round2' : 'round3');
-        }
+        if (ev.phase === 'roundIntro') this.roundIntro();
         if (ev.phase === 'roundOver') {
           if (s.roundWinner === 2) this.hud.announce('DRAW', 'small', 90);
         }

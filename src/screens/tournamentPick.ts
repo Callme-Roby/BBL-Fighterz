@@ -9,8 +9,8 @@ import { fullRoster } from '../game/settings';
 import { fighterIndexByName, saveTournament, type Tournament } from '../game/tournament';
 import { input } from '../input/input';
 import { loadFace } from '../render/faceTexture';
-import { Showroom } from '../render/showroom';
-import { backButton, h, uiRoot } from '../ui/dom';
+import { Showroom, type ShowroomFit } from '../render/showroom';
+import { backButton, gridColumns, h, phoneLayout, uiRoot } from '../ui/dom';
 import { goTournament, goTournamentBracket } from './flow';
 import { centerShowroom, guardButtons, portrait } from './tournamentShared';
 
@@ -34,6 +34,7 @@ export class TournamentPickScreen implements Screen {
   private subEl!: HTMLDivElement;
   private nameEl!: HTMLDivElement;
   private stripEl!: HTMLDivElement;
+  private midEl!: HTMLDivElement;
 
   constructor(
     private app: App,
@@ -61,16 +62,22 @@ export class TournamentPickScreen implements Screen {
     this.subEl = h('div', { class: 'title-hint' });
     this.nameEl = h('div', { class: 'pname p1' });
     this.stripEl = h('div', { class: 'tn-strip' });
+    this.midEl = h('div', { class: 'tn-pick-mid' }, this.nameEl, this.stripEl);
+    // touch: tap a fighter then VALIDER (or tap it again)
+    const ok = h('button', { class: 'btn primary tn-pick-ok touch-only' }, 'VALIDER');
+    ok.addEventListener('click', () => this.confirm());
     const root = h(
       'div',
       { class: 'select tn-pick' },
       h('div', { class: 'top' }, this.titleEl, this.subEl),
-      h('div', { class: 'tn-pick-mid' }, this.nameEl, this.stripEl),
+      this.midEl,
       h(
         'div',
         { class: 'tn-pick-bottom' },
         grid,
-        h('div', { class: 'title-hint' }, '← → ↑ ↓ / ZQSD pour choisir · Entrée pour valider · Échap = participant précédent'),
+        h('div', { class: 'title-hint kbd-only' }, '← → ↑ ↓ / ZQSD pour choisir · Entrée pour valider · Échap = participant précédent'),
+        h('div', { class: 'title-hint touch-only' }, 'Touche un perso · RETOUR = participant précédent'),
+        ok,
       ),
     );
     guardButtons(root);
@@ -157,7 +164,7 @@ export class TournamentPickScreen implements Screen {
     let i = this.cursor;
     if (dx) i = (i + dx + n) % n;
     if (dy) {
-      i += dy * this.cols;
+      i += dy * gridColumns(this.cells, this.cols);
       if (i < 0 || i >= n) i = this.cursor;
     }
     if (i !== this.cursor) {
@@ -215,6 +222,23 @@ export class TournamentPickScreen implements Screen {
         if (this.disposed) return;
       }
     }
+    this.showroom.fit = this.fitFighter();
     this.showroom.render(this.app.pipeline, dt, this.app.aspect);
+  }
+
+  /** Phones: the fighter stands in the free space (portrait: under the participant strip, landscape: under the name, left of the grid). */
+  private fitFighter(): ShowroomFit | null {
+    const layout = phoneLayout();
+    if (!layout) return null;
+    const mid = this.midEl.getBoundingClientRect();
+    const name = this.nameEl.getBoundingClientRect();
+    const strip = this.stripEl.getBoundingClientRect();
+    let box: ShowroomFit['box'];
+    if (layout === 'portrait') box = { left: mid.left, top: strip.bottom + 4, width: mid.width, height: name.top - strip.bottom - 8 };
+    // landscape: the name column (left of the grid), under the name
+    else box = { left: name.left, top: name.bottom + 4, width: name.width, height: window.innerHeight - name.bottom - 10 };
+    if (box.width < 40 || box.height < 40) return null;
+    const cx = box.left + box.width / 2;
+    return { box, worldH: 2.45, centerY: 1.06, worldW: 1.4, slotX: [cx, cx + box.width] };
   }
 }

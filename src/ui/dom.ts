@@ -1,3 +1,5 @@
+import { settings } from '../game/settings';
+
 type Child = Node | string | number | null | undefined | false;
 type Attrs = Record<string, unknown> & { class?: string; style?: string };
 
@@ -24,7 +26,48 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs | 
 export const uiRoot = () => document.getElementById('ui')!;
 
 export function clearUi() {
+  syncTouchUi();
   uiRoot().replaceChildren();
+}
+
+/**
+ * Touch-first UI (phone, tablet, or touch controls forced on in the options):
+ * keyboard hints are replaced by touch ones, VALIDER buttons appear.
+ * Same rule as the touch controls (src/ui/touch.ts).
+ */
+export function isTouchUi(): boolean {
+  if (settings.touch === 'on') return true;
+  if (settings.touch === 'off') return false;
+  return !!window.matchMedia?.('(pointer: coarse)').matches;
+}
+
+/** Mirrors isTouchUi() as the `touch-ui` class of <html>: CSS shows `.touch-only` / hides `.kbd-only`. */
+export function syncTouchUi() {
+  document.documentElement.classList.toggle('touch-ui', isTouchUi());
+}
+
+/**
+ * Compact phone layouts, same breakpoints as mobile-menus.css:
+ * 'landscape' = short screen (≤ 500 px high) wider than tall, 'portrait' = ≤ 600 px wide.
+ */
+export function phoneLayout(): 'portrait' | 'landscape' | null {
+  const w = window.innerWidth;
+  const hh = window.innerHeight;
+  if (hh <= 500 && w >= hh) return 'landscape';
+  if (w <= 600) return 'portrait';
+  return null;
+}
+
+/** Number of columns a CSS grid of cells shows (keyboard ↑ ↓ jump by a row), `fallback` when hidden. */
+export function gridColumns(cells: HTMLElement[], fallback: number): number {
+  if (!cells.length || !cells[0].offsetParent) return fallback;
+  const top = cells[0].offsetTop;
+  let n = 0;
+  for (const c of cells) {
+    if (c.offsetTop !== top) break;
+    n++;
+  }
+  return n || fallback;
 }
 
 /**
@@ -87,7 +130,7 @@ export class Menu {
 
 /** Small "back" button (top-left) for mouse / touch users. */
 export function backButton(action: () => void): HTMLButtonElement {
-  const b = h('button', { class: 'btn backbtn' }, '◀ RETOUR');
+  const b = h('button', { class: 'btn backbtn', 'aria-label': 'Retour' }, '◀ RETOUR');
   b.addEventListener('click', action);
   return b;
 }

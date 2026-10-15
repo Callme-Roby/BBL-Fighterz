@@ -103,6 +103,22 @@ button {
   margin-top: 0.3em;
 }
 
+/* title screen: with the menu shown, the logo also scales with the height (fits 1280×720) */
+.title:not(.press) .logo {
+  font-size: clamp(42px, min(9vw, 13vh), 120px);
+}
+
+.title-press {
+  font-size: 14px;
+  margin-top: 20px;
+  text-shadow: 2px 2px 0 #000, 0 0 6px #000;
+}
+
+/* the attract mode behind can be bright: keep the small print readable */
+.title-foot {
+  text-shadow: 1px 1px 0 #000, 0 0 4px #000;
+}
+
 .blink {
   animation: blink 1s steps(2) infinite;
 }
@@ -210,12 +226,25 @@ button {
   position: absolute;
   inset: 0;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  /* title · free space (3D fighters) · names · grid */
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   padding: 14px 16px max(14px, env(safe-area-inset-bottom));
 }
 
 .select .top {
   text-align: center;
+}
+
+.select .arena {
+  min-height: 0;
+  pointer-events: none;
+}
+
+.select .bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }
 
 .select .grid {
@@ -380,6 +409,7 @@ button {
 .vs {
   position: absolute;
   inset: 0;
+  z-index: 20;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
@@ -448,10 +478,10 @@ button {
 .hud .bars {
   position: absolute;
   top: max(10px, env(safe-area-inset-top));
-  left: 2%;
-  right: 2%;
+  left: max(2%, env(safe-area-inset-left));
+  right: max(2%, env(safe-area-inset-right));
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 1.2%;
   align-items: start;
 }
@@ -498,6 +528,7 @@ button {
   align-items: center;
   gap: 8px;
   margin-top: 6px;
+  min-width: 0;
 }
 
 .hud .label.right {
@@ -512,10 +543,21 @@ button {
   font-style: italic;
   font-size: clamp(10px, 1.6vw, 16px);
   text-shadow: 2px 2px 0 #000;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* fighter played by a tournament participant: "NAME (FIGHTER)" */
+.hud .nameplate small {
+  font-size: 0.75em;
 }
 
 .hud .wins {
   display: flex;
+  flex: none;
   gap: 4px;
 }
 
@@ -549,8 +591,8 @@ button {
 .hud .meters {
   position: absolute;
   bottom: max(14px, env(safe-area-inset-bottom));
-  left: 2%;
-  right: 2%;
+  left: max(2%, env(safe-area-inset-left));
+  right: max(2%, env(safe-area-inset-right));
   display: flex;
   justify-content: space-between;
 }
@@ -609,8 +651,8 @@ button {
 
 .announce {
   position: absolute;
-  left: 0;
-  right: 0;
+  left: 3%;
+  right: 3%;
   top: 38%;
   text-align: center;
   font-family: var(--arcade);
@@ -681,9 +723,10 @@ button {
 
 .subtitle {
   position: absolute;
-  left: 50%;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
   bottom: 12%;
-  transform: translateX(-50%);
   width: min(760px, 92vw);
   display: flex;
   gap: 14px;
@@ -692,7 +735,14 @@ button {
   border: 2px solid #fff;
   box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.6);
   padding: 12px 16px;
-  animation: announceIn 0.25s both;
+  animation: subtitleIn 0.25s both;
+}
+
+@keyframes subtitleIn {
+  from {
+    transform: translateY(12px) scale(1.08);
+    opacity: 0;
+  }
 }
 
 .subtitle .ph {
@@ -732,13 +782,26 @@ button {
 .overlay {
   position: absolute;
   inset: 0;
+  /* above the touch controls */
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-direction: column;
   gap: 18px;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  overflow-y: auto;
+  touch-action: pan-y;
   background: rgba(4, 4, 12, 0.7);
   backdrop-filter: blur(2px);
+}
+
+/* end of the match: the winner stays visible, the menu sits low */
+.overlay.results {
+  background: rgba(4, 4, 12, 0.35);
+  backdrop-filter: none;
+  justify-content: flex-end;
+  padding-bottom: max(12vh, env(safe-area-inset-bottom));
 }
 
 .share {
@@ -918,101 +981,7 @@ kbd {
   color: #fff;
 }
 
-/* ------------------------------------------------------------------ */
-/* touch controls                                                      */
-/* ------------------------------------------------------------------ */
-#touch {
-  position: absolute;
-  inset: auto 0 0 0;
-  height: 0;
-  pointer-events: none;
-}
-
-#touch.on {
-  height: 46%;
-}
-
-#touch .pad,
-#touch .btns {
-  position: absolute;
-  bottom: max(18px, env(safe-area-inset-bottom));
-  width: 170px;
-  height: 170px;
-  pointer-events: auto;
-  touch-action: none;
-}
-
-#touch .pad {
-  left: 18px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.07);
-  border: 2px solid rgba(255, 255, 255, 0.2);
-}
-
-#touch .pad .knob {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 64px;
-  height: 64px;
-  margin: -32px 0 0 -32px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.25);
-  border: 2px solid rgba(255, 255, 255, 0.5);
-}
-
-#touch .btns {
-  right: 18px;
-}
-
-#touch .btns b {
-  position: absolute;
-  width: 62px;
-  height: 62px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  border: 2px solid rgba(255, 255, 255, 0.5);
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-}
-
-#touch .btns b.on {
-  background: rgba(255, 138, 28, 0.6);
-}
-
-#touch .btns b.small {
-  width: 54px;
-  height: 54px;
-  font-size: 7px;
-}
-
-#touch .btns b.super {
-  width: 54px;
-  height: 54px;
-  font-size: 9px;
-  border-color: rgba(255, 210, 58, 0.8);
-  color: var(--orange2);
-}
-
-#touch.full .btns b.super {
-  background: rgba(255, 138, 28, 0.55);
-  animation: blink 0.6s steps(2) infinite;
-}
-
-#touch .pausebtn {
-  position: absolute;
-  top: -40vh;
-  right: 12px;
-  pointer-events: auto;
-  font-size: 10px;
-  padding: 8px 10px;
-  background: rgba(0, 0, 0, 0.5);
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  color: #fff;
-}
+/* touch controls: see mobile-game.css */
 
 @media (max-aspect-ratio: 1/1) {
   .stage-card {
@@ -1107,15 +1076,24 @@ kbd {
 }
 
 .comic.caption {
-  left: 50%;
+  left: 5%;
+  right: 5%;
   top: 14%;
+  text-align: center;
+  white-space: normal;
   font-size: clamp(16px, 2.6vw, 30px);
   font-style: normal;
   color: var(--comic, #fff);
   -webkit-text-stroke: 2px #000;
   text-shadow: 3px 3px 0 #000;
-  transform: translateX(-50%);
-  animation: announceIn 0.25s both;
+  animation: captionIn 0.25s both;
+}
+
+@keyframes captionIn {
+  from {
+    transform: scale(1.8);
+    opacity: 0;
+  }
 }
 
 @keyframes comicPop {

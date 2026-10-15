@@ -716,13 +716,14 @@
 /* small screens ----------------------------------------------------- */
 @media (max-width: 560px) {
   .tn-plist {
-    grid-template-columns: 1fr;
+    /* minmax(0, …): the name fields must not widen the column past the screen */
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: none;
     grid-auto-flow: row;
   }
 }
 
-@media (max-width: 900px), (max-height: 480px) {
+@media (max-width: 900px), (max-height: 500px) {
   .tn-bracket {
     --gap: 14px;
   }
@@ -752,28 +753,42 @@
 }
 
 @media (max-width: 600px) {
-  /* portrait phones: panel first, then the bracket; the whole screen scrolls */
+  /* portrait phones: the panel (next match + buttons) on top, the bracket scrolls below */
   .tn-bracket-screen {
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
-    touch-action: pan-y;
+    gap: 8px;
+    padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+    overflow: hidden;
   }
   .tn-panel {
     order: -1;
-    flex: none;
-    overflow: visible;
-    margin-top: 40px;
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    margin-top: 42px;
+    padding: 10px 10px 10px 12px;
+    gap: 8px;
   }
   .tn-bracket-wrap {
-    flex: none;
+    flex: 1 1 0;
+    min-height: 170px;
+    padding: 4px 8px 8px;
   }
   .tn-head {
     padding-left: 0;
+    flex-wrap: wrap;
+  }
+  .tn-head .h1 {
+    font-size: 16px;
+  }
+  .tn-progress {
+    white-space: normal;
+    line-height: 1.5;
   }
 }
 
-@media (max-height: 480px) {
+@media (max-height: 500px) {
   .tn-setup-panel {
     padding: 10px 12px;
     gap: 10px;
@@ -1017,7 +1032,7 @@
   border-color: #3a3660;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 820px) {
   .tn-lbody {
     grid-template-columns: minmax(0, 1fr);
     width: 100%;
@@ -1028,5 +1043,501 @@
   .tn-lgrid .cell {
     width: 52px;
     height: 64px;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* phones (same breakpoints as mobile-menus.css)                       */
+/*   portrait  = (max-width: 600px)                                     */
+/*   landscape = (max-height: 500px) and (min-aspect-ratio: 1/1)        */
+/* ------------------------------------------------------------------ */
+.tn-pick-ok {
+  min-width: 200px;
+  text-align: center;
+}
+
+@media (max-width: 600px), (max-height: 500px) {
+  .tn-toggle {
+    width: 66px;
+    font-size: 8px;
+    padding: 10px 4px;
+  }
+  .tn-count {
+    gap: 5px;
+  }
+  .tn-count button {
+    padding: 8px 12px;
+  }
+  /* setup: the buttons stay at the bottom of the screen while the list scrolls */
+  .tn-setup:not(.tn-center) {
+    padding-bottom: 0;
+  }
+  .tn-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    align-self: stretch;
+    margin: 0 -14px;
+    padding: 12px 14px max(8px, env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, rgba(5, 5, 15, 0), rgba(5, 5, 15, 0.94) 26%);
+  }
+  .tn-actions .btn {
+    padding: 11px 12px;
+    font-size: 10px;
+    line-height: 1.4;
+  }
+  .tn-flash {
+    font-size: 8px;
+    padding: 6px 8px;
+  }
+  .tn-next-k {
+    font-size: 8px;
+  }
+  .tn-vs-word {
+    font-size: 22px;
+  }
+  .tn-panel .menu button .sub {
+    font-size: 7px;
+  }
+}
+
+@media (max-width: 600px) {
+  /* --- setup --- */
+  .tn-setup {
+    gap: 10px;
+  }
+  .tn-setup > .title-hint {
+    font-size: 8px;
+    line-height: 1.6;
+  }
+  .tn-setup-panel {
+    padding: 10px;
+    gap: 10px;
+  }
+  .tn-count button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 8px 0;
+  }
+  .tn-prow {
+    gap: 6px;
+  }
+  .tn-prow input {
+    padding: 9px 8px;
+    font-size: 10px;
+  }
+  .tn-seed {
+    width: 18px;
+    font-size: 9px;
+  }
+  .tn-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .tn-actions .btn.primary {
+    grid-column: 1 / -1;
+    order: -1;
+    padding: 13px 10px;
+  }
+
+  /* --- picks: header · participants strip · fighter · name · grid · VALIDER --- */
+  .tn-pick {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 6px;
+    padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
+  .tn-pick .top {
+    min-height: 36px;
+    padding: 0 0 0 96px;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 4px;
+    text-align: left;
+  }
+  .tn-pick-title {
+    font-size: clamp(11px, 3.3vw, 14px);
+    line-height: 1.25;
+    text-align: left;
+    text-shadow: 2px 2px 0 #000;
+  }
+  .tn-pick .top .title-hint {
+    font-size: 7px;
+    line-height: 1.6;
+    text-align: left;
+  }
+  .tn-pick-mid {
+    flex-direction: column-reverse;
+    justify-content: space-between;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .tn-pick-mid .pname {
+    max-width: 100%;
+    text-align: center;
+    font-size: clamp(20px, 6.6vw, 28px);
+    text-shadow: 3px 3px 0 #000;
+  }
+  .tn-pick-mid .pname .ttl {
+    font-size: 8px;
+    margin-top: 5px;
+  }
+  .tn-strip {
+    width: auto;
+    max-height: none;
+    flex-direction: row;
+    align-self: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+    touch-action: pan-x;
+    gap: 4px;
+    padding: 4px;
+  }
+  .tn-strip-it {
+    flex: none;
+    flex-direction: column;
+    gap: 2px;
+    padding: 2px 3px;
+    font-size: 6px;
+    max-width: 58px;
+  }
+  .tn-strip-nm {
+    max-width: 52px;
+  }
+  .tn-strip-it .tn-cpu {
+    font-size: 5px;
+    padding: 1px 2px;
+  }
+  .tn-pick-bottom {
+    gap: 7px;
+  }
+  .tn-pick .grid {
+    grid-template-columns: repeat(5, minmax(0, 64px));
+    gap: 5px;
+    padding: 6px;
+    max-width: 100%;
+    max-height: 40vh;
+    overflow-y: auto;
+    touch-action: pan-y;
+  }
+  .tn-pick .cell {
+    width: auto;
+    height: auto;
+    aspect-ratio: 4 / 5;
+  }
+  .tn-pick .cell.special {
+    font-size: 26px;
+  }
+  .tn-pick-bottom .title-hint {
+    font-size: 8px;
+    line-height: 1.5;
+  }
+  .tn-pick-ok {
+    width: min(360px, 100%);
+    padding: 13px 12px;
+  }
+
+  /* --- bracket panel --- */
+  .tn-next-title {
+    font-size: 16px;
+  }
+  .tn-vs-ph {
+    width: 44px;
+    height: 58px;
+    border-width: 2px;
+  }
+  .tn-vs-name {
+    font-size: 13px;
+  }
+  .tn-panel .menu button {
+    padding: 10px 12px;
+    font-size: 10px;
+  }
+
+  /* --- champion --- */
+  .tn-champ .menu {
+    min-width: 0;
+  }
+
+  /* --- online lobby: one scrolling column, the buttons stay at the bottom --- */
+  .tn-online.lobby {
+    gap: 8px;
+    padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left));
+  }
+  .tn-ltop {
+    align-self: stretch;
+    min-height: 36px;
+    padding-left: 96px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    text-align: left;
+  }
+  .tn-ltop .h1 {
+    font-size: 16px;
+    text-align: left;
+  }
+  .tn-ltop .title-hint {
+    text-align: left;
+    line-height: 1.4;
+  }
+  .tn-code {
+    font-size: 13px;
+  }
+  .tn-lbody {
+    width: 100%;
+    gap: 8px;
+  }
+  .tn-llist,
+  .tn-lme {
+    padding: 10px;
+    gap: 8px;
+  }
+  .tn-lrows {
+    max-height: 34vh;
+  }
+  .tn-lgrid {
+    grid-template-columns: repeat(5, minmax(0, 60px));
+    justify-content: center;
+    gap: 5px;
+    padding: 6px;
+  }
+  .tn-lgrid .cell {
+    width: auto;
+    height: auto;
+    aspect-ratio: 4 / 5;
+  }
+  .tn-lactions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    align-self: stretch;
+    margin: 0 -12px;
+    padding: 12px 12px max(8px, env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, rgba(5, 5, 15, 0), rgba(5, 5, 15, 0.94) 22%);
+  }
+  .tn-lactions .menu {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+    gap: 6px;
+  }
+  .tn-lactions .menu button {
+    min-width: 0;
+    padding: 10px 8px;
+    font-size: 9px;
+    text-align: center;
+  }
+  .tn-lactions .menu button:first-child {
+    grid-column: 1 / -1;
+  }
+  .tn-lactions .menu button:not(:first-child) .sub {
+    display: none;
+  }
+}
+
+@media (max-height: 500px) and (min-aspect-ratio: 1/1) {
+  /* --- setup --- */
+  .tn-setup {
+    gap: 6px;
+  }
+  .tn-setup > .title-hint {
+    font-size: 8px;
+    line-height: 1.4;
+  }
+  .tn-actions {
+    padding-top: 8px;
+  }
+  .tn-actions .btn {
+    padding: 9px 14px;
+  }
+
+  /* --- picks: name + fighter on the left, grid in the middle, participants on the right --- */
+  .tn-pick {
+    grid-template-columns: minmax(0, 1fr) auto minmax(110px, 150px);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    column-gap: 8px;
+    row-gap: 4px;
+    padding: max(6px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  }
+  .tn-pick .top {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    min-height: 40px;
+    padding: 0 96px;
+    justify-content: center;
+  }
+  .tn-pick-title {
+    font-size: 13px;
+  }
+  .tn-pick-mid {
+    display: contents;
+  }
+  .tn-pick-mid .pname {
+    grid-column: 1;
+    grid-row: 2;
+    max-width: none;
+    min-width: 0;
+    font-size: clamp(16px, 3vw, 24px);
+    text-shadow: 3px 3px 0 #000;
+  }
+  .tn-pick-mid .pname .ttl {
+    font-size: 7px;
+    margin-top: 4px;
+  }
+  .tn-strip {
+    grid-column: 3;
+    grid-row: 2 / span 2;
+    width: auto;
+    max-height: none;
+    align-self: stretch;
+  }
+  .tn-pick-bottom {
+    grid-column: 2;
+    grid-row: 2 / span 2;
+    align-self: end;
+    gap: 5px;
+  }
+  .tn-pick-ok {
+    min-width: 0;
+    width: 100%;
+    min-height: 38px;
+    padding: 8px 12px;
+    font-size: 10px;
+  }
+
+  /* --- online lobby: title + link on top, participants | my fighter, buttons in one row --- */
+  .tn-online.lobby {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    align-items: stretch;
+    gap: 6px 10px;
+    padding: max(6px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  }
+  .tn-ltop {
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 40px;
+    padding-left: 96px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    text-align: left;
+  }
+  .tn-ltop .h1 {
+    font-size: 16px;
+    text-align: left;
+  }
+  .tn-ltop .title-hint {
+    font-size: 8px;
+    line-height: 1.4;
+    text-align: left;
+  }
+  .tn-code {
+    font-size: 12px;
+  }
+  .tn-online.lobby > .share {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    width: 100%;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .tn-online.lobby > .share input {
+    flex: 1 1 auto;
+    padding: 9px 8px;
+    font-size: 9px;
+  }
+  .tn-online.lobby > .share .btn {
+    flex: none;
+    padding: 9px 10px;
+    font-size: 9px;
+  }
+  .tn-lbody {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    width: 100%;
+    max-width: none;
+    min-height: 0;
+    gap: 10px;
+    align-items: stretch;
+  }
+  .tn-llist,
+  .tn-lme {
+    min-height: 0;
+    overflow-y: auto;
+    touch-action: pan-y;
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  .tn-lrows {
+    max-height: none;
+    overflow: visible;
+  }
+  .tn-lrow {
+    padding: 2px 5px 2px 2px;
+  }
+  .tn-lgrid {
+    grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+    gap: 4px;
+    padding: 5px;
+  }
+  .tn-lgrid .cell {
+    width: auto;
+    height: auto;
+    aspect-ratio: 4 / 5;
+  }
+  .tn-lgrid .cell .nm {
+    font-size: 6px;
+  }
+  .tn-lactions {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+  .tn-lactions .menu {
+    width: 100%;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .tn-lactions .menu button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 7px 8px;
+    font-size: 9px;
+    text-align: center;
+  }
+  .tn-lactions .menu button .sub {
+    font-size: 6px;
+  }
+  .tn-online.lobby > .status {
+    grid-column: 1 / -1;
+    grid-row: 4;
+    max-width: none;
+  }
+}
+
+/* small landscape phones (iPhone SE…): narrower participant strip, 7 portraits per row */
+@media (max-height: 500px) and (min-aspect-ratio: 1/1) and (max-width: 760px) {
+  .tn-pick {
+    grid-template-columns: minmax(0, 1fr) auto minmax(96px, 120px);
+  }
+  .tn-pick .grid {
+    grid-template-columns: repeat(7, 42px);
+  }
+  .tn-pick .cell {
+    width: 42px;
+    height: 53px;
+  }
+}
+
+/* the lobby buttons are laid out in a grid / a row on phones: no ▶ cursor beside them */
+@media (max-width: 600px), (max-height: 500px) {
+  .tn-lactions .menu button.sel::before {
+    display: none;
   }
 }

@@ -66,14 +66,18 @@ export class StageSelectScreen implements Screen {
       list.append(card);
       this.cards.push(card);
     });
+    // touch: tap a card, then C'EST PARTI ! (or tap the card again)
+    const go = h('button', { class: 'btn primary stage-go touch-only' }, "C'EST PARTI !");
+    go.addEventListener('click', () => this.confirm());
     uiRoot().append(
       h(
         'div',
-        { class: 'screen dim' },
+        { class: 'screen dim stage-screen' },
         h('div', { class: 'h1' }, "CHOISIS L'ARÈNE"),
         h('div', { class: 'title-hint' }, `${this.p1.name}  VS  ${this.p2.name}`),
         list,
-        h('div', { class: 'footer-hint' }, '← → pour choisir · Entrée pour valider · Échap pour revenir'),
+        go,
+        h('div', { class: 'footer-hint kbd-only' }, '← → pour choisir · Entrée pour valider · Échap pour revenir'),
       ),
       backButton(() => this.back()),
     );

@@ -21,18 +21,23 @@ export class Hud {
   private netEl: HTMLDivElement;
   private plates: HTMLDivElement[] = [];
   private names: [string, string];
+  private tags: [string, string];
   private bars: HTMLDivElement;
   private meterRow: HTMLDivElement;
+  private meterText = ['', ''];
 
   /**
-   * @param names fighter names
-   * @param superKeys key shown next to "BBL MAX !" for each side ('' = CPU / remote)
+   * @param names names shown on the nameplates (player or fighter names)
+   * @param superKeys key shown next to "BBL MAX !" for each side ('' = CPU / remote / touch)
+   * @param tags fighter played, shown after the name when it differs ('' = none; hidden on small screens)
    */
   constructor(
     names: [string, string],
     private superKeys: [string, string] = ['E', 'P'],
+    tags: [string, string] = ['', ''],
   ) {
     this.names = [names[0], names[1]];
+    this.tags = [tags[0], tags[1]];
     const side = (i: number) => {
       const fill = h('div', { class: 'fill' });
       const trail = h('div', { class: 'trail' });
@@ -40,8 +45,9 @@ export class Hud {
       this.hp.push({ box, fill, trail });
       const wins = h('div', { class: 'wins' });
       this.wins.push(wins);
-      const plate = h('div', { class: 'nameplate' }, names[i]);
+      const plate = h('div', { class: 'nameplate' });
       this.plates.push(plate);
+      this.fillPlate(i, null);
       return h('div', null, box, h('div', { class: 'label' + (i === 1 ? ' right' : '') }, plate, wins));
     };
     this.timer = h('div', { class: 'timer' }, '60');
@@ -62,11 +68,19 @@ export class Hud {
     this.meterRow.style.visibility = bars ? 'visible' : 'hidden';
   }
 
+  private fillPlate(i: number, name: string | null) {
+    const el = this.plates[i];
+    const tag = name === null ? this.tags[i] : '';
+    el.replaceChildren(h('span', null, name ?? this.names[i]));
+    if (tag) el.append(h('small', null, ` (${tag})`));
+    el.title = (name ?? this.names[i]) + (tag ? ` (${tag})` : '');
+  }
+
   /** Temporary name on a nameplate (BBL MAX gags); null = the real one. */
   setName(i: number, name: string | null) {
     const el = this.plates[i];
     if (!el) return;
-    el.textContent = name ?? this.names[i];
+    this.fillPlate(i, name);
     el.classList.toggle('renamed', name !== null);
   }
 
@@ -119,6 +133,7 @@ export class Hud {
   comic(text: string, style: 'boom' | 'punch' | 'caption', frames: number, color?: string) {
     const n = this.comicSeq++;
     const el = h('div', { class: 'comic ' + style }, text);
+    let spot: number[] | null = null;
     if (style === 'boom') {
       // scatter successive onomatopoeias around the centre
       const spots = [
@@ -128,14 +143,25 @@ export class Hud {
         [62, 28, 10],
         [50, 50, -10],
       ];
-      const [x, y, r] = spots[n % spots.length];
-      el.style.left = x + '%';
-      el.style.top = y + '%';
-      el.style.setProperty('--rot', r + 'deg');
+      spot = spots[n % spots.length];
+      el.style.left = spot[0] + '%';
+      el.style.top = spot[1] + '%';
+      el.style.setProperty('--rot', spot[2] + 'deg');
     }
     if (color) el.style.setProperty('--comic', color);
     if (style !== 'boom') for (const c of this.comics) if (c.el.classList.contains(style)) c.t = Math.min(c.t, 1);
     this.el.append(el);
+    if (spot) {
+      // narrow screens: keep the whole word inside the picture
+      const W = this.el.clientWidth;
+      const w = el.offsetWidth;
+      if (W > 0 && w > 0) {
+        const m = Math.min(12, W * 0.03);
+        const x = (spot[0] / 100) * W;
+        const cx = w + 2 * m >= W ? W / 2 : Math.min(W - m - w / 2, Math.max(m + w / 2, x));
+        if (Math.abs(cx - x) > 0.5) el.style.left = cx + 'px';
+      }
+    }
     this.comics.push({ el, t: frames });
   }
 
@@ -168,7 +194,11 @@ export class Hud {
       this.meters[i].fill.style.width = m * 100 + '%';
       this.meters[i].box.classList.toggle('full', f.meter >= MAX_METER);
       const key = this.superKeys[i];
-      (this.meters[i].box.firstChild as HTMLElement).textContent = f.meter >= MAX_METER ? (key ? `BBL MAX ! APPUIE SUR ${key}` : 'BBL MAX !') : 'BBL';
+      const txt = f.meter >= MAX_METER ? (key ? `BBL MAX ! APPUIE SUR ${key}` : 'BBL MAX !') : 'BBL';
+      if (txt !== this.meterText[i]) {
+        this.meterText[i] = txt;
+        (this.meters[i].box.firstChild as HTMLElement).textContent = txt;
+      }
 
       // combo counter shows on the attacker's side
       const victim = s.fighters[1 - i];

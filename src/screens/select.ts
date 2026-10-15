@@ -5,8 +5,8 @@ import { fullRoster, sanitizeDef } from '../game/settings';
 import { input, type MenuEvent } from '../input/input';
 import type { NetLink, NetMsg } from '../net/peer';
 import { loadFace } from '../render/faceTexture';
-import { Showroom } from '../render/showroom';
-import { backButton, h, uiRoot } from '../ui/dom';
+import { Showroom, type ShowroomFit } from '../render/showroom';
+import { backButton, gridColumns, h, isTouchUi, phoneLayout, uiRoot } from '../ui/dom';
 import type { FightMode } from './fight';
 import { goMenu, goStageSelect, startFight } from './flow';
 import { settings } from '../game/settings';
@@ -21,6 +21,12 @@ export class SelectScreen implements Screen {
   private cells: HTMLDivElement[] = [];
   private names: HTMLDivElement[] = [];
   private status!: HTMLDivElement;
+  private root!: HTMLDivElement;
+  private grid!: HTMLDivElement;
+  /** free space between the title and the grid: the 3D fighters stand there on phones */
+  private arena!: HTMLDivElement;
+  /** touch: confirms the highlighted fighter (a second tap on the cell does it too) */
+  private okBtn!: HTMLButtonElement;
   private cols: number;
   private unsubs: (() => void)[] = [];
   /** remote player's current (unlocked) choice */
@@ -55,6 +61,7 @@ export class SelectScreen implements Screen {
     audio.playMusic('select');
     void audio.announcer('chooseFighter');
     const grid = h('div', { class: 'grid', style: `--cols:${this.cols}` });
+    this.grid = grid;
     const all: (FighterDef | null)[] = [...this.roster, null];
     all.forEach((def, i) => {
       const cell = h('div', { class: 'cell' + (def ? '' : ' special') }, def ? h('div', { class: 'nm' }, def.name) : '?');
@@ -65,15 +72,19 @@ export class SelectScreen implements Screen {
     });
     this.names = [h('div', { class: 'pname p1' }), h('div', { class: 'pname p2' })];
     const modeLabel = this.mode === 'cpu' ? 'ARCADE — CONTRE LE CPU' : this.mode === 'versus' ? 'VERSUS — 2 JOUEURS' : 'EN LIGNE';
-    this.status = h('div', { class: 'title-hint' });
-    const root = h(
+    this.status = h('div', { class: 'title-hint sel-hint' });
+    this.okBtn = h('button', { class: 'btn primary sel-ok touch-only' }, 'VALIDER');
+    this.okBtn.addEventListener('click', () => this.touchConfirm());
+    this.arena = h('div', { class: 'arena' });
+    this.root = h(
       'div',
-      { class: 'select' },
+      { class: `select pick-screen mode-${this.mode}` },
       h('div', { class: 'top' }, h('div', { class: 'h1' }, 'CHOISIS TON COMBATTANT'), h('div', { class: 'title-hint' }, modeLabel)),
+      this.arena,
       h('div', { class: 'names' }, this.names[0], this.names[1]),
-      h('div', { style: 'display:flex;flex-direction:column;align-items:center;gap:8px' }, grid, this.status),
+      h('div', { class: 'bottom' }, grid, this.status, this.okBtn),
     );
-    uiRoot().append(root, backButton(() => this.back()));
+    uiRoot().append(this.root, backButton(() => this.back()));
     this.refresh();
   }
 
@@ -95,6 +106,18 @@ export class SelectScreen implements Screen {
     return !this.locked[0] ? 0 : !this.locked[1] ? 1 : -1;
   }
 
+  /** cursor driven by taps / clicks: mine online, else the first player still choosing (-1 = none) */
+  private tapCursor(): 0 | 1 | -1 {
+    if (this.mode === 'online') return this.locked[this.me] ? -1 : this.me;
+    return !this.locked[0] ? 0 : !this.locked[1] ? 1 : -1;
+  }
+
+  /** VALIDER button (touch): locks the highlighted fighter */
+  private touchConfirm() {
+    const c = this.tapCursor();
+    if (c !== -1 && !this.waitingStage) this.lock(c);
+  }
+
   private clickCell(i: number) {
     const cc = this.mode === 'online' ? this.me : !this.locked[0] ? 0 : !this.locked[1] ? 1 : -1;
     if (cc < 0) return;
@@ -113,7 +136,7 @@ export class SelectScreen implements Screen {
     let i = this.cursor[c];
     if (dx) i = (i + dx + n) % n;
     if (dy) {
-      i += dy * this.cols;
+      i += dy * gridColumns(this.cells, this.cols);
       if (i < 0 || i >= n) i = this.cursor[c];
     }
     if (i !== this.cursor[c]) {
@@ -236,11 +259,48 @@ export class SelectScreen implements Screen {
       this.names[c].replaceChildren(...parts);
       void this.showroom.show(c, def);
     }
+    const touch = isTouchUi();
     let msg = '';
-    if (this.mode === 'cpu') msg = this.locked[0] ? "Choisis l'adversaire du CPU" : 'Choisis ton perso';
-    else if (this.mode === 'versus') msg = 'J1 : ZQSD/WASD + R T F G (E = BBL MAX) · J2 : flèches + I O K L (P = BBL MAX)';
+    if (this.mode === 'cpu') msg = this.locked[0] ? (touch ? "Touche l'adversaire du CPU" : "Choisis l'adversaire du CPU") : touch ? 'Touche un perso' : 'Choisis ton perso';
+    else if (this.mode === 'versus')
+      msg = !touch
+        ? 'J1 : ZQSD/WASD + R T F G (E = BBL MAX) · J2 : flèches + I O K L (P = BBL MAX)'
+        : !this.locked[0]
+          ? 'J1 : touche ton perso'
+          : !this.locked[1]
+            ? 'J2 : touche ton perso'
+            : '';
     else msg = this.waitingStage ? "L'hôte choisit l'arène…" : this.locked[1 - this.me] ? "L'adversaire est prêt !" : "L'adversaire choisit…";
     this.status.textContent = msg;
+    // touch: VALIDER for the player choosing (blue = J1, red = J2)
+    const c = this.waitingStage ? -1 : this.tapCursor();
+    this.okBtn.disabled = c < 0;
+    this.okBtn.classList.toggle('p2', c === 1);
+    this.okBtn.textContent =
+      c < 0 ? 'PRÊT !' : this.mode === 'versus' ? `VALIDER J${c + 1}` : this.mode === 'cpu' && c === 1 ? "VALIDER L'ADVERSAIRE" : 'VALIDER';
+    // two fighters on stage (side by side on phones), or one in the middle
+    const them = (1 - this.me) as 0 | 1;
+    const duo = this.mode === 'versus' || (this.mode === 'cpu' && this.locked[0]) || (this.mode === 'online' && !!(this.picked[them] ?? this.remoteDef));
+    this.root.classList.toggle('duo', duo);
+  }
+
+  /** Phones: the fighters stand in the free space (portrait) or beside the grid (landscape). */
+  private fitFighters(): ShowroomFit | null {
+    const layout = phoneLayout();
+    const W = window.innerWidth;
+    if (!layout && W / Math.max(1, window.innerHeight) >= 1.1) return null;
+    const a = this.arena.getBoundingClientRect();
+    if (a.width < 40 || a.height < 40) return null;
+    const box = { left: a.left, top: a.top, width: a.width, height: a.height };
+    if (layout === 'landscape') {
+      const g = this.grid.getBoundingClientRect();
+      return { box, worldH: 2.45, centerY: 1.06, worldW: 1, slotX: [g.left / 2, (g.right + W) / 2] };
+    }
+    if (this.root.classList.contains('duo')) return { box, worldH: 2.5, centerY: 1.05, worldW: 3.1, slotX: [a.left + a.width * 0.27, a.left + a.width * 0.73] };
+    // one fighter in the middle (online guest: slot 1 = mine)
+    const cx = a.left + a.width / 2;
+    const solo = this.mode === 'online' ? this.me : 0;
+    return { box, worldH: 2.5, centerY: 1.05, worldW: 1.6, slotX: solo === 0 ? [cx, cx + a.width] : [cx - a.width, cx] };
   }
 
   /** back button: unlock the last locked cursor, or leave */
@@ -277,6 +337,7 @@ export class SelectScreen implements Screen {
       else if (e.action === 'confirm') this.lock(cc);
       if (this.mode === 'online' && (e.action === 'left' || e.action === 'right' || e.action === 'up' || e.action === 'down')) this.sendPick();
     }
+    this.showroom.fit = this.fitFighters();
     this.showroom.render(this.app.pipeline, dt, this.app.aspect);
   }
 }
