@@ -433,4 +433,52 @@ export const ROSTER: FighterDef[] = [
     superLines: ['Sourire de la mort… BBL MAX !', 'Coup de crinière !'],
     voice: { lang: 'fr-FR', pitch: 1, rate: 1.05 },
   },
+  {
+    id: 'rayan',
+    name: 'RAYAN',
+    title: 'Pacifiste… jusqu’au premier round',
+    face: 'faces/rayan.jpg',
+    // the thin moustache and light chin beard come from the photo (a 3D beard looked far too full)
+    hair: { style: 'curlyshort', color: '#121010' },
+    outfit: {
+      top: 'tshirt',
+      topColor: '#8fc4e8',
+      trimColor: '#d6ecfa',
+      pantsColor: '#2e3a52',
+      shoesColor: '#f2f2f2',
+      beltColor: '#2a1c14',
+    },
+    // medium height, medium build
+    height: 1,
+    build: 1,
+    headScale: 1.18,
+    introLines: ['Je vais te tuer… pacifiquement.', 'Moi, je suis pacifiste. Mais toi, je vais te tuer.', 'Peace and love… et crochet du droit.'],
+    winLines: ['Désolé, c’était pour la paix.', 'La violence ne résout rien… sauf ça.', 'Paix à ton âme, frérot.'],
+    superLines: ['Je suis pacifiste… OU PAS !', 'La paix, c’est fini… BBL MAX !', 'Peace and love… et uppercut !'],
+    voice: { lang: 'fr-FR', pitch: 1.05, rate: 1.12 },
+  },
+  {
+    id: 'billel',
+    name: 'BILLEL',
+    title: 'Il a lu tous les patch notes',
+    face: 'faces/billel.jpg',
+    // curls on top, faded sides
+    hair: { style: 'curlyshort', color: '#5a3a24' },
+    // dark jacket over a white shirt: near-black hoodie with white cuffs
+    outfit: {
+      top: 'hoodie',
+      topColor: '#1d1f26',
+      trimColor: '#f0efea',
+      pantsColor: '#46536e',
+      shoesColor: '#f0f0f0',
+    },
+    // medium height, medium build
+    height: 1,
+    build: 1,
+    headScale: 1.18,
+    introLines: ['Je vais te tuer. C’est la méta, désolé.', 'Ton build est nul. Je vais te tuer.', 'T’es pas dans la méta, toi.'],
+    winLines: ['GG ez. Report le jungler.', 'T’as pas lu les patch notes, hein ?', 'FF à quinze, la prochaine fois.'],
+    superLines: ['Écoute bien… c’est LA MÉTA !', 'Tier S, zéro counter… BBL MAX !', 'Ton champion est nerf, le mien est cheaté !'],
+    voice: { lang: 'fr-FR', pitch: 0.92, rate: 1.18 },
+  },
 ];
