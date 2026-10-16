@@ -1,7 +1,7 @@
 import { audio } from '../audio/audio';
 import type { App, Screen } from '../app';
 import { assistOf, assistSpec, ASSIST_KIND_LABEL } from '../data/assists';
-import type { FighterDef } from '../data/roster';
+import { archetypeOf, type FighterDef } from '../data/roster';
 import { ultimateOf } from '../data/ultimates';
 import { FightWorld } from '../game/world';
 import { input, keyLabel, P1_KEYS, P2_KEYS } from '../input/input';
@@ -113,6 +113,7 @@ export class FightScreen implements Screen {
       skipIntro: setup.skipIntro,
       ultimates: [ultimateOf(setup.p1).script, ultimateOf(setup.p2).script],
       assists: [assistSpec(setup.assists?.[0]), assistSpec(setup.assists?.[1])],
+      archetypes: [archetypeOf(setup.p1), archetypeOf(setup.p2)],
     });
     // deterministic variant choices for intro animations (same on both peers)
     this.state.fighters[0].variant = setup.seed % 2;

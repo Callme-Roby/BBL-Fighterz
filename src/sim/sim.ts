@@ -41,6 +41,8 @@ import {
   type GameState,
   type MoveId,
   type Phase,
+  GUARD_MAX,
+  type Archetype,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -200,6 +202,11 @@ export function createFighter(side: 0 | 1): FighterState {
     wallBroken: false,
     assistReq: 0,
     dizzy: false,
+    archetype: 'balanced',
+    maxHp: MAX_HP,
+    guard: GUARD_MAX,
+    guardMax: GUARD_MAX,
+    guardDelay: 0,
   };
 }
 
@@ -214,6 +221,10 @@ export interface MatchOptions {
   ultimates?: [string, string];
   /** friend called with the assist button, per side (null / missing = none) */
   assists?: [AssistSpec | null, AssistSpec | null];
+  /** character profile of each side (default: balanced) */
+  archetypes?: [Archetype, Archetype];
+  /** training mode (no timer, no K.O.) */
+  training?: boolean;
 }
 
 export function createGame(opts: MatchOptions = {}): GameState {
@@ -227,6 +238,8 @@ export function createGame(opts: MatchOptions = {}): GameState {
     hitstop: 0,
     fighters: [createFighter(0), createFighter(1)],
     assists: [opts.assists?.[0] ? createAssist(opts.assists[0]) : null, opts.assists?.[1] ? createAssist(opts.assists[1]) : null],
+    projectiles: [null, null],
+    training: !!opts.training,
     events: [],
     roundWinner: -1,
     matchWinner: -1,
@@ -234,6 +247,7 @@ export function createGame(opts: MatchOptions = {}): GameState {
     timeUp: false,
   };
   for (const f of s.fighters) setAction(f, s.phase === 'intro' ? 'intro' : 'idle');
+  if (opts.archetypes) for (const i of [0, 1] as const) s.fighters[i].archetype = opts.archetypes[i];
   if (opts.ultimates) {
     s.fighters[0].ult = getUltimate(opts.ultimates[0]).id;
     s.fighters[1].ult = getUltimate(opts.ultimates[1]).id;

@@ -125,6 +125,12 @@ export const MOVES: Record<MoveId, MoveDef> = {
     reach: 1.05, hitY: 1.35, hitstun: 30, blockstun: 24, pushHit: 0.2, pushBlock: 0.17,
     strength: 'heavy', advance: 1.5, invulnFrames: 16,
   }),
+  // ranged profile: the throw itself (the projectile carries the hit); placeholder values, tuned in the sim
+  projectile: M({
+    id: 'projectile', name: 'Projectile', startup: 13, active: 1, recovery: 30, damage: 12, level: 'mid',
+    reach: 0, hitY: 1.3, hitstun: 18, blockstun: 14, pushHit: 0.06, pushBlock: 0.06,
+    strength: 'medium',
+  }),
 };
 
 export function moveTotal(m: MoveDef): number {

@@ -50,7 +50,18 @@ export type MoveId =
   /** air: down + kick — spikes an airborne opponent to the floor (ground bounce, once per combo) */
   | 'airSmash'
   | 'throw'
-  | 'super';
+  | 'super'
+  /** ranged profile only: forward + RP throws the fighter's projectile (one on screen at a time) */
+  | 'projectile';
+
+/**
+ * Character profile (stats in src/sim/archetypes.ts, who is what in src/data/roster.ts):
+ *  heavy    = strong but slow (Zangief / Jack): more health, damage and guard, slow moves
+ *  fast     = quick but fragile (Chun-Li / Cammy): fast moves and movement, less health / damage
+ *  ranged   = keeps away (Guile / Dhalsim): a projectile + long pokes
+ *  balanced = all-rounder (Ryu / Ken): the reference
+ */
+export type Archetype = 'heavy' | 'fast' | 'ranged' | 'balanced';
 
 export type HitLevel = 'high' | 'mid' | 'low';
 export type Strength = 'light' | 'medium' | 'heavy';
@@ -87,6 +98,8 @@ export type Action =
   | 'airDash'
   /** victim splatted against the wall for a few frames, then falls back into a juggle */
   | 'wallSplat'
+  /** guard gauge emptied: staggered and wide open for a moment (guard crush) */
+  | 'guardCrush'
   | 'ko'
   | 'intro'
   | 'win'
@@ -181,6 +194,27 @@ export interface FighterState {
   assistReq: number;
   /** the current hitstun is the 'stun' assist's dizzy distraction (long, no damage) */
   dizzy: boolean;
+  /** character profile: stats come from ARCHETYPES[archetype] (sim/archetypes.ts) */
+  archetype: Archetype;
+  /** health at the start of a round (depends on the profile) */
+  maxHp: number;
+  /** guard gauge: blocked hits drain it, it refills while not blocking; empty = guard crush */
+  guard: number;
+  guardMax: number;
+  /** frames before the guard gauge starts refilling */
+  guardDelay: number;
+}
+
+/** Projectile of a ranged fighter (part of GameState: rollback-safe). */
+export interface ProjectileState {
+  /** fighter who threw it */
+  owner: 0 | 1;
+  x: number;
+  y: number;
+  /** horizontal speed (m / frame, signed) */
+  vx: number;
+  /** frames since it was thrown */
+  frame: number;
 }
 
 /** What an assist does when called (see src/data/assists.ts for who does what). */
@@ -244,6 +278,12 @@ export type SimEvent =
   | { t: 'groundBounce'; p: number; x: number }
   /** destruction finish: the K.O.'d fighter p crashed through the arena wall */
   | { t: 'wallBreak'; p: number; x: number; y: number }
+  /** p's guard gauge emptied (guard crush) */
+  | { t: 'guardBreak'; p: number; x: number; y: number }
+  /** p threw their projectile */
+  | { t: 'projectile'; p: number; x: number; y: number }
+  /** p's projectile is gone: it hit, was blocked, clashed with the other one, or left the arena */
+  | { t: 'projectileEnd'; p: number; x: number; y: number; how: 'hit' | 'block' | 'clash' | 'out' }
   /** p started a chase super jump / an air dash */
   | { t: 'superJump'; p: number }
   | { t: 'airDash'; p: number }
@@ -265,6 +305,10 @@ export interface GameState {
   fighters: [FighterState, FighterState];
   /** each side's assist (null = no assist chosen) */
   assists: [AssistState | null, AssistState | null];
+  /** each side's projectile on screen (ranged profile, one at a time) */
+  projectiles: [ProjectileState | null, ProjectileState | null];
+  /** training mode: the clock never runs out and nobody gets K.O.'d (the screen refills the bars) */
+  training: boolean;
   events: SimEvent[];
   /** winner of the last round: 0, 1, or 2 = draw, -1 = none yet */
   roundWinner: number;
@@ -276,7 +320,10 @@ export interface GameState {
 }
 
 export const FPS = 60;
+/** health of the balanced profile (each fighter's own is FighterState.maxHp) */
 export const MAX_HP = 200;
+/** guard gauge of the balanced profile (each fighter's own is FighterState.guardMax) */
+export const GUARD_MAX = 100;
 export const MAX_METER = 100;
 export const ROUND_TIME = 60 * FPS;
 export const ARENA_HALF_WIDTH = 7;

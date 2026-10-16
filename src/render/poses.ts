@@ -256,6 +256,33 @@ export const ATTACKS: Record<MoveId, AttackPoses> = {
       footR: [-30, 0, 0],
     }),
   },
+  // placeholder: the throwing pose of the ranged profile (see render)
+  projectile: {
+    windup: merge(STANCE, {
+      root: [0, -0.1, -0.08],
+      hips: [0, -70, 0],
+      spine: [0, -15, 0],
+      upperArmR: [-20, 0, -55],
+      foreArmR: [-100, 0, 0],
+    }),
+    strike: merge(STANCE, {
+      root: [0, -0.14, 0.2],
+      hips: [0, 25, 0],
+      spine: [14, 15, 0],
+      chest: [12, 18, 0],
+      head: [-10, -30, 0],
+      upperArmR: [-95, 0, 2],
+      foreArmR: [-2, 0, 0],
+      handR: [0, 0, 0],
+      upperArmL: [-30, 0, 30],
+      foreArmL: [-110, 0, 0],
+      thighL: [-55, 0, 6],
+      shinL: [60, 0, 0],
+      thighR: [25, 0, -6],
+      shinR: [10, 0, 0],
+      footR: [-30, 0, 0],
+    }),
+  },
   frontKick: {
     windup: merge(STANCE, { thighL: [-80, 0, 6], shinL: [100, 0, 0], spine: [-4, -4, 0] }),
     strike: merge(STANCE, {

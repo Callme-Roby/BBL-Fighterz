@@ -15,6 +15,8 @@
  * Non-playable cinematic characters (Baby Elies, Spider-Pote...) live in `cast.ts`.
  */
 
+import type { Archetype } from '../sim/types';
+
 export type HairStyle =
   | 'spiky'
   | 'short'
@@ -149,6 +151,8 @@ export interface FaceGen {
 export interface FighterDef {
   id: string;
   name: string;
+  /** character profile (heavy / fast / ranged / balanced); lab creations are balanced */
+  archetype?: Archetype;
   /** short line under the name on the select screen */
   title: string;
   /** face photo url (relative, no leading slash) or data URL */
@@ -201,6 +205,7 @@ export const ROSTER: FighterDef[] = [
   {
     id: 'dylan',
     name: 'DYLAN',
+    archetype: 'heavy',
     title: 'Petit format, gros dégâts',
     face: 'faces/dylan.jpg',
     hair: { style: 'short', color: '#5a3a28' },
@@ -225,6 +230,7 @@ export const ROSTER: FighterDef[] = [
   {
     id: 'clement',
     name: 'CLÉMENT',
+    archetype: 'ranged',
     title: 'Calme, barbu, dangereux',
     face: 'faces/clement.jpg',
     hair: { style: 'buzz', color: '#1e1610' },
@@ -248,6 +254,7 @@ export const ROSTER: FighterDef[] = [
   {
     id: 'alex',
     name: 'ALEX',
+    archetype: 'balanced',
     title: 'Mèche rebelle, droite fatale',
     face: 'faces/alex.jpg',
     hair: { style: 'midlong', color: '#6f4f32' },
@@ -271,6 +278,7 @@ export const ROSTER: FighterDef[] = [
   {
     id: 'benji',
     name: 'BENJI',
+    archetype: 'fast',
     title: 'Brushing tropical',
     face: 'faces/benji.jpg',
     hair: { style: 'afro', color: '#1c140e' },
@@ -295,6 +303,7 @@ export const ROSTER: FighterDef[] = [
   {
     id: 'isis',
     name: 'ISIS',
+    archetype: 'heavy',
     title: 'Afro XXL, coups XXL',
     face: 'faces/isis.jpg',
     // the photo is lit with a purple light (sampled tone = grey-mauve): explicit body tone halfway to a
@@ -321,6 +330,7 @@ export const ROSTER: FighterDef[] = [
   {
     id: 'enola',
     name: 'ENOLA',
+    archetype: 'ranged',
     title: 'Lunettes noires, sang-froid',
     face: 'faces/enola.jpg',
     hair: { style: 'midlong', color: '#a4452a' },
@@ -342,6 +352,7 @@ export const ROSTER: FighterDef[] = [
   {
     id: 'zia',
     name: 'ZIA',
+    archetype: 'fast',
     title: 'Reine des dreads',
     face: 'faces/zia.jpg',
     hair: { style: 'dreads', color: '#3b3631' },
@@ -366,6 +377,7 @@ export const ROSTER: FighterDef[] = [
   {
     id: 'elies',
     name: 'ELIES',
+    archetype: 'heavy',
     title: 'Moustache de velours, poings de fer',
     face: 'faces/elies.jpg',
     hair: { style: 'curlyshort', color: '#1c1714' },
@@ -388,6 +400,7 @@ export const ROSTER: FighterDef[] = [
   {
     id: 'thomas',
     name: 'THOMAS',
+    archetype: 'fast',
     title: 'Bonnet vissé, regard froid',
     face: 'faces/thomas.jpg',
     hair: { style: 'beanie', color: '#2a1d16' },
@@ -412,6 +425,7 @@ export const ROSTER: FighterDef[] = [
   {
     id: 'mihai',
     name: 'MIHAÏ',
+    archetype: 'balanced',
     title: 'Le sourire qui fait mal',
     face: 'faces/mihai.jpg',
     hair: { style: 'wavy', color: '#5a3e2a' },
@@ -436,6 +450,7 @@ export const ROSTER: FighterDef[] = [
   {
     id: 'rayan',
     name: 'RAYAN',
+    archetype: 'balanced',
     title: 'Pacifiste… jusqu’au premier round',
     face: 'faces/rayan.jpg',
     // the thin moustache and light chin beard come from the photo (a 3D beard looked far too full)
@@ -460,6 +475,7 @@ export const ROSTER: FighterDef[] = [
   {
     id: 'billel',
     name: 'BILLEL',
+    archetype: 'ranged',
     title: 'Il a lu tous les patch notes',
     face: 'faces/billel.jpg',
     // curls on top, faded sides
@@ -482,3 +498,8 @@ export const ROSTER: FighterDef[] = [
     voice: { lang: 'fr-FR', pitch: 0.92, rate: 1.18 },
   },
 ];
+
+/** Profile of a fighter (lab creations and unknown fighters are balanced). */
+export function archetypeOf(def: FighterDef): Archetype {
+  return def.archetype ?? 'balanced';
+}
