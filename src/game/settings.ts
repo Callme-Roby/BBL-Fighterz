@@ -9,9 +9,12 @@ export interface Settings {
   lines: number;
   dither: boolean;
   touch: 'auto' | 'on' | 'off';
+  /** version of the stored settings (see loadSettings) */
+  v?: number;
 }
 
-const DEFAULTS: Settings = { difficulty: 'normal', rounds: 2, lines: 270, dither: true, touch: 'auto' };
+const DEFAULTS: Settings = { difficulty: 'normal', rounds: 2, lines: 480, dither: true, touch: 'auto' };
+const SETTINGS_VERSION = 2;
 
 function load<T>(key: string, fallback: T): T {
   try {
@@ -23,7 +26,15 @@ function load<T>(key: string, fallback: T): T {
   return fallback;
 }
 
-export const settings: Settings = load('bbl.settings', DEFAULTS);
+function loadSettings(): Settings {
+  const s = load('bbl.settings', { ...DEFAULTS });
+  // v2: the default resolution went from 270p to 480p; a stored 270p is the old default
+  if ((s.v ?? 1) < 2 && s.lines === 270) s.lines = DEFAULTS.lines;
+  s.v = SETTINGS_VERSION;
+  return s;
+}
+
+export const settings: Settings = loadSettings();
 
 export function saveSettings() {
   try {

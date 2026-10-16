@@ -21,8 +21,8 @@ export class RetroPipeline {
   private postMat: THREE.ShaderMaterial;
   lowW = 480;
   lowH = 270;
-  /** number of vertical pixels of the internal image */
-  lines = 270;
+  /** number of vertical pixels of the internal image (set from the settings) */
+  lines = 480;
   dither = true;
 
   constructor(canvas: HTMLCanvasElement) {
