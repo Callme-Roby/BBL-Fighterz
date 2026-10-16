@@ -1,5 +1,21 @@
-import { ASSIST_COOLDOWN, ASSIST_MOVES, BEAM_SPEED, BEAM_Y, MOVES, RUSH_SPEED, moveTotal, type AssistMove, type MoveDef, type Strike } from './moves';
+import {
+  ASSIST_COOLDOWN,
+  ASSIST_MOVES,
+  BEAM_SPEED,
+  BEAM_Y,
+  PROJ_CLEAR_Y,
+  PROJ_RADIUS,
+  PROJ_SPAWN,
+  PROJ_SPEED,
+  PROJ_Y,
+  RUSH_SPEED,
+  moveTotal,
+  type AssistMove,
+  type MoveDef,
+  type Strike,
+} from './moves';
 import { cineFrame, cineTime, curve, getUltimate } from './ultimates';
+import { ARCHETYPES, moveFor, type ArchetypeStats } from './archetypes';
 import {
   ARENA_HALF_WIDTH,
   BODY_RADIUS,
@@ -43,6 +59,7 @@ import {
   type Phase,
   GUARD_MAX,
   type Archetype,
+  type ProjectileState,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -51,12 +68,7 @@ import {
 const GRAVITY = 0.0088;
 const JUGGLE_GRAVITY = 0.0094;
 const JUMP_VY = 0.142;
-const JUMP_VX = 0.046;
-const WALK_F = 0.038;
-const WALK_B = 0.03;
-const DASH_F_FRAMES = 15;
-const DASH_B_FRAMES = 18;
-const PREJUMP_FRAMES = 4;
+// walk / dash / jump speeds and frame data depend on the profile: see sim/archetypes.ts
 const LAND_FRAMES = 4;
 const BUFFER_FRAMES = 8;
 /** frames after the active window during which a connecting move can be cancelled */
@@ -140,6 +152,18 @@ const KO_FLIGHT_OUT = 3.2;
 const ASSIST_BUFFER = 10;
 /** dizzy of the stun assist shrinks a lot when it lands mid-combo */
 const DIZZY_DECAY = 0.15;
+/**
+ * Guard gauge (FighterState.guard): every blocked blow drains it (by strength, x the
+ * defender's profile), parries give a little back; it refills after GUARD_DELAY frames
+ * without blocking, full in GUARD_REFILL_FRAMES. Empty = guard crush (staggered, wide open).
+ */
+const GUARD_DRAIN = { light: 5, medium: 8, heavy: 13 } as const;
+const GUARD_PARRY_BONUS = 4;
+const GUARD_DELAY = 54;
+const GUARD_REFILL_FRAMES = 180;
+const GUARD_CRUSH_FRAMES = 62;
+const GUARD_CRUSH_HITSTOP = 16;
+const GUARD_CRUSH_PUSH = 0.03;
 
 // ---------------------------------------------------------------------------
 // creation
@@ -248,6 +272,7 @@ export function createGame(opts: MatchOptions = {}): GameState {
   };
   for (const f of s.fighters) setAction(f, s.phase === 'intro' ? 'intro' : 'idle');
   if (opts.archetypes) for (const i of [0, 1] as const) s.fighters[i].archetype = opts.archetypes[i];
+  for (const f of s.fighters) applyProfile(f);
   if (opts.ultimates) {
     s.fighters[0].ult = getUltimate(opts.ultimates[0]).id;
     s.fighters[1].ult = getUltimate(opts.ultimates[1]).id;
@@ -259,9 +284,28 @@ export function cloneState(s: GameState): GameState {
   return structuredClone(s);
 }
 
+/** health and guard gauge of the fighter's profile (match start and every round) */
+function applyProfile(f: FighterState) {
+  const p = ARCHETYPES[f.archetype];
+  f.maxHp = p.hp;
+  f.hp = p.hp;
+  f.guardMax = p.guardMax;
+  f.guard = p.guardMax;
+  f.guardDelay = 0;
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
+function prof(f: FighterState): ArchetypeStats {
+  return ARCHETYPES[f.archetype];
+}
+
+/** the fighter's own move as its profile performs it (frame data, reach, damage) */
+function mv(f: FighterState, id: MoveId): MoveDef {
+  return moveFor(f.archetype, id);
+}
+
 function setAction(f: FighterState, a: Action) {
   f.action = a;
   f.actionFrame = 0;
@@ -297,7 +341,7 @@ function isCrouching(f: FighterState): boolean {
   if (f.action === 'crouch') return true;
   if (f.action === 'guard' && f.crouching) return true;
   if ((f.action === 'hitstun' || f.action === 'blockstun') && f.crouching) return true;
-  if (f.action === 'attack' && f.moveId && MOVES[f.moveId].crouching) return true;
+  if (f.action === 'attack' && f.moveId && mv(f, f.moveId).crouching) return true;
   return false;
 }
 
@@ -322,7 +366,6 @@ function chooseGroundMove(f: FighterState, btn: number, dir: number, qcf: boolea
   // throw: LP + LK together
   if ((btn & IN_LP) && (btn & IN_LK)) return 'throw';
   void qcf;
-  void f;
   const down = (dir & R_D) !== 0;
   const fwd = (dir & R_F) !== 0;
   if (down) {
@@ -332,7 +375,8 @@ function chooseGroundMove(f: FighterState, btn: number, dir: number, qcf: boolea
     if (btn & IN_LP) return fwd ? 'elbow' : 'crouchJab';
   }
   if (fwd) {
-    if (btn & IN_RP) return 'powerPunch';
+    // ranged profile: forward + RP throws the projectile instead of the power punch
+    if (btn & IN_RP) return f.archetype === 'ranged' ? 'projectile' : 'powerPunch';
     if (btn & IN_LP) return 'elbow';
     if (btn & IN_LK) return 'knee';
     if (btn & IN_RK) return 'roundhouse';
@@ -372,7 +416,7 @@ function openerStep(id: MoveId, btn: number, dir: number): number {
  * @param chained true when the move cancels a previous one in a string
  */
 function startMove(s: GameState, f: FighterState, o: FighterState, id: MoveId, idx: number, skip = 0, chained = false, auto = 0) {
-  const m = MOVES[id];
+  const m = mv(f, id);
   if (m.meterCost) {
     if (f.meter < m.meterCost) return;
     f.meter -= m.meterCost;
@@ -528,10 +572,10 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
       break;
 
     case 'prejump':
-      if (f.actionFrame >= PREJUMP_FRAMES) {
+      if (f.actionFrame >= prof(f).prejump) {
         setAction(f, 'jump');
         f.vy = JUMP_VY;
-        f.vx = f.jumpDir * f.facing * JUMP_VX;
+        f.vx = f.jumpDir * f.facing * prof(f).jumpVx;
         f.y = 0.01;
         f.airAttackUsed = false;
         f.airChain = 0;
@@ -560,7 +604,7 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
       break;
 
     case 'airAttack': {
-      const m = MOVES[f.moveId!];
+      const m = mv(f, f.moveId!);
       if (f.actionFrame === m.startup) s.events.push({ t: 'whiff', p: idx, heavy: m.strength === 'heavy' });
       // air chains: a connecting air attack flows into the next one (max AIR_CHAIN_MAX per jump)
       const inWindow = f.actionFrame >= m.startup && f.actionFrame <= m.startup + m.active + CHAIN_WINDOW;
@@ -568,7 +612,7 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
         const route = autoNext(f);
         let next: MoveId | null = null;
         let auto = 0;
-        if (route && route !== 'superJump' && MOVES[route].air) {
+        if (route && route !== 'superJump' && mv(f, route).air) {
           next = route;
           auto = f.autoStep + 1;
         } else if (!route) {
@@ -576,7 +620,7 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
           if (next === f.moveId && f.repeat >= 2) next = null;
         }
         if (next) {
-          startMove(s, f, o, next, idx, Math.floor(MOVES[next].startup * 0.4), true, auto);
+          startMove(s, f, o, next, idx, Math.floor(mv(f, next).startup * 0.4), true, auto);
           break;
         }
       }
@@ -619,7 +663,7 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
 
     case 'dashF':
       if (tryStartSuper(s, f, o, idx)) break;
-      f.x += f.facing * 0.105 * (1 - f.actionFrame / (DASH_F_FRAMES + 4));
+      f.x += f.facing * prof(f).dashF * (1 - f.actionFrame / (prof(f).dashFFrames + 4));
       if (f.actionFrame >= 5) {
         const b = consumeBuffer(f);
         if (b) {
@@ -630,18 +674,20 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
           }
         }
       }
-      if (f.actionFrame >= DASH_F_FRAMES) toNeutral(f);
+      if (f.actionFrame >= prof(f).dashFFrames) toNeutral(f);
       break;
 
     case 'dashB':
-      f.x -= f.facing * 0.1 * (1 - f.actionFrame / (DASH_B_FRAMES + 4));
-      if (f.actionFrame >= DASH_B_FRAMES) toNeutral(f);
+      f.x -= f.facing * prof(f).dashB * (1 - f.actionFrame / (prof(f).dashBFrames + 4));
+      if (f.actionFrame >= prof(f).dashBFrames) toNeutral(f);
       break;
 
     case 'attack': {
-      const m = MOVES[f.moveId!];
+      const m = mv(f, f.moveId!);
       if (m.advance && f.actionFrame < m.startup) f.x += (f.facing * m.advance) / (m.startup - 1);
-      if (f.actionFrame === m.startup && !m.throw) s.events.push({ t: 'whiff', p: idx, heavy: m.strength === 'heavy' });
+      if (f.moveId === 'projectile') {
+        if (f.actionFrame === m.startup) spawnProjectile(s, f, idx);
+      } else if (f.actionFrame === m.startup && !m.throw) s.events.push({ t: 'whiff', p: idx, heavy: m.strength === 'heavy' });
       // jab -> throw conversion (LK pressed right after LP)
       if (f.moveId === 'jab' && f.actionFrame <= 3 && f.bufAge <= 2 && f.bufBtn & IN_LK) {
         startMove(s, f, o, 'throw', idx);
@@ -651,7 +697,8 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
         startMove(s, f, o, 'throw', idx);
         break;
       }
-      if (!m.throw && f.moveId !== 'super') {
+      // (the projectile throw is not cancellable: its recovery is the punish window)
+      if (!m.throw && f.moveId !== 'super' && f.moveId !== 'projectile') {
         const inWindow = f.actionFrame >= m.startup && f.actionFrame <= m.startup + m.active + CHAIN_WINDOW;
         // BBL MAX can cancel any connecting move
         if (f.moveHit && inWindow && tryStartSuper(s, f, o, idx)) break;
@@ -659,13 +706,13 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
           // auto-combo: LP mashed while the previous step connected follows the route
           const route = f.moveHit && inWindow ? autoNext(f) : null;
           if (route && route !== 'superJump') {
-            startMove(s, f, o, route, idx, Math.floor(MOVES[route].startup * 0.4), true, f.autoStep + 1);
+            startMove(s, f, o, route, idx, Math.floor(mv(f, route).startup * 0.4), true, f.autoStep + 1);
             break;
           }
           const next = chooseGroundMove(f, f.bufBtn, f.bufDir | (f.rel & R_D), false);
           // chains: any move that connected (hit or block) can flow into another one
-          if (!route && next && next !== 'throw' && f.moveHit && inWindow && f.chain < MAX_CHAIN && !(next === f.moveId && f.repeat >= 2)) {
-            startMove(s, f, o, next, idx, Math.floor(MOVES[next].startup * 0.4), true);
+          if (!route && next && next !== 'throw' && f.moveHit && inWindow && f.chain < MAX_CHAIN + prof(f).extraChain && !(next === f.moveId && f.repeat >= 2)) {
+            startMove(s, f, o, next, idx, Math.floor(mv(f, next).startup * 0.4), true);
             break;
           }
           // whiffs: the second half of the recovery can be interrupted by the next attack
@@ -692,6 +739,17 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
           setAction(f, 'crouch');
           f.crouching = true;
         }
+      }
+      break;
+
+    case 'guardCrush':
+      // guard broken: staggered, wide open; the gauge comes back full once it's over
+      // (or when a hit interrupts it, see updateGuard)
+      f.stun--;
+      if (f.stun <= 0) {
+        toNeutral(f);
+        f.guard = f.guardMax;
+        f.guardDelay = 0;
       }
       break;
 
@@ -735,8 +793,9 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
       // glue to the thrower
       f.x = o.x + o.facing * 0.62;
       if (f.actionFrame === THROW_SLAM_FRAME) {
-        const dmg = MOVES.throw.damage;
-        f.hp = Math.max(0, f.hp - dmg);
+        // the thrower's profile (heavy = bigger throws)
+        const dmg = Math.round(mv(o, 'throw').damage);
+        f.hp = Math.max(hpFloor(s), f.hp - dmg);
         f.comboCount++;
         f.comboDamage += dmg;
         o.meter = Math.min(MAX_METER, o.meter + 12);
@@ -840,10 +899,10 @@ function neutral(s: GameState, f: FighterState, o: FighterState, idx: number, di
   f.crouching = false;
   if (dir & R_F) {
     if (f.action !== 'walkF') setAction(f, 'walkF');
-    f.x += f.facing * WALK_F;
+    f.x += f.facing * prof(f).walkF;
   } else if (dir & R_B) {
     if (f.action !== 'walkB') setAction(f, 'walkB');
-    f.x -= f.facing * WALK_B;
+    f.x -= f.facing * prof(f).walkB;
   } else if (f.action !== 'idle') {
     setAction(f, 'idle');
   }
@@ -951,7 +1010,7 @@ function tryAirMove(s: GameState, f: FighterState, o: FighterState, idx: number)
   if (!b || f.airAttackUsed || f.airChain >= AIR_CHAIN_MAX) return false;
   let id: MoveId | null;
   let auto = 0;
-  if (route && route !== 'superJump' && MOVES[route].air) {
+  if (route && route !== 'superJump' && mv(f, route).air) {
     id = route;
     auto = f.autoStep + 1;
   } else id = chooseAirMove(b.btn, b.dir | (f.rel & R_D));
@@ -1043,7 +1102,7 @@ function runSuperCombo(s: GameState, a: FighterState, v: FighterState, idx: numb
     const hit = u.hits[i];
     if (!reached(hit.f)) continue;
     // the victim can only be finished by the last blow (the cinematic always plays out)
-    v.hp = i === last ? Math.max(0, v.hp - hit.dmg) : Math.max(1, v.hp - hit.dmg);
+    v.hp = i === last ? Math.max(hpFloor(s), v.hp - hit.dmg) : Math.max(1, v.hp - hit.dmg);
     v.comboCount++;
     v.comboDamage += hit.dmg;
     // no freeze for verbal / off-screen blows and bullet bursts (keeps the fire rate)
@@ -1287,12 +1346,14 @@ function isHoldingGuard(d: FighterState): boolean {
 
 /** caught during the startup of an attack (or reeling from a parry) */
 function isCounterState(d: FighterState): boolean {
-  return ((d.action === 'attack' || d.action === 'airAttack') && !!d.moveId && d.actionFrame < MOVES[d.moveId].startup) || d.action === 'parried';
+  return ((d.action === 'attack' || d.action === 'airAttack') && !!d.moveId && d.actionFrame < mv(d, d.moveId).startup) || d.action === 'parried';
 }
 
 function checkHit(a: FighterState, d: FighterState, ai: number): PendingHit | null {
   if ((a.action !== 'attack' && a.action !== 'airAttack') || !a.moveId || a.moveHit || a.frozen > 0) return null;
-  const m = MOVES[a.moveId];
+  // the projectile throw has no hitbox of its own (the projectile carries the hit)
+  if (a.moveId === 'projectile') return null;
+  const m = mv(a, a.moveId);
   if (a.actionFrame < m.startup || a.actionFrame >= m.startup + m.active) return null;
 
   const dx = (d.x - a.x) * a.facing;
@@ -1361,6 +1422,51 @@ function applyBlock(s: GameState, di: number, d: FighterState, m: Strike, dir: 1
   d.meter = Math.min(MAX_METER, d.meter + 3);
   s.hitstop = Math.max(s.hitstop, 5);
   s.events.push({ t: 'block', p: di, x: hx, y: hy });
+  // the guard wears down; empty = guard crush
+  d.guard -= GUARD_DRAIN[m.strength] * prof(d).guardDrain;
+  d.guardDelay = GUARD_DELAY;
+  if (d.guard <= 0) guardCrush(s, di, d, dir);
+}
+
+/** The guard gauge emptied on a blocked blow: staggered and wide open, then the gauge comes back full. */
+function guardCrush(s: GameState, di: number, d: FighterState, dir: 1 | -1) {
+  setAction(d, 'guardCrush');
+  d.guard = 0;
+  d.guardDelay = 0;
+  d.stun = GUARD_CRUSH_FRAMES;
+  d.stunTotal = GUARD_CRUSH_FRAMES;
+  d.crouching = false;
+  d.vx = dir * GUARD_CRUSH_PUSH;
+  d.parryTimer = 0;
+  s.hitstop = Math.max(s.hitstop, GUARD_CRUSH_HITSTOP);
+  s.events.push({ t: 'guardBreak', p: di, x: d.x, y: 1.2 });
+}
+
+/** guard gauge: back to full after a crush, refills after a pause without blocking */
+function updateGuard(f: FighterState) {
+  if (f.action === 'guardCrush') return;
+  if (f.guard <= 0) {
+    // the crush is over (or was interrupted by a hit): the gauge comes back full
+    f.guard = f.guardMax;
+    f.guardDelay = 0;
+    return;
+  }
+  if (f.action === 'blockstun') return;
+  if (f.guardDelay > 0) {
+    f.guardDelay--;
+    return;
+  }
+  if (f.guard < f.guardMax) f.guard = Math.min(f.guardMax, f.guard + (f.guardMax * prof(f).guardRefill) / GUARD_REFILL_FRAMES);
+}
+
+/** a parry gives back a little guard */
+function parryGuard(d: FighterState) {
+  d.guard = Math.min(d.guardMax, d.guard + GUARD_PARRY_BONUS);
+}
+
+/** training mode: nobody can be K.O.'d */
+function hpFloor(s: GameState): number {
+  return s.training ? 1 : 0;
 }
 
 interface HitOpts {
@@ -1396,7 +1502,7 @@ function landHit(s: GameState, oi: number, d: FighterState, m: Strike, dir: 1 | 
   if (dAir) scale *= AIR_DAMAGE;
   if (o.counter) scale *= COUNTER_DAMAGE;
   const dmg = m.damage > 0 ? Math.max(1, Math.round(m.damage * scale)) : 0;
-  d.hp = Math.max(0, d.hp - dmg);
+  d.hp = Math.max(hpFloor(s), d.hp - dmg);
   d.comboCount++;
   d.comboDamage += dmg;
   d.meter = Math.min(MAX_METER, d.meter + dmg * 0.45);
@@ -1499,6 +1605,7 @@ function applyHit(s: GameState, h: PendingHit) {
     d.parryTimer = 0;
     d.parryCooldown = 0;
     d.meter = Math.min(MAX_METER, d.meter + 8);
+    parryGuard(d);
     s.hitstop = Math.max(s.hitstop, 10);
     s.events.push({ t: 'parry', p: h.d, x: hx, y: hy });
     return;
@@ -1570,6 +1677,7 @@ function canCallAssist(f: FighterState): boolean {
     case 'throwBreak':
     case 'wallSplat':
     case 'parried':
+    case 'guardCrush':
     case 'superFlash':
     case 'superCombo':
     case 'superVictim':
@@ -1767,6 +1875,95 @@ function tryCallAssists(s: GameState) {
 }
 
 // ---------------------------------------------------------------------------
+// projectiles (ranged profile)
+// ---------------------------------------------------------------------------
+/** the projectile throw reached its active frame: one projectile per owner on screen */
+function spawnProjectile(s: GameState, f: FighterState, idx: number) {
+  if (s.projectiles[idx]) return;
+  const p: ProjectileState = { owner: idx as 0 | 1, x: f.x + f.facing * PROJ_SPAWN, y: PROJ_Y, vx: f.facing * PROJ_SPEED, frame: 0 };
+  s.projectiles[idx] = p;
+  s.events.push({ t: 'projectile', p: idx, x: p.x, y: p.y });
+}
+
+function endProjectile(s: GameState, i: number, how: 'hit' | 'block' | 'clash' | 'out', x: number) {
+  const p = s.projectiles[i];
+  if (!p) return;
+  s.projectiles[i] = null;
+  s.events.push({ t: 'projectileEnd', p: i, x, y: p.y, how });
+}
+
+/** the projectile reaches the opponent: parried, blocked (drains the guard) or a hit (combo scaling, counter hits) */
+function projectileContact(s: GameState, i: number, p: ProjectileState) {
+  const d = s.fighters[1 - i];
+  const owner = s.fighters[i];
+  const dir: 1 | -1 = p.vx >= 0 ? 1 : -1;
+  const dx = (d.x - p.x) * dir;
+  if (dx > PROJ_RADIUS + BODY_RADIUS || dx < -(PROJ_RADIUS + BODY_RADIUS)) return;
+  // jumped over, or untouchable (knocked down, getting up, thrown, cinematic...)
+  if (d.y >= PROJ_CLEAR_Y || !assistCanTouch(d)) return;
+  const m = moveFor(owner.archetype, 'projectile');
+  const hx = d.x - dir * BODY_RADIUS;
+  const hy = p.y;
+  // like a fireball: guarded (or parried) standing or crouching, crouching doesn't dodge it
+  const canParry = canBlockNow(d) || d.action === 'walkF' || d.action === 'dashB';
+  if (d.parryTimer > 0 && canParry) {
+    setAction(d, 'parry');
+    d.vx = 0;
+    d.parryTimer = 0;
+    d.parryCooldown = 0;
+    d.meter = Math.min(MAX_METER, d.meter + 8);
+    parryGuard(d);
+    s.hitstop = Math.max(s.hitstop, 8);
+    s.events.push({ t: 'parry', p: 1 - i, x: hx, y: hy });
+    endProjectile(s, i, 'block', hx);
+    return;
+  }
+  // guard: hold away from the projectile (or the guard button)
+  const away = dir === -d.facing ? R_B : R_F;
+  if (canBlockNow(d) && (d.rel & (away | IN_GUARD)) !== 0) {
+    applyBlock(s, 1 - i, d, m, dir, hx, hy);
+    owner.meter = Math.min(MAX_METER, owner.meter + 2);
+    endProjectile(s, i, 'block', hx);
+    return;
+  }
+  const dmg = landHit(s, i, d, m, dir, hx, hy, { counter: isCounterState(d), scale: 1, wallBounce: false, finisher: false });
+  owner.meter = Math.min(MAX_METER, owner.meter + dmg * 0.5);
+  endProjectile(s, i, 'hit', hx);
+}
+
+/**
+ * Projectiles fly straight; two opposite ones clash; they leave at the edge of the arena.
+ * `live` = during the fight (otherwise they just fly away without touching anyone).
+ * A BBL MAX sends them away (like the assists).
+ */
+function updateProjectiles(s: GameState, live: boolean) {
+  if (superRunning(s)) {
+    for (let i = 0; i < 2; i++) {
+      const p = s.projectiles[i];
+      if (p) endProjectile(s, i, 'out', p.x);
+    }
+    return;
+  }
+  for (const p of s.projectiles) {
+    if (!p) continue;
+    p.x += p.vx;
+    p.frame++;
+  }
+  const [p0, p1] = s.projectiles;
+  if (live && p0 && p1 && p0.vx * p1.vx < 0 && (p1.x - p0.x) * (p0.vx > 0 ? 1 : -1) <= 2 * PROJ_RADIUS) {
+    const mid = (p0.x + p1.x) / 2;
+    endProjectile(s, 0, 'clash', mid);
+    endProjectile(s, 1, 'clash', mid);
+  }
+  for (let i = 0; i < 2; i++) {
+    const p = s.projectiles[i];
+    if (!p) continue;
+    if (live) projectileContact(s, i, p);
+    if (s.projectiles[i] && Math.abs(p.x) > ARENA_HALF_WIDTH + 0.6) endProjectile(s, i, 'out', p.x);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // phases
 // ---------------------------------------------------------------------------
 function setPhase(s: GameState, p: Phase) {
@@ -1781,11 +1978,16 @@ function resetRound(s: GameState) {
     const wins = f.wins;
     const meter = f.meter;
     const ult = f.ult;
+    const archetype = f.archetype;
     Object.assign(f, createFighter(i as 0 | 1));
     f.wins = wins;
     f.meter = meter;
     f.ult = ult;
+    f.archetype = archetype;
+    applyProfile(f);
   }
+  s.projectiles[0] = null;
+  s.projectiles[1] = null;
   for (const as of s.assists) {
     if (!as) continue;
     as.phase = 'off';
@@ -1808,7 +2010,7 @@ function endRound(s: GameState, winner: number) {
   if (winner === 1 || winner === 2) b.wins++;
   if (winner !== 2) {
     const w = s.fighters[winner];
-    if (w.hp >= MAX_HP) s.events.push({ t: 'perfect' });
+    if (w.hp >= w.maxHp) s.events.push({ t: 'perfect' });
   }
   setPhase(s, 'roundOver');
   for (let i = 0; i < 2; i++) {
@@ -1872,7 +2074,9 @@ export function step(s: GameState, inputs: readonly [number, number]) {
       const slow = s.phaseFrame < 54 && s.phaseFrame % 3 !== 0;
       if (!slow) {
         for (let i = 0; i < 2; i++) processInput(s, s.fighters[i], 0);
+        const stopped = s.hitstop > 0;
         simulateFighters(s);
+        if (!stopped) updateProjectiles(s, false);
         updateAssists(s, false);
       }
       if (s.phaseFrame >= KO_FRAMES) {
@@ -1884,8 +2088,10 @@ export function step(s: GameState, inputs: readonly [number, number]) {
       return;
     }
 
-    case 'roundOver':
+    case 'roundOver': {
+      const stopped = s.hitstop > 0;
       simulateFighters(s);
+      if (!stopped) updateProjectiles(s, false);
       updateAssists(s, false);
       // a winner that was still on the floor celebrates once back up
       for (let i = 0; i < 2; i++) {
@@ -1910,6 +2116,7 @@ export function step(s: GameState, inputs: readonly [number, number]) {
         }
       }
       return;
+    }
 
     case 'matchOver':
       for (const f of s.fighters) f.actionFrame++;
@@ -1961,6 +2168,8 @@ function runFight(s: GameState, inputs: readonly [number, number]) {
   }
 
   tryCallAssists(s);
+  updateGuard(a);
+  updateGuard(b);
   updateFighter(s, a, b, 0);
   updateFighter(s, b, a, 1);
   physics(s, a, 0);
@@ -1978,11 +2187,13 @@ function runFight(s: GameState, inputs: readonly [number, number]) {
     if (h1) applyHit(s, h1);
     if (h2) applyHit(s, h2);
   }
+  updateProjectiles(s, true);
   updateAssists(s, true);
 
   // the clock and KOs wait for the BBL MAX cinematic to finish
   if (isSuperAction(a.action) || isSuperAction(b.action)) return;
-  s.timer--;
+  // training: the clock never runs out
+  if (!s.training) s.timer--;
 
   // KO / time up
   const aDead = a.hp <= 0;
@@ -2020,6 +2231,16 @@ export function checksum(s: GameState): number {
     mix(f.hp);
     mix(f.actionFrame);
     mix(f.meter);
+    mix(f.guard);
+    mix(f.guardDelay);
+    mix(f.maxHp);
+  }
+  for (const p of s.projectiles) {
+    if (!p) mix(-99);
+    else {
+      mix(p.x);
+      mix(p.frame);
+    }
   }
   for (const as of s.assists) {
     if (!as) continue;

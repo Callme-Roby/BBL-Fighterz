@@ -166,10 +166,14 @@ let textures: {
   crack: THREE.Texture;
   crater: THREE.Texture;
   shard: THREE.Texture;
+  /** cracked glass guard (guard crush) */
+  shield: THREE.Texture;
+  /** a glass splinter: pale blue pane with a white edge */
+  glass: THREE.Texture;
 } | null = null;
 
 /** Jagged radial cracks (white core, dark outline) drawn from the centre of a square canvas. */
-function drawCracks(ctx: CanvasRenderingContext2D, w: number, h: number, seed: number, dark: boolean) {
+function drawCracks(ctx: CanvasRenderingContext2D, w: number, h: number, seed: number, style: 'light' | 'dark' | 'glass') {
   let k = seed;
   const r = () => {
     k = (k * 16807) % 2147483647;
@@ -220,8 +224,11 @@ function drawCracks(ctx: CanvasRenderingContext2D, w: number, h: number, seed: n
       ctx.stroke();
     }
   };
-  if (dark) {
+  if (style === 'dark') {
     stroke('rgba(10,8,6,0.85)', 2.5);
+  } else if (style === 'glass') {
+    stroke('rgba(30,110,230,0.85)', 3);
+    stroke('#ffffff', 1.2);
   } else {
     stroke('rgba(0,0,0,0.9)', 3.5);
     stroke('#ffffff', 1.4);
@@ -272,7 +279,7 @@ function tex() {
       g.addColorStop(1, 'rgba(255,255,255,0)');
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, w, h);
-      drawCracks(ctx, w, h, 7, false);
+      drawCracks(ctx, w, h, 7, 'light');
     }),
     crater: makeCanvasTexture(64, 64, (ctx, w, h) => {
       const g = ctx.createRadialGradient(w / 2, h / 2, 2, w / 2, h / 2, w * 0.3);
@@ -280,7 +287,7 @@ function tex() {
       g.addColorStop(1, 'rgba(20,16,12,0)');
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, w, h);
-      drawCracks(ctx, w, h, 31, true);
+      drawCracks(ctx, w, h, 31, 'dark');
     }),
     shard: makeCanvasTexture(16, 16, (ctx) => {
       ctx.fillStyle = '#fff';
@@ -294,9 +301,76 @@ function tex() {
       ctx.fill();
       ctx.stroke();
     }),
+    shield: makeCanvasTexture(64, 64, (ctx, w, h) => {
+      // hexagonal pane of light, cracked all over
+      const hex = (r: number) => {
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = (i * Math.PI) / 3 + Math.PI / 6;
+          ctx.lineTo(w / 2 + Math.cos(a) * r, h / 2 + Math.sin(a) * r);
+        }
+        ctx.closePath();
+      };
+      const g = ctx.createRadialGradient(w / 2, h / 2, 2, w / 2, h / 2, w * 0.48);
+      g.addColorStop(0, 'rgba(230,248,255,0.75)');
+      g.addColorStop(0.7, 'rgba(120,200,255,0.35)');
+      g.addColorStop(1, 'rgba(120,200,255,0.6)');
+      hex(w * 0.47);
+      ctx.fillStyle = g;
+      ctx.fill();
+      drawCracks(ctx, w, h, 53, 'glass');
+      hex(w * 0.47);
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+    }),
+    glass: makeCanvasTexture(16, 16, (ctx) => {
+      ctx.beginPath();
+      ctx.moveTo(7, 0);
+      ctx.lineTo(15, 9);
+      ctx.lineTo(9, 15);
+      ctx.lineTo(1, 11);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(190,232,255,0.85)';
+      ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(6, 3, 2, 5);
+    }),
   };
   return textures;
 }
+
+/** the shared effect textures (projectile visuals reuse them) */
+export function fxTexture(name: 'star' | 'dot' | 'ring' | 'puff'): THREE.Texture {
+  return tex()[name];
+}
+
+/**
+ * Block sparks: blue with a full guard, turning orange then red as the guard gauge
+ * empties (`wear` = 1 - guard / guardMax).
+ */
+const WEAR_COLORS = {
+  ring: [0x60c8ff, 0xff9a20, 0xff2a1a],
+  star: [0xa0e0ff, 0xffd070, 0xff6a50],
+  dot: [0x80d8ff, 0xffb040, 0xff4030],
+} as const;
+const wearTmp = new THREE.Color();
+const wearTmp2 = new THREE.Color();
+function wearColor(role: keyof typeof WEAR_COLORS, wear: number): THREE.Color {
+  const [a, b, c] = WEAR_COLORS[role];
+  // blue down to 80 % of the gauge, orange at half, red when nearly empty
+  if (wear <= 0.2) return wearTmp.set(a).clone();
+  if (wear <= 0.5) return wearTmp.set(a).lerp(wearTmp2.set(b), (wear - 0.2) / 0.3).clone();
+  return wearTmp.set(b).lerp(wearTmp2.set(c), Math.min(1, (wear - 0.5) / 0.35)).clone();
+}
+
+/** Look of a projectile (assist 'beam' shots and the ranged profile's own projectile). */
+export type ShotKind = 'grenade' | 'web' | 'words' | 'energy';
+/** how a fighter's projectile ended (sim event `projectileEnd`) */
+export type ShotEnd = 'hit' | 'block' | 'clash' | 'out';
 
 /** every cinematic effect (a missing one is a compile error) */
 const ALL_CINE_FX = Object.keys({
@@ -405,14 +479,79 @@ export class Effects {
     }
   }
 
-  block(x: number, y: number) {
+  /** @param wear 0 = full guard (blue sparks) .. 1 = about to break (red, bigger, cracking) */
+  block(x: number, y: number, wear = 0) {
     const t = tex();
+    const w = Math.max(0, Math.min(1, wear));
     const p = new THREE.Vector3(x, y, 0.35);
-    this.spawn(t.ring, 0x60c8ff, p.clone(), new THREE.Vector3(), 0.15, 9, { grow: 0.07 });
-    this.spawn(t.star, 0xa0e0ff, p.clone(), new THREE.Vector3(), 0.4, 6, { grow: 0.02 });
-    for (let i = 0; i < 6; i++) {
+    const k = 1 + w * 0.45;
+    this.spawn(t.ring, wearColor('ring', w), p.clone(), new THREE.Vector3(), 0.15, 9, { grow: 0.07 * k });
+    this.spawn(t.star, wearColor('star', w), p.clone(), new THREE.Vector3(), 0.4 * k, 6, { grow: 0.02 });
+    const dot = wearColor('dot', w);
+    const n = 6 + Math.round(w * 6);
+    for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
-      this.spawn(t.dot, 0x80d8ff, p.clone(), new THREE.Vector3(Math.cos(a) * 0.04, Math.sin(a) * 0.04, 0), 0.05, 10, { gravity: 0.003 });
+      const sp = 0.04 * (1 + w * 0.5);
+      this.spawn(t.dot, dot, p.clone(), new THREE.Vector3(Math.cos(a) * sp, Math.sin(a) * sp, 0), 0.05, 10, { gravity: 0.003 });
+    }
+    // a worn guard starts cracking: a few splinters fall off
+    if (w > 0.55) {
+      const m = w > 0.8 ? 4 : 2;
+      for (let i = 0; i < m; i++) {
+        this.spawn(t.glass, wearColor('star', w), p.clone(), new THREE.Vector3(rnd(-0.03, 0.03), rnd(0.005, 0.035), rnd(-0.01, 0.01)), rnd(0.06, 0.1), rnd(18, 26), {
+          additive: false,
+          gravity: 0.004,
+          spin: rnd(-0.3, 0.3),
+          rot: rnd(0, 6),
+        });
+      }
+    }
+  }
+
+  /**
+   * Guard crush: the guard bursts like a pane of glass. Cracked hexagonal pane, glass
+   * shards flying the way of the blow (`dir` = +1 / -1), white / blue rings and glints.
+   */
+  guardShatter(x: number, y: number, dir: number) {
+    const t = tex();
+    const p = new THREE.Vector3(x, y, 0.4);
+    const pane = this.spawn(t.shield, 0xffffff, p.clone(), new THREE.Vector3(dir * 0.004, 0, 0), 0.75, 12, { additive: false, pop: true, opacity: 0.9 });
+    pane.renderOrder = 11;
+    this.spawn(t.star, 0xffffff, p.clone(), new THREE.Vector3(), 1.3, 6, { grow: 0.08, opacity: 0.9 });
+    this.spawn(t.ring, 0xffffff, p.clone(), new THREE.Vector3(), 0.3, 10, { grow: 0.18, opacity: 0.9 });
+    this.spawn(t.ring, 0x60c8ff, p.clone(), new THREE.Vector3(), 0.2, 14, { grow: 0.12 });
+    // glass shards: mostly carried by the blow, some falling back toward the attacker
+    for (let i = 0; i < 30; i++) {
+      const back = i % 5 === 0;
+      const a = (back ? Math.PI : 0) + rnd(-1.1, 1.1);
+      const sp = rnd(0.03, 0.1) * (back ? 0.6 : 1);
+      const off = new THREE.Vector3(rnd(-0.2, 0.2), rnd(-0.4, 0.4), rnd(-0.15, 0.15));
+      const sh = this.spawn(
+        t.glass,
+        i % 3 === 0 ? 0xffffff : i % 3 === 1 ? 0xcfeeff : 0x8fd0ff,
+        p.clone().add(off),
+        new THREE.Vector3(dir * Math.cos(a) * sp, Math.sin(a) * sp * 0.8 + 0.025, rnd(-0.025, 0.04)),
+        rnd(0.07, 0.18),
+        rnd(30, 52),
+        { additive: false, gravity: 0.0035, spin: rnd(-0.4, 0.4), rot: rnd(0, 6), aspect: rnd(0.6, 1.4) },
+      );
+      sh.renderOrder = 11;
+    }
+    // glints catching the light
+    for (let i = 0; i < 10; i++) {
+      this.spawn(t.star, 0xe8f8ff, p.clone().add(new THREE.Vector3(rnd(-0.4, 0.4), rnd(-0.45, 0.45), 0.05)), new THREE.Vector3(dir * rnd(0.005, 0.03), rnd(-0.005, 0.02), 0), rnd(0.1, 0.18), rnd(10, 20), {
+        pop: true,
+      });
+    }
+    // fast streaks
+    for (let i = 0; i < 10; i++) {
+      const a = (dir > 0 ? 0 : Math.PI) + rnd(-1.2, 1.2);
+      const sp = rnd(0.08, 0.16);
+      this.spawn(t.dot, i % 2 ? 0x9fdcff : 0xffffff, p.clone(), new THREE.Vector3(Math.cos(a) * sp, Math.sin(a) * sp, 0), rnd(0.05, 0.07), rnd(8, 13), {
+        aspect: rnd(5, 8),
+        rot: a,
+        drag: 0.12,
+      });
     }
   }
 
@@ -703,7 +842,14 @@ export class Effects {
     this.burst(0, 1, 1, 'airDash');
     this.dizzyStars(p, 60);
     for (const g of ['heart', 'note', 'question', 'exclaim'] as const) this.glyph(g, p);
-    for (const k of ['grenade', 'web', 'words'] as const) this.shotImpact(k, p);
+    for (const k of ['grenade', 'web', 'words', 'energy'] as const) {
+      for (const how of ['hit', 'block', 'out'] as const) this.shotImpact(k, p, how);
+      this.shotSpawn(k, p, 1);
+      this.shotTrail(k, p, 1);
+    }
+    this.shotClash(p);
+    this.block(0, 1, 0.9);
+    this.guardShatter(0, 1, 1);
   }
 
   /** Frees everything (geometries and materials owned by this instance). */
@@ -917,22 +1063,107 @@ export class Effects {
     sp.renderOrder = 11;
   }
 
-  /** Muzzle-like explosion / splat when an assist projectile connects. */
-  shotImpact(kind: 'grenade' | 'web' | 'words', pos: THREE.Vector3) {
-    if (kind === 'grenade') this.cine('explosion', pos, 1.1);
-    else if (kind === 'web') {
-      // the web sticks on the opponent for a moment
-      const g = glyphTex();
-      const sp = this.spawn(g.web, 0xffffff, pos.clone().setZ(0.3), new THREE.Vector3(), 0.9, 50, { additive: false, pop: true });
-      sp.renderOrder = 11;
-      this.spawn(tex().ring, 0xffffff, pos.clone(), new THREE.Vector3(), 0.2, 10, { grow: 0.08 });
-    } else {
-      const t = tex();
-      this.spawn(t.star, 0xffe040, pos.clone(), new THREE.Vector3(), 0.8, 8, { grow: 0.08 });
-      for (let i = 0; i < 10; i++) {
+  /**
+   * A projectile is gone (assist shots, the ranged profile's projectile): explosion, web
+   * splat, word burst or energy pop. `how`: it connected, was guarded, met the other
+   * projectile (both pop) or flew off the arena.
+   */
+  shotImpact(kind: ShotKind, pos: THREE.Vector3, how: ShotEnd = 'hit') {
+    const t = tex();
+    const small = how === 'block' || how === 'clash';
+    if (kind === 'grenade') {
+      this.cine('explosion', pos, how === 'hit' ? 1.1 : how === 'out' ? 0.75 : 0.9);
+      return;
+    }
+    if (how === 'out') {
+      // fizzles out at the edge of the arena
+      this.spawn(t.puff, kind === 'energy' ? 0x60c8ff : 0xf0f0f0, pos.clone(), new THREE.Vector3(0, 0.004, 0), 0.35, 16, { grow: 0.02, additive: kind === 'energy', opacity: 0.7 });
+      for (let i = 0; i < 6; i++) {
         const a = Math.random() * Math.PI * 2;
-        this.spawn(t.dot, i % 2 ? 0xffe040 : 0xffffff, pos.clone(), new THREE.Vector3(Math.cos(a) * 0.06, Math.sin(a) * 0.06, 0), 0.07, 16, { drag: 0.06 });
+        this.spawn(t.dot, kind === 'energy' ? 0x9fe0ff : kind === 'words' ? 0xffe040 : 0xffffff, pos.clone(), new THREE.Vector3(Math.cos(a) * 0.03, Math.sin(a) * 0.03, 0), 0.05, 14, { drag: 0.06 });
       }
+      return;
+    }
+    if (kind === 'web') {
+      // the web sticks on the opponent (or their guard) for a moment
+      const g = glyphTex();
+      const sp = this.spawn(g.web, 0xffffff, pos.clone().setZ(0.3), new THREE.Vector3(), small ? 0.6 : 0.9, small ? 30 : 50, { additive: false, pop: true });
+      sp.renderOrder = 11;
+      this.spawn(t.ring, 0xffffff, pos.clone(), new THREE.Vector3(), 0.2, 10, { grow: 0.08 });
+      for (let i = 0; i < (small ? 8 : 5); i++) {
+        const a = Math.random() * Math.PI * 2;
+        this.spawn(t.dot, 0xffffff, pos.clone(), new THREE.Vector3(Math.cos(a) * 0.045, Math.sin(a) * 0.045, 0), 0.05, 16, { drag: 0.05, gravity: 0.002, aspect: 3, rot: a });
+      }
+    } else if (kind === 'words') {
+      const col = how === 'block' ? 0xd8d8d8 : 0xffe040;
+      this.spawn(t.star, col, pos.clone(), new THREE.Vector3(), small ? 0.6 : 0.8, 8, { grow: 0.08 });
+      this.spawn(t.ring, col, pos.clone(), new THREE.Vector3(), 0.15, 10, { grow: 0.09 });
+      for (let i = 0; i < 12; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = rnd(0.04, 0.07);
+        this.spawn(t.dot, i % 2 ? col : 0xffffff, pos.clone(), new THREE.Vector3(Math.cos(a) * sp, Math.sin(a) * sp, 0), 0.07, 16, { drag: 0.06, gravity: 0.002 });
+      }
+    } else {
+      // energy ball
+      this.spawn(t.star, 0xffffff, pos.clone(), new THREE.Vector3(), small ? 0.7 : 0.95, 7, { grow: 0.07 });
+      this.spawn(t.puff, 0x40a8ff, pos.clone(), new THREE.Vector3(), 0.6, 12, { grow: 0.04 });
+      this.spawn(t.ring, 0x80d8ff, pos.clone(), new THREE.Vector3(), 0.2, 12, { grow: small ? 0.09 : 0.13 });
+      for (let i = 0; i < 12; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = rnd(0.05, 0.1);
+        this.spawn(t.dot, i % 3 ? 0x80d8ff : 0xffffff, pos.clone(), new THREE.Vector3(Math.cos(a) * sp, Math.sin(a) * sp, 0), 0.06, rnd(10, 16), { drag: 0.08, aspect: 3, rot: a });
+      }
+    }
+  }
+
+  /** The two projectiles met: a white pop between them (on top of each one's own impact). */
+  shotClash(pos: THREE.Vector3) {
+    const t = tex();
+    this.spawn(t.star, 0xffffff, pos.clone(), new THREE.Vector3(), 1.2, 8, { grow: 0.09 });
+    this.spawn(t.ring, 0xffffff, pos.clone(), new THREE.Vector3(), 0.3, 12, { grow: 0.2, opacity: 0.9 });
+    this.spawn(t.ring, 0xffe080, pos.clone(), new THREE.Vector3(), 0.2, 14, { grow: 0.13 });
+    for (let i = 0; i < 14; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = rnd(0.07, 0.15);
+      this.spawn(t.dot, i % 2 ? 0xffe080 : 0xffffff, pos.clone(), new THREE.Vector3(Math.cos(a) * sp, Math.sin(a) * sp, 0), rnd(0.05, 0.07), rnd(8, 14), {
+        aspect: rnd(4, 7),
+        rot: a,
+        drag: 0.1,
+      });
+    }
+  }
+
+  /** A fighter throws their projectile: puff / flash at the hand, `dir` = the throw's direction. */
+  shotSpawn(kind: ShotKind, pos: THREE.Vector3, dir: number) {
+    const t = tex();
+    if (kind === 'energy') {
+      this.spawn(t.star, 0xbfeaff, pos.clone(), new THREE.Vector3(), 0.7, 6, { grow: 0.05 });
+      this.spawn(t.ring, 0x60c8ff, pos.clone(), new THREE.Vector3(), 0.15, 10, { grow: 0.07, aspect: 0.5 });
+    } else if (kind === 'words') {
+      this.spawn(t.star, 0xffe040, pos.clone(), new THREE.Vector3(), 0.45, 6, { grow: 0.04 });
+    } else if (kind === 'web') {
+      this.spawn(t.ring, 0xffffff, pos.clone(), new THREE.Vector3(), 0.1, 8, { grow: 0.05 });
+    }
+    // a little gust of air behind the throw
+    for (let i = 0; i < 4; i++) {
+      this.spawn(t.puff, 0xf0ece4, pos.clone().add(new THREE.Vector3(-dir * 0.1, rnd(-0.1, 0.1), rnd(-0.1, 0.1))), new THREE.Vector3(-dir * rnd(0.01, 0.02), rnd(-0.003, 0.006), 0), rnd(0.14, 0.22), rnd(10, 16), {
+        grow: 0.01,
+        additive: false,
+        opacity: 0.55,
+        drag: 0.08,
+      });
+    }
+  }
+
+  /** what a flying projectile leaves behind (grenade smoke, energy sparks), called every few frames */
+  shotTrail(kind: ShotKind, pos: THREE.Vector3, dir: number) {
+    const t = tex();
+    if (kind === 'grenade') this.trail(pos);
+    else if (kind === 'energy') {
+      this.spawn(t.puff, 0x3a90ff, pos.clone(), new THREE.Vector3(-dir * 0.01, rnd(-0.003, 0.003), 0), 0.32, 12, { grow: -0.012 });
+      this.spawn(t.dot, 0xbfeaff, pos.clone().add(new THREE.Vector3(0, rnd(-0.12, 0.12), 0)), new THREE.Vector3(-dir * rnd(0.01, 0.03), rnd(-0.008, 0.008), 0), 0.05, rnd(8, 12), { drag: 0.05 });
+    } else if (kind === 'words') {
+      this.spawn(t.dot, 0xffe040, pos.clone().add(new THREE.Vector3(-dir * 0.3, rnd(-0.1, 0.1), 0)), new THREE.Vector3(-dir * 0.01, 0, 0), 0.05, 10, { drag: 0.05 });
     }
   }
 

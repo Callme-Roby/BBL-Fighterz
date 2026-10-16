@@ -1,13 +1,13 @@
 import { audio } from '../audio/audio';
 import type { App, Screen } from '../app';
-import type { FighterDef } from '../data/roster';
+import { archetypeOf, type FighterDef } from '../data/roster';
 import { fullRoster } from '../game/settings';
 import { FightWorld } from '../game/world';
 import { input } from '../input/input';
 import { STAGES } from '../render/stages';
 import { CpuBrain } from '../sim/ai';
 import { createGame, step } from '../sim/sim';
-import type { GameState } from '../sim/types';
+import type { Archetype, GameState } from '../sim/types';
 import { h, isTouchUi, Menu, uiRoot } from '../ui/dom';
 import { goLab, goOnline, goOptions, goSelect, goTournamentHome } from './flow';
 
@@ -35,6 +35,7 @@ class Attract {
     if (roster.length > 1) while (b.id === a.id) b = pick();
     const stage = STAGES[Math.floor(Math.random() * STAGES.length)].id;
     FightWorld.create(a, b, stage).then((w) => {
+      const archetypes: [Archetype, Archetype] = [archetypeOf(a), archetypeOf(b)];
       this.loading = false;
       if (this.disposed) {
         w.dispose();
@@ -44,7 +45,7 @@ class Attract {
       w.sound = false;
       w.attract = true;
       this.world = w;
-      this.state = createGame({ skipIntro: true, roundsToWin: 1 });
+      this.state = createGame({ skipIntro: true, roundsToWin: 1, archetypes });
     });
   }
 
@@ -117,6 +118,7 @@ export class TitleScreen implements Screen {
       [
         { label: 'ARCADE', sub: "Contre l'ordinateur", action: () => goSelect('cpu') },
         { label: 'VERSUS', sub: '2 joueurs sur le même écran', action: () => goSelect('versus') },
+        { label: 'ENTRAÎNEMENT', sub: 'Mannequin réglable · teste tes combos', action: () => goSelect('training') },
         { label: 'TOURNOI', sub: "Jusqu'à 16 potes · sur ce navigateur ou en ligne", action: () => goTournamentHome() },
         { label: 'EN LIGNE', sub: 'Envoie un lien à un pote', action: () => goOnline() },
         { label: 'LABO', sub: 'Crée ton perso avec ta photo', action: () => goLab() },

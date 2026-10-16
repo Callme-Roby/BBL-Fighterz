@@ -108,6 +108,19 @@ button {
   font-size: clamp(42px, min(9vw, 13vh), 120px);
 }
 
+/* 7 entries: tighter buttons on desktop screens up to ~820 px high (phones: mobile-menus.css) */
+@media (min-width: 601px) and (min-height: 501px) and (max-height: 820px) {
+  .menu.title-menu {
+    gap: 6px;
+  }
+  .menu.title-menu button {
+    padding: 9px 18px;
+  }
+  .menu.title-menu button .sub {
+    margin-top: 4px;
+  }
+}
+
 .title-press {
   font-size: 14px;
   margin-top: 20px;
@@ -412,6 +425,119 @@ button {
   80% {
     transform: translateX(4px);
   }
+}
+
+/* fighter profile under the name / title: LOURD · RAPIDE · DISTANCE · ÉQUILIBRÉ + 4 stat bars */
+.profile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 8px;
+  font-family: var(--pixel);
+  font-style: normal;
+  text-shadow: 2px 2px 0 #000;
+}
+
+.pname.p2 .profile {
+  align-items: flex-end;
+}
+
+.pf-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.pname.p2 .pf-head {
+  flex-direction: row-reverse;
+}
+
+.pf-badge {
+  flex: none;
+  display: inline-block;
+  padding: 2px 8px;
+  font-family: var(--arcade);
+  font-style: italic;
+  font-size: 12px;
+  line-height: 1.2;
+  color: #12060a;
+  text-shadow: none;
+  background: var(--pc, #7ee07a);
+  border: 2px solid #000;
+  box-shadow: 2px 2px 0 #000;
+  transform: skewX(-8deg);
+}
+
+.pf-line {
+  min-width: 0;
+  font-size: 9px;
+  line-height: 1.5;
+  color: #fff;
+}
+
+.pf-line small {
+  font-size: 8px;
+  color: var(--muted);
+}
+
+.pf-model::before {
+  content: ' · ';
+}
+
+.pf-stats {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 4px 14px;
+}
+
+.pf-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pf-k {
+  min-width: 9ch;
+  font-size: 7px;
+  color: var(--muted);
+}
+
+.pf-bar {
+  display: flex;
+  gap: 2px;
+}
+
+.pf-bar i {
+  width: 10px;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid #000;
+  transform: skewX(-12deg);
+}
+
+.pf-bar i.on {
+  background: var(--pc, #7ee07a);
+}
+
+.pf-cmd {
+  padding: 2px 6px;
+  font-size: 7px;
+  line-height: 1.4;
+  color: var(--pc, #fff);
+  border: 1px solid var(--pc, #fff);
+  background: rgba(0, 0, 0, 0.55);
+}
+
+/* small badge in lists (online tournament lobby) */
+.pf-badge.mini {
+  margin: 0 5px;
+  padding: 1px 4px;
+  font-size: 7px;
+  border-width: 1px;
+  box-shadow: 1px 1px 0 #000;
+  vertical-align: middle;
 }
 
 /* « ASSIST : ISIS » + move name under a player's name */
@@ -743,6 +869,89 @@ button {
 .hud .wins i.on {
   background: var(--orange2);
   box-shadow: 0 0 8px var(--orange);
+}
+
+/* guard gauge: inner side of the nameplate row, right under the health bar */
+.hud .gg {
+  flex: 0 1 46%;
+  min-width: 0;
+  margin-left: auto;
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hud .gg.right {
+  margin-left: 0;
+  margin-right: auto;
+  flex-direction: row-reverse;
+}
+
+.hud .glbl {
+  flex: none;
+  font-size: 7px;
+  color: #a8ccff;
+  text-shadow: 1px 1px 0 #000;
+}
+
+.hud .gbar {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 8px;
+  background: #0b1424;
+  border: 2px solid #000;
+  box-shadow: 0 0 0 1px #6a8ab8;
+  overflow: hidden;
+}
+
+.hud .gfill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 100%;
+  background: linear-gradient(180deg, #eef8ff 0%, #8ccaff 45%, #3a7fe0 100%);
+}
+
+.hud .gg.right .gfill {
+  right: auto;
+  left: 0;
+}
+
+/* worn: yellow · under 30 %: red and blinking · broken: empty, flashing red frame */
+.hud .gg.worn .gfill {
+  background: linear-gradient(180deg, #fff6cc 0%, #ffd24a 45%, #d8901a 100%);
+}
+
+.hud .gg.low .gfill {
+  background: linear-gradient(180deg, #ffd8c0 0%, #ff6a2a 45%, #b81c0a 100%);
+  animation: blink 0.36s steps(2) infinite;
+}
+
+.hud .gg.low .gbar {
+  box-shadow: 0 0 0 1px #ff6a2a, 0 0 8px rgba(255, 80, 30, 0.8);
+}
+
+.hud .gg.low .glbl {
+  color: #ff9a6a;
+}
+
+.hud .gg.broken .gbar {
+  background: #4a0608;
+  box-shadow: 0 0 0 1px #ff3a3a, 0 0 10px rgba(255, 30, 30, 0.9);
+  animation: blink 0.2s steps(2) infinite;
+}
+
+.hud .gg.broken .glbl {
+  color: #ff5050;
+}
+
+/* training: endless clock, no round markers, no combo pop-ups (the training panel has them) */
+.hud.training .wins,
+.hud.training .combo {
+  display: none;
 }
 
 .hud .timer {

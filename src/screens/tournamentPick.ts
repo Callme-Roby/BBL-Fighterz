@@ -14,6 +14,7 @@ import { loadFace } from '../render/faceTexture';
 import { Showroom, type ShowroomFit } from '../render/showroom';
 import { backButton, gridColumns, h, phoneLayout, uiRoot } from '../ui/dom';
 import { goTournament, goTournamentBracket } from './flow';
+import { profileBox } from './profile';
 import { centerShowroom, guardButtons, portrait } from './tournamentShared';
 
 /** delay between a confirmed pick and the next participant (win pose time) */
@@ -180,6 +181,9 @@ export class TournamentPickScreen implements Screen {
     });
     const def = this.defAt(this.cursor);
     const parts: (string | HTMLElement)[] = [def ? def.name : '???', h('span', { class: 'ttl' }, def ? def.title : 'Au hasard')];
+    // profile: LOURD / RAPIDE / DISTANCE / ÉQUILIBRÉ + stats
+    const prof = profileBox(def);
+    if (prof) parts.push(prof);
     if (assist) {
       // « ASSIST : ISIS » + « UPPERCUT MUSCLÉ · LANCEUR »
       const friend = this.defAt(this.acursor);

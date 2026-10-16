@@ -7,6 +7,8 @@ import { cropFileToDataUrl } from '../render/faceTexture';
 import { Showroom } from '../render/showroom';
 import { backButton, h, phoneLayout, uiRoot } from '../ui/dom';
 import { goMenu } from './flow';
+import { ARCHETYPE_INFO } from '../data/archetypes';
+import { profileBadge } from './profile';
 
 function blank(): FighterDef {
   return {
@@ -223,6 +225,8 @@ export class LabScreen implements Screen {
       h('div', { class: 'status', style: 'font-size:9px;text-align:left' }, 'Cadre le visage dans l’ovale : du haut du front au menton.'),
       field('2. NOM', text(d.name, 12, (v) => (d.name = v.toUpperCase() || 'NOUVEAU'))),
       field('SURNOM', text(d.title, 32, (v) => (d.title = v))),
+      // every lab creation has the balanced profile
+      h('div', { class: 'status', style: 'font-size:9px;text-align:left' }, 'PROFIL ', profileBadge(ARCHETYPE_INFO.balanced, 'mini'), ' façon Ryu, Ken : bon partout.'),
       field(
         'CHEVEUX',
         chips<HairStyle>(

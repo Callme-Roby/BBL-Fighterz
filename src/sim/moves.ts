@@ -125,10 +125,11 @@ export const MOVES: Record<MoveId, MoveDef> = {
     reach: 1.05, hitY: 1.35, hitstun: 30, blockstun: 24, pushHit: 0.2, pushBlock: 0.17,
     strength: 'heavy', advance: 1.5, invulnFrames: 16,
   }),
-  // ranged profile: the throw itself (the projectile carries the hit); placeholder values, tuned in the sim
+  // ranged profile: the throw itself (the projectile carries the hit, see PROJ_* below). Spawns on
+  // frame `startup`; the long recovery is the price: jumped over on reaction from mid range = punished
   projectile: M({
-    id: 'projectile', name: 'Projectile', startup: 13, active: 1, recovery: 30, damage: 12, level: 'mid',
-    reach: 0, hitY: 1.3, hitstun: 18, blockstun: 14, pushHit: 0.06, pushBlock: 0.06,
+    id: 'projectile', name: 'Projectile', startup: 13, active: 1, recovery: 34, damage: 13, level: 'mid',
+    reach: 0, hitY: 1.0, hitstun: 20, blockstun: 16, pushHit: 0.06, pushBlock: 0.06,
     strength: 'medium',
   }),
 };
@@ -205,3 +206,18 @@ export const BEAM_SPEED = 0.12;
 export const BEAM_Y = 1.2;
 /** frames before an assist can be called again (from the call) */
 export const ASSIST_COOLDOWN = 480;
+
+/**
+ * Projectile (ranged profile, forward + RP; frame data = MOVES.projectile): spawned on the
+ * move's active frame, flies straight at PROJ_SPEED m/frame at height PROJ_Y. One per owner
+ * on screen: pressing again while it is alive plays the throw but spawns nothing (Street
+ * Fighter's one-fireball rule). Opposite projectiles clash; a BBL MAX sends them away.
+ */
+export const PROJ_SPEED = 0.09;
+/** flight height (m) and spawn distance in front of the thrower (m) */
+export const PROJ_Y = 1.0;
+export const PROJ_SPAWN = 0.55;
+/** horizontal half-size of the projectile's hitbox (m) */
+export const PROJ_RADIUS = 0.22;
+/** a jumper whose feet are above this height flies over it (m) */
+export const PROJ_CLEAR_Y = 0.72;

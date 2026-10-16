@@ -76,7 +76,7 @@ export class StageSelectScreen implements Screen {
         'div',
         { class: 'screen dim stage-screen' },
         h('div', { class: 'h1' }, "CHOISIS L'ARÈNE"),
-        h('div', { class: 'title-hint' }, `${this.p1.name}  VS  ${this.p2.name}`),
+        h('div', { class: 'title-hint' }, (this.mode === 'training' ? 'ENTRAÎNEMENT · ' : '') + `${this.p1.name}  VS  ${this.p2.name}`),
         list,
         go,
         h('div', { class: 'footer-hint kbd-only' }, '← → pour choisir · Entrée pour valider · Échap pour revenir'),
@@ -104,6 +104,9 @@ export class StageSelectScreen implements Screen {
     // arcade: the CPU's friend is drawn from the fight seed
     const assists: [FighterDef | null, FighterDef | null] = [this.assists[0], this.assists[1]];
     if (this.mode === 'cpu' && !assists[1]) assists[1] = randomAssist(seed ^ 0xa55157, this.p2.id, fullRoster());
+    // training: the dummy has no assist, no rounds, no intro
+    const training = this.mode === 'training';
+    if (training) assists[1] = null;
     if (this.mode === 'online' && this.link) {
       this.link.send({ t: 'start', stage: stageId, p1: this.p1, p2: this.p2, a1: assists[0], a2: assists[1], seed, rounds: settings.rounds });
     }
@@ -112,12 +115,13 @@ export class StageSelectScreen implements Screen {
       p1: this.p1,
       p2: this.p2,
       stageId,
-      rounds: settings.rounds,
+      rounds: training ? 1 : settings.rounds,
       difficulty: settings.difficulty,
       seed,
       link: this.link,
       localPlayer: 0,
       assists,
+      skipIntro: training || undefined,
     });
   }
 

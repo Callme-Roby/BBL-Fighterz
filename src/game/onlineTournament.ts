@@ -35,6 +35,7 @@ import {
   refresh,
   shuffle,
   simulateCpuMatch,
+  matchArchetypes,
   stageFor,
   type Tournament,
 } from './tournament';
@@ -341,7 +342,7 @@ export class OnlineTournament {
     const { r, m } = t.current;
     const x = t.rounds[r][m];
     if (!t.participants[x.a as number].cpu || !t.participants[x.b as number].cpu) return;
-    this.record(r, m, simulateCpuMatch(settings.rounds, settings.difficulty), ' (SIMULATION)');
+    this.record(r, m, simulateCpuMatch(settings.rounds, settings.difficulty, matchArchetypes(t, r, m)), ' (SIMULATION)');
   }
 
   /** Gives the current match to one side (the other player is gone). */

@@ -6,6 +6,7 @@
  */
 import { audio } from '../audio/audio';
 import type { App, Screen } from '../app';
+import { archetypeInfo } from '../data/archetypes';
 import { assistOf, ASSIST_KIND_LABEL } from '../data/assists';
 import { ROSTER, type FighterDef } from '../data/roster';
 import { entryFighter, OnlineTournament, savedPlayerName } from '../game/onlineTournament';
@@ -17,6 +18,7 @@ import { loadFace } from '../render/faceTexture';
 import { Showroom } from '../render/showroom';
 import { backButton, h, Menu, uiRoot, type MenuItem } from '../ui/dom';
 import { goMenu, goTournament, goTournamentOnline } from './flow';
+import { profileBadge } from './profile';
 import { assistTag, bracketTree, centerShowroom, controlsEl, guardButtons, portrait, syncMenuFocus } from './tournamentShared';
 
 const DIFF_LABEL = { easy: 'FACILE', normal: 'NORMAL', hard: 'DIFFICILE' } as const;
@@ -294,7 +296,13 @@ export class TournamentOnlineScreen implements Screen {
           'div',
           { class: 'tn-info' },
           h('span', { class: 'tn-name' }, e.name, i === 0 && !e.cpu ? h('span', { class: 'tn-org' }, ' ★ ORGA') : null),
-          h('span', { class: 'tn-fighter' }, def ? def.name : '—', h('span', { class: 'tn-lassist' }, ' + ', friend ? friend.name : '?')),
+          h(
+            'span',
+            { class: 'tn-fighter' },
+            def ? def.name : '—',
+            def ? profileBadge(archetypeInfo(def), 'mini') : null,
+            h('span', { class: 'tn-lassist' }, ' + ', friend ? friend.name : '?'),
+          ),
         ),
         i === ot.me ? h('span', { class: 'tn-you' }, 'TOI') : null,
         h('span', { class: 'tn-ltag' + (e.cpu ? ' cpu' : e.fighterId ? ' ok' : '') }, tag),
@@ -352,7 +360,12 @@ export class TournamentOnlineScreen implements Screen {
         'div',
         { class: 'panel tn-lme' },
         h('div', { class: 'field' }, 'TON NOM', field),
-        h('div', { class: 'field' }, myDef ? `TON PERSO : ${myDef.name}` : 'CHOISIS TON PERSO', grid),
+        h(
+          'div',
+          { class: 'field' },
+          myDef ? h('span', { class: 'tn-myprof' }, `TON PERSO : ${myDef.name} `, profileBadge(archetypeInfo(myDef), 'mini'), h('small', null, ` ${archetypeInfo(myDef).line}`)) : 'CHOISIS TON PERSO',
+          grid,
+        ),
         h(
           'div',
           { class: 'field' },

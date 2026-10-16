@@ -1,6 +1,7 @@
 import './ui/styles.css';
 import './ui/mobile-menus.css';
 import './ui/mobile-game.css';
+import './ui/training.css';
 import { App } from './app';
 import { initKeyLabels } from './input/input';
 import { roomFromUrl, tournamentFromUrl } from './net/peer';
@@ -44,6 +45,23 @@ function boot() {
         seed: 1,
         skipIntro: true,
         cpuSides: [false, true],
+      });
+    };
+    // ?debug: training mode straight away, e.g. bblTraining('dylan', 'clement'); assist: '' = none (default: Isis / Zia)
+    (window as unknown as { bblTraining: unknown }).bblTraining = (a: string, b: string, stage?: string, a1?: string) => {
+      const find = (id: string) => ROSTER.find((f) => f.id === id) ?? ROSTER[0];
+      const me = find(a);
+      const friend = a1 === undefined ? find(me.id === 'isis' ? 'zia' : 'isis') : a1 ? (ROSTER.find((f) => f.id === a1) ?? null) : null;
+      startFight({
+        mode: 'training',
+        p1: me,
+        p2: find(b),
+        assists: [friend, null],
+        stageId: stage ?? STAGES[0].id,
+        rounds: 1,
+        difficulty: 'normal',
+        seed: 1,
+        skipIntro: true,
       });
     };
   }

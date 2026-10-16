@@ -14,9 +14,10 @@
  * through automatically) or `null` (not decided yet).
  */
 import { resolveAssist } from '../data/assists';
-import type { FighterDef } from '../data/roster';
+import { archetypeOf, type FighterDef } from '../data/roster';
 import { CpuBrain, type Difficulty } from '../sim/ai';
 import { createGame, step } from '../sim/sim';
+import type { Archetype } from '../sim/types';
 import { fullRoster } from './settings';
 
 export const MIN_PARTICIPANTS = 2;
@@ -339,8 +340,13 @@ function stageAt(seed: number, k: number, ids: string[]): string {
  * 1 (right won) or 2 (draw). If the frame cap is hit the match is decided on
  * rounds won, then on remaining HP.
  */
-export function simulateCpuMatch(roundsToWin: number, difficulty: Difficulty, maxFrames = 60 * 60 * 6): 0 | 1 | 2 {
-  const s = createGame({ skipIntro: true, roundsToWin });
+export function simulateCpuMatch(
+  roundsToWin: number,
+  difficulty: Difficulty,
+  archetypes?: [Archetype, Archetype],
+  maxFrames = 60 * 60 * 6,
+): 0 | 1 | 2 {
+  const s = createGame({ skipIntro: true, roundsToWin, archetypes });
   const brains = [new CpuBrain(difficulty), new CpuBrain(difficulty)] as const;
   for (let i = 0; i < maxFrames && s.phase !== 'matchOver'; i++) {
     step(s, [brains[0].think(s, 0), brains[1].think(s, 1)]);
@@ -357,6 +363,12 @@ export function simulateCpuMatch(roundsToWin: number, difficulty: Difficulty, ma
 // ---------------------------------------------------------------------------
 
 /** Fighter of participant i (unknown ids fall back to the first roster fighter). */
+/** Profiles of the two fighters of match (r, m), for the instant simulation. */
+export function matchArchetypes(t: Tournament, r: number, m: number): [Archetype, Archetype] {
+  const x = t.rounds[r][m];
+  return [archetypeOf(fighterOf(t, x.a as number)), archetypeOf(fighterOf(t, x.b as number))];
+}
+
 export function fighterOf(t: Tournament, i: number, roster: FighterDef[] = fullRoster()): FighterDef {
   const p = t.participants[i];
   if (p?.def) return p.def;

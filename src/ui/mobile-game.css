@@ -694,6 +694,22 @@
   .combo em {
     font-size: 7px;
   }
+  .hud .gbar {
+    height: 7px;
+  }
+  .hud .glbl {
+    font-size: 6px;
+  }
+}
+
+/* phones held upright: the guard gauge alone (no label) under the inner half of the health bar */
+@media (max-width: 600px) {
+  .hud .gg {
+    flex-basis: 42%;
+  }
+  .hud .glbl {
+    display: none;
+  }
 }
 
 /* phone held upright (split view or not) */

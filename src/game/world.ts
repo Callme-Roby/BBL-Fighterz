@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { audio } from '../audio/audio';
 import type { SfxId } from '../audio/types';
 import type { FighterDef } from '../data/roster';
-import { Effects } from '../render/effects';
+import { Effects, type ShotKind } from '../render/effects';
 import { loadFace, type FaceAssets } from '../render/faceTexture';
 import { FighterView } from '../render/fighterView';
 import { PS1Globals } from '../render/ps1Material';
@@ -11,7 +11,9 @@ import type { StageEnv } from '../render/stages/types';
 import type { RetroPipeline } from '../render/pipeline';
 import { AssistView } from '../render/assistView';
 import { disposeProp } from '../render/props';
-import { ROSTER } from '../data/roster';
+import { ROSTER, archetypeOf } from '../data/roster';
+import { ShotVisual, fighterShotKind, wordsOf } from '../render/shots';
+import { moveFor } from '../sim/archetypes';
 import { ARENA_HALF_WIDTH, INTRO_SPLIT, type FighterState, type GameState, type SimEvent } from '../sim/types';
 import { fullRoster } from './settings';
 import { cineTime, getUltimate } from '../sim/ultimates';
@@ -51,11 +53,19 @@ function altCostume(def: FighterDef): FighterDef {
 const tmpV = new THREE.Vector3();
 const tmpV2 = new THREE.Vector3();
 const tmpV3 = new THREE.Vector3();
+const tmpHand = new THREE.Vector3();
+const tmpShot = new THREE.Vector3();
 
 /** cameras stay within the floor every stage keeps clear of props (see stages/types.ts) */
 const CLEAR_X = 10.8;
 /** x of the (invisible) arena wall surface on a side */
 const WALL_X = ARENA_HALF_WIDTH + 0.3;
+/** a ranged fighter's projectile: frames it takes to leave the hand (visual blend hand -> sim position) */
+const SHOT_LEAVE = 5;
+/** the grenade's lob: peak height above the sim's straight line (m), reached halfway to the opponent */
+const LOB_HEIGHT = 0.36;
+/** web strand from Enola's hand to her web ball during the first frames of the flight */
+const WEB_STRAND_FRAMES = 14;
 /** min rendered frames (60 fps units) between two impact frames (special / plain heavy hits) */
 const IMPACT_GAP = 20;
 const IMPACT_GAP_HEAVY = 40;
@@ -137,6 +147,15 @@ export class FightWorld {
   private warmFx: Effects | null = null;
   /** explicit friend look per side (else resolved from the roster by the state's id) */
   private assistDefs: [FighterDef | null, FighterDef | null] = [null, null];
+  // ---- ranged profile: each fighter's own projectile ----
+  private shotViews: [ShotVisual | null, ShotVisual | null] = [null, null];
+  /** per side: projectile seen last frame, its spawn x, frame, lob length */
+  private shotTrack = [
+    { on: false, x0: 0, frame: 0, lob: 3, spawnFx: false },
+    { on: false, x0: 0, frame: 0, lob: 3, spawnFx: false },
+  ];
+  /** render frame of the last projectile clash (one shared pop for the two projectiles) */
+  private clashAt = -1;
 
   private constructor(
     readonly stage: StageEnv,
@@ -235,6 +254,15 @@ export class FightWorld {
     const samples = this.cine.warmUp();
     const temp = new THREE.Group();
     temp.add(this.warmFx.group, ...samples);
+    // projectiles: the ranged fighters' own and the 'beam' friends' (shown for the compile)
+    const shotSamples: THREE.Object3D[][] = [];
+    for (let i = 0; i < 2; i++) {
+      const sv = archetypeOf(this.defs[i]) === 'ranged' ? this.shotView(i) : null;
+      shotSamples.push(sv ? sv.warmSamples() : []);
+      for (const o of shotSamples[i]) temp.add(o);
+    }
+    const assistSamples = this.assistViews.map((a) => a?.warmShot() ?? []);
+    for (const a of assistSamples) for (const o of a) temp.add(o);
     this.scene.add(temp);
     this.applyLighting();
     try {
@@ -243,6 +271,86 @@ export class FightWorld {
       this.scene.remove(temp);
       temp.remove(this.warmFx.group);
       for (const o of samples) disposeProp(o);
+      for (let i = 0; i < 2; i++) {
+        this.shotViews[i]?.endWarm(shotSamples[i]);
+        this.assistViews[i]?.endWarmShot(assistSamples[i]);
+      }
+    }
+  }
+
+  /** Look of fighter i's projectile (ranged profile). */
+  private shotKind(i: number): ShotKind {
+    return fighterShotKind(this.defs[i]);
+  }
+
+  /** Fighter i's projectile visual, built on first use (prewarm builds the ranged ones). */
+  private shotView(i: number): ShotVisual {
+    let sv = this.shotViews[i];
+    if (!sv) {
+      sv = new ShotVisual(this.scene, this.effects, this.shotKind(i), wordsOf(this.defs[i].id));
+      sv.build();
+      this.shotViews[i] = sv;
+    }
+    return sv;
+  }
+
+  /** World position of the fist of fighter i's throwing (right) hand. */
+  private throwHand(i: number, out: THREE.Vector3): THREE.Vector3 {
+    const hand = this.views[i].model.bones.handR;
+    hand.updateWorldMatrix(true, false);
+    return hand.localToWorld(out.set(0, -0.07, 0.02));
+  }
+
+  /**
+   * The ranged fighters' projectiles (GameState.projectiles): in the hand during the
+   * throw's wind-up, leaving the hand on the release, then following the sim (the grenade
+   * lobs over its straight line and comes back down on the opponent).
+   */
+  private syncShots(s: GameState, dtFrames: number) {
+    for (let i = 0; i < 2; i++) {
+      const p = s.projectiles?.[i] ?? null;
+      const f = s.fighters[i];
+      const throwAt = moveFor(f.archetype ?? 'balanced', 'projectile').startup;
+      const tr = this.shotTrack[i];
+      const winding = !p && f.action === 'attack' && f.moveId === 'projectile' && f.actionFrame >= 2 && f.actionFrame < throwAt;
+      if (!p && !winding) {
+        tr.on = false;
+        tr.spawnFx = false;
+        this.shotViews[i]?.hide();
+        continue;
+      }
+      const sv = this.shotView(i);
+      const hand = this.throwHand(i, tmpHand);
+      if (!p) {
+        // held in the hand, growing (energy ball charging, web forming, grenade in the fist)
+        tr.on = false;
+        const k = Math.min(1, (f.actionFrame - 2) / Math.max(1, throwAt - 4));
+        sv.show(hand, f.facing, 0, this.time, dtFrames, null, 0.25 + 0.6 * k, true);
+        continue;
+      }
+      if (!tr.on || p.frame < tr.frame) {
+        // a new throw (also after a rollback that moved the spawn)
+        tr.on = true;
+        tr.x0 = p.x - p.vx * p.frame;
+        tr.lob = Math.max(1.6, Math.abs(s.fighters[1 - i].x - tr.x0));
+        sv.newWord();
+      }
+      tr.frame = p.frame;
+      const dir = Math.sign(p.vx) || f.facing;
+      const dist = Math.abs(p.x - tr.x0);
+      const pos = tmpShot.set(p.x, p.y, 0.05);
+      if (sv.kind === 'grenade') pos.y += LOB_HEIGHT * Math.sin(Math.PI * Math.min(1, dist / tr.lob));
+      // leaves from the hand: blends from the fist to the sim's position over the first frames
+      const k = Math.min(1, (p.frame + 1) / SHOT_LEAVE);
+      if (k < 1) pos.lerpVectors(hand, pos, k * (2 - k));
+      const strand = sv.kind === 'web' && p.frame < WEB_STRAND_FRAMES && f.action === 'attack' ? hand : null;
+      // grows to full size over the first frames (the word does not cover the thrower)
+      sv.show(pos, dir, dist, this.time, dtFrames, strand, 0.3 + 0.7 * Math.min(1, (p.frame + 1) / 8));
+      // the release flash / gust, from the hand as posed on the release
+      if (tr.spawnFx) {
+        tr.spawnFx = false;
+        this.effects.shotSpawn(sv.kind, pos, dir);
+      }
     }
   }
 
@@ -381,9 +489,31 @@ export class FightWorld {
         this.sfx('poof', a ? a.x : s.fighters[ev.p].x, 0.7, 1.15);
         break;
       }
-      case 'block':
-        this.effects.block(ev.x, ev.y);
-        this.sfx('block', ev.x);
+      case 'block': {
+        // the sparks turn orange then red as the defender's guard gauge empties
+        const d = s.fighters[ev.p];
+        const wear = d.action === 'guardCrush' ? 1 : d.guardMax > 0 ? 1 - Math.max(0, d.guard) / d.guardMax : 0;
+        this.effects.block(ev.x, ev.y, wear);
+        this.sfx('block', ev.x, 1, 1 - 0.18 * wear);
+        break;
+      }
+      case 'guardBreak':
+        this.guardBreak(ev, s);
+        break;
+      case 'projectile': {
+        const kind = this.shotKind(ev.p);
+        // the release effect waits for the throwing pose (see syncShots)
+        this.shotTrack[ev.p].spawnFx = true;
+        if (kind === 'grenade') {
+          this.sfx('pin', ev.x, 0.7);
+          this.sfx('toss', ev.x, 0.9, 0.9);
+        } else if (kind === 'web') this.sfx('thwip', ev.x, 1);
+        else if (kind === 'words') this.sfx('toss', ev.x, 0.9, 1.2);
+        else this.sfx('zap', ev.x, 0.9);
+        break;
+      }
+      case 'projectileEnd':
+        this.projectileEnd(ev, s);
         break;
       case 'whiff':
         this.sfx(ev.heavy ? 'whiffHeavy' : 'whiff', s.fighters[ev.p].x, 0.7);
@@ -430,6 +560,71 @@ export class FightWorld {
     }
   }
 
+  /** A ranged fighter's projectile is gone: its own impact (explosion, splat, burst) + sound. */
+  private projectileEnd(ev: Extract<SimEvent, { t: 'projectileEnd' }>, s: GameState) {
+    const kind = this.shotKind(ev.p);
+    const sv = this.shotViews[ev.p];
+    // from where it was last drawn (the grenade's lob) when that is close to the sim's point;
+    // a clash pops at the meeting point of the two
+    const pos = ev.how !== 'clash' && sv?.shown && Math.abs(sv.pos.x - ev.x) < 0.8 ? tmpV.copy(sv.pos) : tmpV.set(ev.x, ev.y, 0.05);
+    sv?.hide();
+    const how = ev.how;
+    // a BBL MAX starting sends the projectiles away: no pop over its close-up
+    if (how === 'out' && s.fighters.some((f) => f.action === 'superFlash' || f.action === 'superCombo')) return;
+    this.effects.shotImpact(kind, pos, how);
+    const vol = how === 'hit' ? 1 : how === 'out' ? 0.45 : 0.75;
+    switch (kind) {
+      case 'grenade':
+        this.sfx('explosion', pos.x, 0.8 * vol);
+        this.shake = Math.max(this.shake, how === 'out' ? 0.04 : 0.12);
+        if (how === 'hit') this.views[1 - ev.p].hitFlash(0xffa040, 0.8);
+        break;
+      case 'web':
+        if (how !== 'out') this.sfx('splat', pos.x, vol);
+        if (how === 'hit') this.views[1 - ev.p].hitFlash(0xffffff, 0.5);
+        break;
+      case 'words':
+        this.sfx(how === 'out' ? 'poof' : 'bonk', pos.x, 0.8 * vol, how === 'block' ? 1.3 : 1.1);
+        break;
+      case 'energy':
+        this.sfx('zap', pos.x, 0.8 * vol, 0.6);
+        if (how === 'hit') this.views[1 - ev.p].hitFlash(0x80d8ff, 0.7);
+        break;
+    }
+    if (how === 'clash' && this.clashAt !== this.frames) {
+      // both projectiles pop: one shared flash between them
+      this.clashAt = this.frames;
+      this.effects.shotClash(pos);
+      this.sfx('impact', pos.x, 0.55, 1.2);
+      this.sfx('block', pos.x, 0.9, 0.8);
+      this.shake = Math.max(this.shake, 0.08);
+    }
+  }
+
+  /** Guard crush: the guard shatters like glass, flash, impact frame, the defender staggers. */
+  private guardBreak(ev: Extract<SimEvent, { t: 'guardBreak' }>, s: GameState) {
+    const v = s.fighters[ev.p];
+    const a = s.fighters[1 - ev.p];
+    const dir = Math.sign(v.x - a.x) || -v.facing;
+    // in front of the defender's chest, where the guard was
+    const x = v.x - dir * 0.3;
+    const y = v.y + 1.25;
+    this.effects.guardShatter(x, y, dir);
+    this.sfx('guardBreak', x, 1);
+    this.views[ev.p].hitFlash(0xbfe8ff, 0.95);
+    this.pendingFlash = { color: new THREE.Color(0.75, 0.9, 1), amount: 0.32 };
+    this.shake = Math.max(this.shake, 0.16);
+    if (inCinematic(s)) return;
+    this.linesPoint.set(x, y, 0);
+    this.linesMax = 16;
+    this.linesT = 16;
+    this.linesAmt = 0.9;
+    // (a light punch-in: the stagger that follows must stay readable)
+    this.punch(tmpV2.set(v.x, v.y + 1.1, 0), 0.07);
+    this.impactAt = -1e9; // always gets its impact frame
+    this.startImpact(tmpV3.set(x, y, 0), 2, tmpV.set(0.35, 0.75, 1));
+  }
+
   /** Impact frames, speed lines, camera punch for a hit, by how big it is. */
   private hitFeel(ev: Extract<SimEvent, { t: 'hit' }>, s: GameState) {
     const victim = s.fighters[1 - ev.p];
@@ -464,8 +659,13 @@ export class FightWorld {
     this.punch(focus ?? p, tier === 1 ? 0.08 : tier === 2 ? 0.15 : 0.22);
     this.shake = Math.max(this.shake, tier === 1 ? 0.1 : tier === 2 ? 0.14 : 0.2);
     if (tier >= 2) this.sfx('impact', x, tier === 3 ? 1 : 0.75);
-    // impact frame (rate-limited: readable, not a strobe)
-    if (this.reducedMotion || noFrame) return;
+    if (noFrame) return;
+    this.startImpact(p, tier, counter ? tmpV2.set(1, 0.16, 0.1) : tier === 3 ? tmpV2.set(1, 0.62, 0.08) : tmpV2.set(1, 0.36, 0.12));
+  }
+
+  /** Impact frame (rate-limited: readable, not a strobe), `tint` as r, g, b. */
+  private startImpact(p: THREE.Vector3, tier: 1 | 2 | 3, tint: THREE.Vector3) {
+    if (this.reducedMotion) return;
     const gap = tier === 1 ? IMPACT_GAP_HEAVY : this.impactTier <= 1 ? IMPACT_GAP_AFTER_HEAVY : IMPACT_GAP;
     if (this.frames - this.impactAt < gap) return;
     this.impactAt = this.frames;
@@ -475,9 +675,7 @@ export class FightWorld {
     this.impactLen = tier === 1 ? 2 : tier === 2 ? 4 : 5;
     this.impactPoint.copy(p);
     this.impactSeed = Math.random() * 10;
-    if (counter) this.impactTint.setRGB(1, 0.16, 0.1);
-    else if (tier === 3) this.impactTint.setRGB(1, 0.62, 0.08);
-    else this.impactTint.setRGB(1, 0.36, 0.12);
+    this.impactTint.setRGB(tint.x, tint.y, tint.z);
   }
 
   private punch(p: THREE.Vector3, amount: number) {
@@ -550,6 +748,8 @@ export class FightWorld {
       const act = s.fighters[i].action;
       if (act === 'superCombo' || act === 'superVictim') this.views[i].clearTrail();
     }
+    // the ranged fighters' projectiles (after the fighters: thrown from the posed hand)
+    this.syncShots(s, dtFrames);
     // assists (built the first time the state shows one)
     const assists = s.assists ?? [null, null];
     for (let i = 0; i < 2; i++) {
@@ -900,6 +1100,8 @@ export class FightWorld {
     for (const v of this.views) v.dispose();
     for (const a of this.assistViews) a?.dispose();
     this.assistViews = [null, null];
+    for (const sv of this.shotViews) sv?.dispose();
+    this.shotViews = [null, null];
     this.effects.dispose();
     this.warmFx?.dispose();
     this.warmFx = null;

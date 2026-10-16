@@ -10,14 +10,16 @@ import { RollbackSession, type TimedEvent } from '../net/rollback';
 import { loadFace } from '../render/faceTexture';
 import { getStage } from '../render/stages';
 import { CpuBrain, type Difficulty } from '../sim/ai';
-import { createGame, step } from '../sim/sim';
+import { createGame, step, type MatchOptions } from '../sim/sim';
 import { INTRO_SPLIT, type GameState, type SimEvent } from '../sim/types';
 import { h, Menu, uiRoot } from '../ui/dom';
 import { Hud, type AssistHud } from '../ui/hud';
 import { controlsHelp } from './help';
 import { goMenu, goSelect, startFight } from './flow';
+import { RowMenu, trainingState, TrainingSession, type Placement } from './training';
 
-export type FightMode = 'cpu' | 'versus' | 'online' | 'spectate';
+/** 'training' = ENTRAÎNEMENT: P1 against the training dummy (see training.ts) */
+export type FightMode = 'cpu' | 'versus' | 'online' | 'spectate' | 'training';
 
 /** Input stream of a match watched as a spectator (online tournament). */
 export interface SpectatorFeed {
@@ -103,22 +105,32 @@ export class FightScreen implements Screen {
   private assistFaces: [string | null, string | null] = [null, null];
   /** full scale of the touch ASSIST button's recharge sweep */
   private touchCdMax = 0;
+  /** options of the match (training: a fresh state is built from them for « Remettre en place ») */
+  private matchOpts: MatchOptions;
+  /** training mode: the dummy, the options and the displays */
+  private training: TrainingSession | null = null;
+  /** training pause menu (rows changed with ← →) */
+  private rowMenu: RowMenu | null = null;
 
   constructor(
     private app: App,
     private setup: FightSetup,
   ) {
-    this.state = createGame({
-      roundsToWin: setup.rounds,
-      skipIntro: setup.skipIntro,
+    const training = setup.mode === 'training';
+    this.matchOpts = {
+      roundsToWin: training ? 1 : setup.rounds,
+      skipIntro: training || setup.skipIntro,
       ultimates: [ultimateOf(setup.p1).script, ultimateOf(setup.p2).script],
       assists: [assistSpec(setup.assists?.[0]), assistSpec(setup.assists?.[1])],
       archetypes: [archetypeOf(setup.p1), archetypeOf(setup.p2)],
-    });
+      training,
+    };
+    this.state = createGame(this.matchOpts);
+    if (training) this.training = new TrainingSession(!!setup.assists?.[0]);
     // deterministic variant choices for intro animations (same on both peers)
     this.state.fighters[0].variant = setup.seed % 2;
     this.state.fighters[1].variant = (setup.seed >> 1) % 2;
-    if (setup.mode !== 'online' && setup.mode !== 'spectate') {
+    if (setup.mode !== 'online' && setup.mode !== 'spectate' && !training) {
       const cpuSides = setup.cpuSides ?? (setup.mode === 'cpu' ? [false, true] : [false, false]);
       for (const i of [0, 1] as const) if (cpuSides[i]) this.cpu[i] = new CpuBrain(setup.difficulty);
     }
@@ -135,6 +147,7 @@ export class FightScreen implements Screen {
       return def ? { name: def.name, key: akeys[i] } : null;
     };
     this.hud = new Hud(names, this.superKeys(), tags, [ahud(0), ahud(1)]);
+    if (training) this.hud.setTraining(true);
     for (const i of [0, 1] as const) {
       const def = setup.assists?.[i];
       if (!def) continue;
@@ -199,6 +212,7 @@ export class FightScreen implements Screen {
 
   enter() {
     uiRoot().append(this.hud.el);
+    if (this.training) uiRoot().append(this.training.el);
     this.hud.setVisible(false);
     if (!this.setup.skipIntro) this.showVs();
     this.loadingEl = h('div', { class: 'screen passthrough fight-loading' }, h('div', { class: 'title-hint blink' }, 'CHARGEMENT…'));
@@ -317,6 +331,8 @@ export class FightScreen implements Screen {
   // ---------------------------------------------------------------- input
   private get humans(): number {
     if (this.setup.mode === 'spectate') return 0;
+    // training: one human, the dummy is driven by the training session
+    if (this.training) return 1;
     return (this.cpu[0] ? 0 : 1) + (this.cpu[1] ? 0 : 1);
   }
 
@@ -342,6 +358,7 @@ export class FightScreen implements Screen {
     let keys: [string, string];
     if (this.setup.mode === 'spectate') keys = ['', ''];
     else if (this.setup.mode === 'online') keys = this.setup.localPlayer === 1 ? ['', k1] : [k1, ''];
+    else if (this.training) keys = [k1, ''];
     else if (this.humans >= 2) keys = [k1, k2];
     else keys = [this.cpu[0] ? '' : k1, this.cpu[1] ? '' : k1];
     const side = this.localSide;
@@ -352,6 +369,7 @@ export class FightScreen implements Screen {
   private superKeysRaw(): [string, string] {
     if (this.setup.mode === 'spectate') return ['', ''];
     if (this.setup.mode === 'online') return this.setup.localPlayer === 1 ? ['', 'E'] : ['E', ''];
+    if (this.training) return ['E', ''];
     if (this.humans >= 2) return ['E', 'P'];
     return [this.cpu[0] ? '' : 'E', this.cpu[1] ? '' : 'E'];
   }
@@ -367,6 +385,15 @@ export class FightScreen implements Screen {
 
   private handleMenuInput() {
     for (const e of input.menuEvents()) {
+      if (this.rowMenu) {
+        if (e.action === 'up') this.rowMenu.move(-1);
+        else if (e.action === 'down') this.rowMenu.move(1);
+        else if (e.action === 'left') this.rowMenu.change(-1);
+        else if (e.action === 'right') this.rowMenu.change(1);
+        else if (e.action === 'confirm') this.rowMenu.activate();
+        else if (e.action === 'back' || e.action === 'start') this.togglePause();
+        continue;
+      }
       if (this.menu) {
         if (e.action === 'up') this.menu.move(-1);
         else if (e.action === 'down') this.menu.move(1);
@@ -416,9 +443,14 @@ export class FightScreen implements Screen {
     if (!this.paused) {
       this.closeOverlay();
       audio.duck(false);
+      this.training?.resumeToast();
       return;
     }
     audio.duck(true);
+    if (this.training) {
+      this.trainingPause();
+      return;
+    }
     const t = this.setup.tournament;
     this.menu = new Menu(
       t?.online
@@ -446,6 +478,35 @@ export class FightScreen implements Screen {
     this.openOverlay(h('div', { class: 'overlay' }, h('div', { class: 'h1' }, 'PAUSE'), this.menu.el));
   }
 
+  /** ENTRAÎNEMENT pause: the dummy, the options, the displays, « Remettre en place »… */
+  private trainingPause() {
+    const tr = this.training!;
+    // a recording in progress ends here (the dummy replays it on resume)
+    tr.onPause();
+    this.rowMenu = new RowMenu(
+      tr.menuRows({
+        resume: () => this.togglePause(),
+        reset: (place) => {
+          this.resetTraining(place);
+          this.togglePause();
+        },
+        changeFighters: () => goSelect('training'),
+        help: () => this.showHelp(),
+        quit: () => goMenu(),
+      }),
+      () => audio.sfx('cursor'),
+    );
+    this.openOverlay(h('div', { class: 'overlay training-pause' }, h('div', { class: 'h1' }, 'ENTRAÎNEMENT'), this.rowMenu.el, this.rowMenu.helpEl));
+  }
+
+  /** « Remettre en place »: a fresh fight state (full health and guard), the fighters placed. */
+  private resetTraining(place: Placement) {
+    if (!this.training) return;
+    this.state = trainingState(this.matchOpts, this.state, place);
+    this.training.onReset(this.state);
+    this.hud.clearComics();
+  }
+
   private showHelp() {
     this.closeOverlay();
     this.menu = new Menu([{ label: 'RETOUR', action: () => (this.togglePause(), this.togglePause()) }], () => audio.sfx('cursor'));
@@ -464,6 +525,7 @@ export class FightScreen implements Screen {
     this.overlay?.remove();
     this.overlay = null;
     this.menu = null;
+    this.rowMenu = null;
     this.app.touch.setCovered(false);
   }
 
@@ -590,6 +652,7 @@ export class FightScreen implements Screen {
 
     this.world.render(this.app.pipeline, this.state, dt, this.app.aspect);
     this.hud.update(this.state, dt * 60);
+    this.training?.render(dt * 60);
     const side = this.localSide;
     this.app.touch.setSuperReady(side >= 0 && this.state.fighters[side].meter >= 100);
     const as = side >= 0 ? this.state.assists?.[side] : null;
@@ -630,6 +693,15 @@ export class FightScreen implements Screen {
       this.world!.handleEvents(evs, s, { onEvent: (e) => this.onEvent(e) });
       return;
     }
+    if (this.training) {
+      // the human plays P1 (or the dummy while recording), the training session drives the dummy
+      const [t0, t1] = this.training.inputs(s, this.localBits(0));
+      step(s, [t0, t1]);
+      this.training.after(s);
+      const evs: TimedEvent[] = s.events.map((ev) => ({ frame: s.frame, ev }));
+      this.world!.handleEvents(evs, s, { onEvent: (e) => this.onEvent(e) });
+      return;
+    }
     const i0 = this.cpu[0] ? this.cpu[0].think(s, 0) : this.localBits(0);
     const i1 = this.cpu[1] ? this.cpu[1].think(s, 1) : this.localBits(1);
     this.setup.tv?.(s.frame, i0, i1);
@@ -660,6 +732,12 @@ export class FightScreen implements Screen {
     this.hud.clearSubtitle();
     this.hud.setVisible(true);
     audio.duck(false);
+    if (this.training) {
+      // no rounds in training; the settings are in the pause menu
+      this.hud.announce('ENTRAÎNEMENT', 'small', 60);
+      this.training.toast(this.app.touch.enabled ? 'II = RÉGLAGES DE L’ENTRAÎNEMENT' : 'ÉCHAP / START = RÉGLAGES DE L’ENTRAÎNEMENT', 300);
+      return;
+    }
     const last = s.fighters[0].wins === s.roundsToWin - 1 && s.fighters[1].wins === s.roundsToWin - 1;
     const label = last && s.round > 1 ? 'FINAL ROUND' : `ROUND ${s.round}`;
     this.hud.announce(label, 'small', 60);
@@ -739,6 +817,10 @@ export class FightScreen implements Screen {
       case 'grab':
         this.hud.announce('SAISIE !', 'small', 35);
         break;
+      case 'guardBreak':
+        // the guard gauge of ev.p emptied: guard crush
+        this.hud.comic('GARDE BRISÉE !', 'punch', 75, '#ff6a3a');
+        break;
       default:
         break;
     }
@@ -784,7 +866,7 @@ export class FightScreen implements Screen {
         this.hud.subtitle(def.name, this.world!.faces[w].portraitUrl, line);
         void audio.say(line, { lang: def.voice?.lang, pitch: def.voice?.pitch, rate: def.voice?.rate, file: def.voice?.winFile });
       }
-      if (!this.resultsShown && s.phaseFrame > 210) {
+      if (!this.resultsShown && s.phaseFrame > 210 && !this.training) {
         this.hud.clearSubtitle();
         this.hud.clearAnnounce();
         this.showResults();

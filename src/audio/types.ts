@@ -41,7 +41,16 @@ export type SfxId =
   | 'bounce'
   | 'wallBreak'
   | 'superJump'
-  | 'airDash';
+  | 'airDash'
+  // profiles & guard gauge
+  /** overarm throw whoosh (projectiles) */
+  | 'toss'
+  /** energy ball launch / pop */
+  | 'zap'
+  /** web ball sticking on something */
+  | 'splat'
+  /** guard crush: the guard shatters like glass */
+  | 'guardBreak';
 
 export type AnnouncerLine =
   | 'round1'

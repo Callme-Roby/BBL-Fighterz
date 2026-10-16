@@ -6,6 +6,8 @@ leurs photos sont plaquées sur le visage des combattants par un shader.
 
 - **ARCADE** : contre l'ordinateur (3 niveaux de difficulté)
 - **VERSUS** : 2 joueurs sur le même écran (clavier partagé et/ou manettes)
+- **ENTRAÎNEMENT** : toi contre un mannequin réglable, avec historique des touches, infos combo et
+  avantage en frames (voir plus bas)
 - **EN LIGNE** : tu crées une partie, tu envoies le lien, ton pote clique et vous vous battez
   (pair-à-pair WebRTC + netcode *rollback* comme les vrais jeux de baston)
 - **TOURNOI** : élimination directe jusqu'à 16 participants (humains ou CPU), avec tableau, demi-finales,
@@ -62,6 +64,14 @@ Rien d'autre à configurer : pas de serveur, pas de base de données.
 
 Les touches sont lues par position physique : ZQSD sur AZERTY = WASD sur QWERTY (et Y = Z sur
 un clavier allemand QWERTZ : les écrans d'aide affichent la lettre de ton clavier).
+**Manettes et sticks arcade** : toute manette ou stick (USB / Bluetooth) marche, même branché en
+plein match. Manettes standard (Xbox, PlayStation, sticks en mode PC) : prêtes à jouer. Sticks
+DirectInput, encodeurs « Zero Delay », hitbox : OPTIONS → MANETTES & STICKS → CONFIGURER, puis appuie
+sur chaque commande demandée (levier, croix, stick ou bouton ; PASSER pour en sauter une). Le réglage
+est gardé dans ce navigateur pour ce modèle ; TESTER montre ce que le jeu reçoit, RÉINITIALISER revient
+à l'origine. Hitbox : haut + bas = haut, gauche + droite = neutre. Versus : 1re manette = J1, 2e = J2
+(une seule : J2, le clavier joue J1).
+
 Sur téléphone / tablette, un joystick et des boutons tactiles apparaissent : LP RP LK RK, BBL MAX,
 GARDE, SAISIE et **ASSIST** (avec le visage de ton pote, grisé pendant la recharge). Téléphone en
 hauteur : l'écran se partage entre le combat (en haut) et une manette (en bas).
@@ -83,6 +93,44 @@ super saut à la poursuite de l'adversaire, puis poings / pieds en l'air, avant-
 bas + pied = smash qui l'écrase au sol · rebonds sur le mur et au sol pour prolonger · dégâts et
 étourdissement dégressifs dans les longs combos (pas d'infini) · **finish DESTRUCTION** : le coup du
 K.O. envoie l'adversaire à travers le décor, au ralenti.
+
+**Jauge de garde** (sous la barre de vie) : chaque coup bloqué l'use, les gros coups plus que les
+petits ; elle remonte quand tu arrêtes de bloquer un moment. Vide (rouge, elle clignote sous 30 %) :
+**GARDE BRISÉE !** Tu es sonné et grand ouvert pour un combo, puis elle revient pleine.
+
+### Les profils
+
+Chaque pote a un profil, inspiré des persos les plus équilibrés des classiques (affiché sur l'écran de
+sélection avec 4 jauges : puissance, vitesse, portée, défense) :
+
+| Profil | Façon | Qui | En bref |
+|---|---|---|---|
+| **LOURD** | Zangief, Jack | Dylan, Isis, Elies | plus de vie, de dégâts et de garde, grosses saisies ; marche, dash, saut et coups plus lents |
+| **RAPIDE** | Chun-Li, Cammy | Thomas, Zia, Benji | coups et déplacements vifs, enchaînements plus longs ; moins de vie, de dégâts et de garde |
+| **DISTANCE** | Guile, Dhalsim | Clément, Enola, Billel | **projectile : avant + Poing D** (un seul à l'écran, à la place de la grosse patate), longs coups ; un peu moins de vie, marche plus lente |
+| **ÉQUILIBRÉ** | Ryu, Ken | Rayan, Mihaï, Alex (+ les persos du LABO) | bon partout : la référence |
+
+Réglages : `src/sim/archetypes.ts` (chiffres), `src/data/roster.ts` (qui est quoi),
+`src/data/archetypes.ts` (textes des écrans).
+
+### L'entraînement
+
+Menu **ENTRAÎNEMENT** : tu choisis ton perso (et ton assist), puis ton partenaire (le mannequin) et
+l'arène. Pas de chrono (∞), pas de rounds. **Pause** (Échap / Start / II) ouvre les réglages :
+
+- **Mannequin** : debout, accroupi, saute, garde debout, garde basse, **garde auto** (bloque chaque coup
+  à la bonne hauteur), **garde après le 1er coup**, CPU normal / difficile, **enregistrer / rejouer**
+  (tu contrôles le mannequin jusqu'à 10 s, puis il rejoue ta séquence en boucle, en miroir si vous
+  avez changé de côté) ;
+- **Vie** (régénération après chaque combo / normale), **jauge BBL MAX** (infinie / normale),
+  **garde** (normale / infinie), **assist** (recharge instantanée / normale) ;
+- **Affichages** : historique des touches (flèches : → = avant, avec le nombre de frames tenues),
+  infos combo (coups, dégâts), **avantage en frames** après chaque échange (« +3 » = tu rejoues
+  3 frames avant le mannequin, « −6 » = 6 frames après ; touché ou bloqué) ;
+- **Remettre en place** : au centre, ou le mannequin dos au mur dans le coin gauche / droit.
+
+Sur téléphone en hauteur, l'historique des touches s'affiche sur la manette (au-dessus du stick) et le
+menu de pause prend la place de la manette : les persos restent visibles.
 
 ### Les assists
 
@@ -199,7 +247,7 @@ src/
   render/     shader PS1, persos procéduraux skinnés (vrai squelette 19 os), animations,
               photo → texture de visage, effets, arènes
   game/       monde 3D du combat (caméra cinématique, sons), réglages
-  screens/    titre, sélection, arène, combat, en ligne, labo, options
+  screens/    titre, sélection, arène, combat, entraînement, en ligne, labo, options
   audio/      moteur WebAudio : séquenceur, synthés, bruitages, voix
   ui/         HUD, menus, contrôles tactiles
 dev/          bancs de test visuels (persos / arènes) : /dev/model-preview.html

@@ -1,3 +1,5 @@
+import { ARCHETYPE_INFO, ARCHETYPE_ORDER } from '../data/archetypes';
+import { archetypeOf, ROSTER } from '../data/roster';
 import { keyLabel, P1_KEYS, P2_KEYS, SOLO_KEYS } from '../input/input';
 import { h } from '../ui/dom';
 
@@ -12,6 +14,7 @@ function moveRows(touch: boolean): [string, (HTMLElement | string)[]][] {
   return [
     ['Garde', touch ? ['maintenir ', tb('GARDE', 'pill'), ' ou le ', back, ' (debout : hauts et moyens) · + bas (accroupi : coups bas)'] : ['maintenir GARDE ou ARRIÈRE (debout : hauts et moyens) · + BAS (accroupi : coups bas)']],
     ['PARADE', touch ? ['taper ', tb('GARDE', 'pill'), ' juste avant l’impact : l’adversaire est déséquilibré, punis-le !'] : ['taper GARDE juste avant l’impact : l’adversaire est déséquilibré, punis-le !']],
+    ['Jauge de garde', ['sous la vie : chaque coup bloqué l’use (les gros plus), elle remonte quand tu ne bloques plus · vide = GARDE BRISÉE : sonné, grand ouvert']],
     ['Dash', [touch ? 'stick avant-avant / arrière-arrière' : 'avant-avant / arrière-arrière']],
     [
       'Saisie (passe la garde)',
@@ -21,6 +24,7 @@ function moveRows(touch: boolean): [string, (HTMLElement | string)[]][] {
     ['Genou (lance en l’air)', touch ? ['avant + ', tb('LK')] : ['avant + Pied G']],
     ['Balayette', touch ? ['bas + ', tb('RK')] : ['bas + Pied D']],
     ['Grosse patate', touch ? ['avant + ', tb('RP')] : ['avant + Poing D']],
+    ['Projectile (profil DISTANCE)', touch ? ['avant + ', tb('RP'), ' au lieu de la grosse patate · un seul à l’écran'] : ['avant + Poing D au lieu de la grosse patate · un seul à l’écran']],
     ['Combos', ['tout coup qui touche s’enchaîne avec le suivant (jusqu’à 6)']],
     [
       'Auto-combo',
@@ -42,6 +46,25 @@ function moveRows(touch: boolean): [string, (HTMLElement | string)[]][] {
     ],
     ['BBL MAX', touch ? ['jauge pleine (le bouton clignote) + ', tb('BBL MAX', 'pill gold'), ', même en plein combo'] : ['jauge pleine + touche BBL MAX, même en plein combo']],
   ];
+}
+
+/** The four profiles and who is what (lab creations are balanced), then the training mode. */
+function profileRows(): [string, (HTMLElement | string)[]][] {
+  const nice = (n: string) => n.charAt(0) + n.slice(1).toLowerCase();
+  const rows: [string, (HTMLElement | string)[]][] = ARCHETYPE_ORDER.map((a) => {
+    const info = ARCHETYPE_INFO[a];
+    const who = ROSTER.filter((d) => archetypeOf(d) === a).map((d) => nice(d.name));
+    if (a === 'balanced') who.push('les persos du LABO');
+    const what: Record<string, string> = {
+      heavy: 'plus de vie, de dégâts et de garde, grosses saisies · lent',
+      fast: 'vif, enchaînements plus longs · moins de vie et de dégâts',
+      ranged: 'projectile (avant + Poing D) et longs coups · se déplace moins vite',
+      balanced: 'bon partout, la référence',
+    };
+    return [`${info.label} (façon ${info.model.split(',')[0]})`, [`${who.join(', ')} : ${what[a]}`]];
+  });
+  rows.push(['Entraînement', ['menu ENTRAÎNEMENT : mannequin réglable (garde, saut, CPU, enregistrement), vie qui remonte, historique des touches, avantage en frames · Pause = réglages']]);
+  return rows;
 }
 
 const table = (rows: [string, (HTMLElement | string)[]][], cls = '') =>
@@ -66,6 +89,8 @@ export function touchControlsHelp(): HTMLElement {
     table(rows, 'touch'),
     h('div', { class: 'help-h' }, 'TECHNIQUES'),
     table(moveRows(true), 'touch'),
+    h('div', { class: 'help-h' }, 'PROFILS'),
+    table(profileRows(), 'touch'),
   );
 }
 
@@ -96,8 +121,9 @@ export function controlsHelp(versus: boolean, touch = false): HTMLElement {
     rows.push(['Saisie', [...k([SOLO_KEYS.grab[0]]), ' ou ', ...k([SOLO_KEYS.grab[1]])]]);
     rows.push(['Assist (ton pote)', [...k([SOLO_KEYS.assist[0]]), ' ou ', ...k([SOLO_KEYS.assist[1]])]]);
   }
-  rows.push(['Manette', ['□ △ = poings · ✕ ○ = pieds · L1 = saisie · L2 = garde/parade · R1 = BBL MAX · R2 (ou R3) = ASSIST']]);
+  rows.push(['Manette', ['□ △ = poings · ✕ ○ = pieds · L1 = saisie · L2 = garde/parade · R1 = BBL MAX · R2 (ou R3) = ASSIST · stick arcade ou manette non reconnue : OPTIONS → MANETTES & STICKS']]);
   rows.push(...moveRows(false));
   rows.push(['Pause', [...k(['Escape']), ' / Start']]);
+  rows.push(...profileRows());
   return table(rows);
 }

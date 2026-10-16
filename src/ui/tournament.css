@@ -1621,3 +1621,46 @@
     display: none;
   }
 }
+
+/* fighter profile on the pick screen (phones): compact, centred under the name when upright */
+@media (max-width: 600px), (max-height: 500px) {
+  .tn-pick .profile {
+    gap: 3px;
+    margin-top: 5px;
+  }
+  .tn-pick .pf-head {
+    gap: 5px;
+  }
+  .tn-pick .pf-badge {
+    font-size: 9px;
+    padding: 1px 5px;
+    box-shadow: 1px 1px 0 #000;
+  }
+  .tn-pick .pf-line {
+    font-size: 7px;
+    line-height: 1.4;
+  }
+  .tn-pick .pf-line small {
+    font-size: 6px;
+  }
+  .tn-pick .pf-stats {
+    gap: 2px 8px;
+  }
+  .tn-pick .pf-k {
+    font-size: 6px;
+  }
+  .tn-pick .pf-bar i {
+    width: 6px;
+    height: 5px;
+  }
+  .tn-pick .pf-cmd {
+    font-size: 6px;
+    padding: 1px 4px;
+  }
+}
+
+@media (max-width: 600px) {
+  .tn-pick-mid .profile {
+    align-items: center;
+  }
+}

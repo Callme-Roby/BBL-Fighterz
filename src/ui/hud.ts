@@ -1,4 +1,4 @@
-import { MAX_HP, MAX_METER, type GameState } from '../sim/types';
+import { GUARD_MAX, MAX_HP, MAX_METER, type GameState } from '../sim/types';
 import { h } from './dom';
 
 /** HUD info about a side's assist (the friend chosen before the fight). */
@@ -26,6 +26,9 @@ export class Hud {
   readonly el: HTMLDivElement;
   private hp: { box: HTMLDivElement; fill: HTMLDivElement; trail: HTMLDivElement }[] = [];
   private trail = [MAX_HP, MAX_HP];
+  /** guard gauge under each health bar (inner side) */
+  private guards: { box: HTMLDivElement; fill: HTMLDivElement; lbl: HTMLSpanElement; mode: string }[] = [];
+  private training = false;
   private trailDelay = [0, 0];
   private wins: HTMLDivElement[] = [];
   private meters: { box: HTMLDivElement; fill: HTMLDivElement }[] = [];
@@ -74,7 +77,12 @@ export class Hud {
       const plate = h('div', { class: 'nameplate' });
       this.plates.push(plate);
       this.fillPlate(i, null);
-      return h('div', null, box, h('div', { class: 'label' + (i === 1 ? ' right' : '') }, plate, wins));
+      // guard gauge: worn by blocked hits, empty = guard crush
+      const gfill = h('div', { class: 'gfill' });
+      const glbl = h('span', { class: 'glbl' }, 'GARDE');
+      const gbox = h('div', { class: 'gg' + (i === 1 ? ' right' : ''), title: 'Jauge de garde' }, glbl, h('div', { class: 'gbar' }, gfill));
+      this.guards.push({ box: gbox, fill: gfill, lbl: glbl, mode: '' });
+      return h('div', null, box, h('div', { class: 'label' + (i === 1 ? ' right' : '') }, plate, wins, gbox));
     };
     this.timer = h('div', { class: 'timer' }, '60');
     this.bars = h('div', { class: 'bars' }, side(0), this.timer, side(1));
@@ -96,6 +104,13 @@ export class Hud {
     this.meterRow = h('div', { class: 'meters' }, meter(0), meter(1));
     this.netEl = h('div', { class: 'netinfo' });
     this.el = h('div', { class: 'hud passthrough' }, this.bars, this.meterRow, this.netEl);
+  }
+
+  /** Training mode: endless clock (∞), no round markers, no combo pop-ups (the training panel shows them). */
+  setTraining(on: boolean) {
+    this.training = on;
+    this.el.classList.toggle('training', on);
+    this.timer.textContent = on ? '∞' : this.timer.textContent;
   }
 
   setVisible(bars: boolean) {
@@ -231,7 +246,9 @@ export class Hud {
   update(s: GameState, dtFrames: number) {
     for (let i = 0; i < 2; i++) {
       const f = s.fighters[i];
-      const pct = Math.max(0, f.hp / MAX_HP) * 100;
+      // each fighter's own health (depends on the profile)
+      const maxHp = f.maxHp > 0 ? f.maxHp : MAX_HP;
+      const pct = Math.min(100, Math.max(0, f.hp / maxHp) * 100);
       this.hp[i].fill.style.width = pct + '%';
       this.hp[i].box.classList.toggle('low', pct < 25 && pct > 0);
       // red damage trail drains after a short delay (Tekken style)
@@ -242,7 +259,9 @@ export class Hud {
       } else {
         this.trail[i] = f.hp;
       }
-      this.hp[i].trail.style.width = (this.trail[i] / MAX_HP) * 100 + '%';
+      this.hp[i].trail.style.width = Math.min(100, (this.trail[i] / maxHp) * 100) + '%';
+
+      this.updateGuard(i, s);
 
       const need = s.roundsToWin;
       if (this.wins[i].childElementCount !== need) this.wins[i].replaceChildren(...Array.from({ length: need }, () => h('i')));
@@ -293,9 +312,11 @@ export class Hud {
         }
       }
     }
-    const secs = Math.ceil(s.timer / 60);
-    this.timer.textContent = String(secs);
-    this.timer.classList.toggle('warn', secs <= 10 && s.phase === 'fight');
+    if (!this.training) {
+      const secs = Math.ceil(s.timer / 60);
+      this.timer.textContent = String(secs);
+      this.timer.classList.toggle('warn', secs <= 10 && s.phase === 'fight');
+    }
 
     for (let i = 0; i < 2; i++) {
       const c = this.callEls[i];
@@ -320,6 +341,24 @@ export class Hud {
     if (this.announceTimer > 0) {
       this.announceTimer -= dtFrames;
       if (this.announceTimer <= 0) this.clearAnnounce();
+    }
+  }
+
+  /** Guard gauge: blue when healthy, yellow when worn, red and blinking under 30 %, flashing « BRISÉE » while broken. */
+  private updateGuard(i: number, s: GameState) {
+    const g = this.guards[i];
+    const f = s.fighters[i];
+    const max = f.guardMax > 0 ? f.guardMax : GUARD_MAX;
+    const v = Number.isFinite(f.guard) ? f.guard : max;
+    const frac = Math.max(0, Math.min(1, v / max));
+    g.fill.style.width = (frac * 100).toFixed(1) + '%';
+    const mode = f.action === 'guardCrush' || v <= 0 ? 'broken' : frac < 0.3 ? 'low' : frac < 0.6 ? 'worn' : '';
+    if (mode !== g.mode) {
+      g.mode = mode;
+      g.box.classList.toggle('broken', mode === 'broken');
+      g.box.classList.toggle('low', mode === 'low');
+      g.box.classList.toggle('worn', mode === 'worn');
+      g.lbl.textContent = mode === 'broken' ? 'BRISÉE' : 'GARDE';
     }
   }
 

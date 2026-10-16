@@ -15,7 +15,7 @@ import type { Tournament } from '../game/tournament';
  */
 
 /** bump when the messages or the simulation change (both browsers must run the same game) */
-export const NET_VERSION = 'bbl-4';
+export const NET_VERSION = 'bbl-5';
 const ID_PREFIX = 'bblfighterz-';
 /** online tournaments: the organiser's peer id is ID_PREFIX + TN_TAG + code */
 const TN_TAG = 't';

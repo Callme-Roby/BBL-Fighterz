@@ -187,6 +187,90 @@ export interface AttackPoses {
   end?: Pose;
 }
 
+/**
+ * throw (ranged profile), seen side-on: torso twisted away and leaning back, lead arm
+ * aiming at the opponent, throwing (right, camera-side) elbow up with the hand behind the head
+ */
+const THROW_COCK: Pose = merge(STANCE, {
+  root: [0, -0.07, -0.08],
+  hips: [0, -38, 0],
+  spine: [-10, -8, 0],
+  chest: [-8, -6, 0],
+  neck: [0, 8, 0],
+  head: [-2, 14, 0],
+  upperArmL: [-76, 0, 10],
+  foreArmL: [-14, 0, 0],
+  handL: [0, 0, 0],
+  upperArmR: [-160, 0, -12],
+  foreArmR: [-118, 0, 0],
+  handR: [24, 0, 0],
+  thighL: [-44, 0, 6],
+  shinL: [58, 0, 0],
+  footL: [-6, 0, 0],
+  thighR: [14, 0, -6],
+  shinR: [30, 0, 0],
+  footR: [-34, 0, 0],
+});
+/** extra pull just before the whip (anticipation): lead knee up, elbow further back */
+const THROW_PULL: Pose = merge(THROW_COCK, {
+  root: [0, -0.05, -0.13],
+  hips: [-4, -42, 0],
+  spine: [-17, -10, 0],
+  chest: [-10, -8, 0],
+  head: [0, 16, 0],
+  upperArmR: [-176, 0, -14],
+  foreArmR: [-126, 0, 0],
+  handR: [30, 0, 0],
+  upperArmL: [-72, 0, 12],
+  thighL: [-74, 0, 6],
+  shinL: [86, 0, 0],
+  footL: [10, 0, 0],
+  thighR: [10, 0, -6],
+  shinR: [26, 0, 0],
+});
+/** release: the body whips forward, throwing arm straight at the opponent */
+const THROW_RELEASE: Pose = merge(STANCE, {
+  root: [0, -0.12, 0.15],
+  hips: [0, 24, 0],
+  spine: [18, 14, 0],
+  chest: [10, 12, 0],
+  neck: [0, -8, 0],
+  head: [-8, -20, 0],
+  upperArmR: [-94, 0, -2],
+  foreArmR: [-6, 0, 0],
+  handR: [-16, 0, 0],
+  upperArmL: [-24, 0, 36],
+  foreArmL: [-72, 0, 0],
+  thighL: [-50, 0, 6],
+  shinL: [54, 0, 0],
+  footL: [-4, 0, 0],
+  thighR: [24, 0, -6],
+  shinR: [12, 0, 0],
+  footR: [-34, 0, 0],
+});
+/** grenade: the same release, arm pointing up and forward (lob) */
+const THROW_RELEASE_LOB: Pose = merge(THROW_RELEASE, {
+  spine: [8, 14, 0],
+  chest: [4, 12, 0],
+  head: [-16, -20, 0],
+  upperArmR: [-126, 0, -4],
+  foreArmR: [-10, 0, 0],
+  handR: [-24, 0, 0],
+});
+/** follow-through: the arm swings down across the body */
+const THROW_FOLLOW: Pose = merge(THROW_RELEASE, {
+  root: [0, -0.16, 0.17],
+  hips: [0, 34, 0],
+  spine: [30, 18, 0],
+  chest: [14, 14, 0],
+  head: [4, -22, 0],
+  upperArmR: [-46, 0, 18],
+  foreArmR: [-38, 0, 0],
+  handR: [0, 0, 0],
+  thighR: [30, 0, -6],
+  shinR: [26, 0, 0],
+});
+
 export const ATTACKS: Record<MoveId, AttackPoses> = {
   jab: {
     windup: merge(STANCE, { hips: [0, -22, 0], upperArmL: [-70, 0, 10], foreArmL: [-80, 0, 0] }),
@@ -256,32 +340,11 @@ export const ATTACKS: Record<MoveId, AttackPoses> = {
       footR: [-30, 0, 0],
     }),
   },
-  // placeholder: the throwing pose of the ranged profile (see render)
+  // ranged profile: overarm throw with the rear (right) hand, see projectileClip()
   projectile: {
-    windup: merge(STANCE, {
-      root: [0, -0.1, -0.08],
-      hips: [0, -70, 0],
-      spine: [0, -15, 0],
-      upperArmR: [-20, 0, -55],
-      foreArmR: [-100, 0, 0],
-    }),
-    strike: merge(STANCE, {
-      root: [0, -0.14, 0.2],
-      hips: [0, 25, 0],
-      spine: [14, 15, 0],
-      chest: [12, 18, 0],
-      head: [-10, -30, 0],
-      upperArmR: [-95, 0, 2],
-      foreArmR: [-2, 0, 0],
-      handR: [0, 0, 0],
-      upperArmL: [-30, 0, 30],
-      foreArmL: [-110, 0, 0],
-      thighL: [-55, 0, 6],
-      shinL: [60, 0, 0],
-      thighR: [25, 0, -6],
-      shinR: [10, 0, 0],
-      footR: [-30, 0, 0],
-    }),
+    windup: THROW_COCK,
+    strike: THROW_RELEASE,
+    follow: THROW_FOLLOW,
   },
   frontKick: {
     windup: merge(STANCE, { thighL: [-80, 0, 6], shinL: [100, 0, 0], spine: [-4, -4, 0] }),
@@ -1442,6 +1505,134 @@ function assistStun(): Clip {
 }
 
 // ---------------------------------------------------------------------------
+// ranged profile, guard crush
+// ---------------------------------------------------------------------------
+/**
+ * The ranged profile's throw: turn away and cock the arm, a short pull, then the body
+ * whips forward and the hand releases the projectile on the move's active frame
+ * (sim: MOVES.projectile.startup), follow-through, back to guard.
+ * `lob` = the grenade (arm released upward), else a straight throw.
+ */
+function projectileClip(lob: boolean): Clip {
+  const m = MOVES.projectile;
+  const S = m.startup;
+  const total = moveTotal(m);
+  const release = lob ? THROW_RELEASE_LOB : THROW_RELEASE;
+  const follow = Math.min(total - 8, S + 9);
+  return {
+    length: total,
+    keys: [
+      { f: 0, p: STANCE },
+      { f: Math.round(S * 0.5), p: THROW_COCK, ease: 'out' },
+      { f: S - 3, p: THROW_PULL, ease: 'smooth' },
+      { f: S, p: release, ease: 'in' },
+      { f: S + 2, p: release },
+      { f: follow, p: THROW_FOLLOW, ease: 'smooth' },
+      { f: Math.min(total - 4, follow + 7), p: THROW_FOLLOW },
+      { f: total, p: STANCE, ease: 'smooth' },
+    ],
+  };
+}
+
+/** guard crush: the guard bursts open (arms flung up, head back), then a long wobbling stagger */
+function guardCrush(): Clip {
+  const burst = merge(STANCE, {
+    root: [0, -0.04, -0.12],
+    hips: [-10, -14, 0],
+    spine: [-18, 0, 0],
+    chest: [-16, 0, 0],
+    neck: [-12, 0, 0],
+    head: [-26, 8, 0],
+    upperArmL: [-130, 0, 62],
+    foreArmL: [-24, 0, 0],
+    handL: [-20, 0, 0],
+    upperArmR: [-124, 0, -66],
+    foreArmR: [-28, 0, 0],
+    handR: [-20, 0, 0],
+    thighL: [-26, 0, 8],
+    shinL: [24, 0, 0],
+    thighR: [26, 0, -8],
+    shinR: [34, 0, 0],
+    footR: [-40, 0, 0],
+  });
+  const burst2 = merge(burst, { root: [0, -0.06, -0.16], spine: [-22, 0, 0], head: [-30, 4, 0], upperArmL: [-142, 0, 70], upperArmR: [-136, 0, -74] });
+  // off balance on wobbly legs, arms dangling: rocking back and forth (reads side-on)
+  const reelA = merge(STANCE, {
+    root: [0.03, -0.13, -0.14],
+    hips: [-8, -26, 6],
+    spine: [-12, 0, -8],
+    chest: [-10, 4, -4],
+    neck: [-8, 0, -6],
+    head: [-18, 18, -12],
+    upperArmL: [24, 0, 34],
+    foreArmL: [-26, 0, 0],
+    handL: [16, 0, 0],
+    upperArmR: [30, 0, -30],
+    foreArmR: [-22, 0, 0],
+    handR: [16, 0, 0],
+    thighL: [-34, 0, 10],
+    shinL: [40, 0, 0],
+    footL: [6, 0, 0],
+    thighR: [26, 0, -10],
+    shinR: [44, 0, 0],
+    footR: [-34, 0, 0],
+  });
+  // lurching forward, knees buckling, head dropping, arms swinging forward
+  const reelB = merge(reelA, {
+    root: [-0.03, -0.2, 0.02],
+    hips: [6, -34, -6],
+    spine: [22, 0, 8],
+    chest: [14, -4, 4],
+    neck: [12, 0, 8],
+    head: [22, 26, 14],
+    upperArmL: [-34, 0, 22],
+    foreArmL: [-40, 0, 0],
+    upperArmR: [-26, 0, -26],
+    foreArmR: [-44, 0, 0],
+    thighL: [-48, 0, 8],
+    shinL: [74, 0, 0],
+    thighR: [18, 0, -10],
+    shinR: [58, 0, 0],
+  });
+  const reelC = merge(reelA, {
+    root: [0.02, -0.15, -0.08],
+    spine: [-4, 0, -5],
+    chest: [-4, 4, -3],
+    head: [-8, 14, -8],
+    upperArmL: [8, 0, 28],
+    upperArmR: [12, 0, -26],
+    thighL: [-36, 0, 9],
+    shinL: [50, 0, 0],
+  });
+  // shaking it off, the guard coming back up
+  const recover = merge(STANCE, {
+    root: [0, -0.1, -0.04],
+    spine: [12, -4, 0],
+    chest: [8, -4, 0],
+    head: [10, 10, 0],
+    upperArmL: [-46, 0, 20],
+    foreArmL: [-90, 0, 0],
+    upperArmR: [-34, 0, -24],
+    foreArmR: [-100, 0, 0],
+  });
+  // frame = actionFrame scaled to the sim's crush length (see FighterView); frame 0 is held
+  // through the hitstop of the crush, so it already is the burst pose
+  return {
+    length: 48,
+    keys: [
+      { f: 0, p: burst },
+      { f: 5, p: burst2, ease: 'out' },
+      { f: 12, p: reelA, ease: 'smooth' },
+      { f: 20, p: reelB, ease: 'smooth' },
+      { f: 28, p: reelC, ease: 'smooth' },
+      { f: 35, p: merge(reelB, { root: [-0.02, -0.17, 0], spine: [14, 0, 6], head: [14, 20, 10] }), ease: 'smooth' },
+      { f: 41, p: recover, ease: 'smooth' },
+      { f: 48, p: STANCE, ease: 'smooth' },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // library
 // ---------------------------------------------------------------------------
 export type ClipId = string;
@@ -1502,6 +1693,9 @@ function buildLibrary(): Record<ClipId, Clip> {
     'assist:stun': assistStun(),
   };
   for (const id of Object.keys(MOVES) as MoveId[]) lib['move:' + id] = moveClip(id);
+  lib['move:projectile'] = projectileClip(false);
+  lib['move:projectile:lob'] = projectileClip(true);
+  lib.guardCrush = guardCrush();
   return lib;
 }
 

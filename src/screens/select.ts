@@ -11,6 +11,7 @@ import { backButton, gridColumns, h, isTouchUi, phoneLayout, uiRoot } from '../u
 import type { FightMode } from './fight';
 import { goMenu, goStageSelect, startFight } from './flow';
 import { settings } from '../game/settings';
+import { profileBox } from './profile';
 
 /** What a side is choosing: its fighter, then the friend called with the assist button. */
 type Step = 'fighter' | 'assist' | 'ready';
@@ -72,9 +73,14 @@ export class SelectScreen implements Screen {
     return this.link ? (this.link.isHost ? 0 : 1) : 0;
   }
 
-  /** the CPU of arcade mode gets a random assist (no assist step) */
+  /** one player picks both sides: arcade (P2 = the CPU) and training (P2 = the dummy) */
+  private get solo() {
+    return this.mode === 'cpu' || this.mode === 'training';
+  }
+
+  /** the CPU of arcade mode gets a random assist, the training dummy none (no assist step) */
   private cpuSide(c: 0 | 1) {
-    return this.mode === 'cpu' && c === 1;
+    return this.solo && c === 1;
   }
 
   private step(c: 0 | 1): Step {
@@ -104,7 +110,8 @@ export class SelectScreen implements Screen {
       this.cells.push(cell);
     });
     this.names = [h('div', { class: 'pname p1' }), h('div', { class: 'pname p2' })];
-    const modeLabel = this.mode === 'cpu' ? 'ARCADE — CONTRE LE CPU' : this.mode === 'versus' ? 'VERSUS — 2 JOUEURS' : 'EN LIGNE';
+    const modeLabel =
+      this.mode === 'cpu' ? 'ARCADE — CONTRE LE CPU' : this.mode === 'versus' ? 'VERSUS — 2 JOUEURS' : this.mode === 'training' ? 'ENTRAÎNEMENT' : 'EN LIGNE';
     this.status = h('div', { class: 'title-hint sel-hint' });
     this.okBtn = h('button', { class: 'btn primary sel-ok touch-only' }, 'VALIDER');
     this.okBtn.addEventListener('click', () => this.touchConfirm());
@@ -134,7 +141,7 @@ export class SelectScreen implements Screen {
   /** which cursor the menu event drives */
   private activeCursor(e: MenuEvent): 0 | 1 | -1 {
     if (this.mode === 'online') return this.me;
-    if (this.mode === 'cpu') return this.ready(0) ? 1 : 0;
+    if (this.solo) return this.ready(0) ? 1 : 0;
     // versus: explicit side, otherwise first player still choosing
     if (e.player === 0 || e.player === 1) return e.player as 0 | 1;
     return !this.ready(0) ? 0 : !this.ready(1) ? 1 : -1;
@@ -395,7 +402,7 @@ export class SelectScreen implements Screen {
 
   private refresh() {
     const n = this.roster.length + 1;
-    const cpuHidden = this.mode === 'cpu' && !this.ready(0);
+    const cpuHidden = this.solo && !this.ready(0);
     for (let i = 0; i < n; i++) {
       const cell = this.cells[i];
       if (!cell) continue;
@@ -420,23 +427,26 @@ export class SelectScreen implements Screen {
       cell.querySelectorAll('.tag').forEach((t) => t.remove());
       if (on[0]) cell.append(h('span', { class: 'tag t1' }, '1P'));
       else if (as[0]) cell.append(h('span', { class: 'tag t1 ta' }, '★1P'));
-      if (on[1]) cell.append(h('span', { class: 'tag t2' }, this.mode === 'cpu' ? 'CPU' : '2P'));
+      if (on[1]) cell.append(h('span', { class: 'tag t2' }, this.mode === 'cpu' ? 'CPU' : this.mode === 'training' ? 'CIBLE' : '2P'));
       else if (as[1]) cell.append(h('span', { class: 'tag t2 ta' }, '★2P'));
     }
     for (const c of [0, 1] as const) {
       const isRemote = this.mode === 'online' && c !== this.me;
       let def = this.picked[c] ?? (isRemote ? this.remoteDef : this.defAt(this.cursor[c]));
-      const hidden = this.mode === 'cpu' && c === 1 && !this.ready(0);
+      const hidden = this.solo && c === 1 && !this.ready(0);
       if (hidden) def = null;
       const random = !def && !hidden && !isRemote;
-      const parts: (string | HTMLElement)[] = [random ? '???' : def ? def.name : ''];
+      const parts: (string | HTMLElement | null)[] = [random ? '???' : def ? def.name : ''];
       if (def) parts.push(h('span', { class: 'ttl' }, def.title));
       else if (random) parts.push(h('span', { class: 'ttl' }, 'Au hasard'));
+      // profile: LOURD / RAPIDE / DISTANCE / ÉQUILIBRÉ + stats
+      parts.push(profileBox(def));
       const st = this.step(c);
       if (st === 'assist') parts.push(this.assistLine(c, this.assist[c] ?? (isRemote ? this.remoteAssist : this.defAt(this.acursor[c])), 'pick'));
-      else if (st === 'ready') parts.push(this.assistLine(c, this.assist[c], this.cpuSide(c) ? 'cpu' : 'ready'));
+      // the training dummy has no assist
+      else if (st === 'ready' && !(this.mode === 'training' && c === 1)) parts.push(this.assistLine(c, this.assist[c], this.cpuSide(c) ? 'cpu' : 'ready'));
       if (st === 'ready') parts.push(h('div', { class: 'lock' }, 'PRÊT !'));
-      this.names[c].replaceChildren(...parts);
+      this.names[c].replaceChildren(...parts.filter((x): x is string | HTMLElement => x !== null));
       void this.showroom.show(c, def);
     }
     const touch = isTouchUi();
@@ -444,11 +454,29 @@ export class SelectScreen implements Screen {
     const focusAssist = focus >= 0 && this.step(focus as 0 | 1) === 'assist';
     // versus on one keyboard: both players may be at different steps
     const anyAssist = this.mode === 'versus' && !touch ? [0, 1].some((c) => this.step(c as 0 | 1) === 'assist') && ![0, 1].some((c) => this.step(c as 0 | 1) === 'fighter') : focusAssist;
-    this.titleEl.textContent = anyAssist ? 'CHOISIS TON ASSIST' : this.mode === 'cpu' && this.ready(0) ? 'CHOISIS TON ADVERSAIRE' : 'CHOISIS TON COMBATTANT';
+    this.titleEl.textContent = anyAssist
+      ? 'CHOISIS TON ASSIST'
+      : this.mode === 'cpu' && this.ready(0)
+        ? 'CHOISIS TON ADVERSAIRE'
+        : this.mode === 'training' && this.ready(0)
+          ? 'CHOISIS TON PARTENAIRE'
+          : 'CHOISIS TON COMBATTANT';
     this.root.classList.toggle('assist-step', anyAssist);
     let msg = '';
     const assistHelp = 'le pote qui vient t’aider en plein combat (pas toi-même)';
-    if (this.mode === 'cpu') {
+    if (this.mode === 'training') {
+      const st = this.step(0);
+      msg =
+        st === 'fighter'
+          ? touch
+            ? 'Touche ton perso'
+            : 'Choisis ton perso'
+          : st === 'assist'
+            ? (touch ? 'Touche ton assist : ' : 'Choisis ton assist : ') + assistHelp
+            : touch
+              ? 'Touche ton partenaire : le mannequin sur qui tu t’entraînes'
+              : 'Choisis ton partenaire : le mannequin sur qui tu t’entraînes';
+    } else if (this.mode === 'cpu') {
       const st = this.step(0);
       msg =
         st === 'fighter'
@@ -495,10 +523,12 @@ export class SelectScreen implements Screen {
             ? `VALIDER J${c + 1}`
             : this.mode === 'cpu' && c === 1
               ? "VALIDER L'ADVERSAIRE"
-              : 'VALIDER';
+              : this.mode === 'training' && c === 1
+                ? 'VALIDER LE PARTENAIRE'
+                : 'VALIDER';
     // two fighters on stage (side by side on phones), or one in the middle
     const them = (1 - this.me) as 0 | 1;
-    const duo = this.mode === 'versus' || (this.mode === 'cpu' && this.ready(0)) || (this.mode === 'online' && !!(this.picked[them] ?? this.remoteDef));
+    const duo = this.mode === 'versus' || (this.solo && this.ready(0)) || (this.mode === 'online' && !!(this.picked[them] ?? this.remoteDef));
     this.root.classList.toggle('duo', duo);
   }
 
@@ -536,7 +566,7 @@ export class SelectScreen implements Screen {
       const c = this.activeCursor(e);
       if (e.action === 'back') {
         if (c >= 0 && this.unlock(c as 0 | 1)) continue;
-        if (this.mode === 'cpu' && this.unlock(0)) continue;
+        if (this.solo && this.unlock(0)) continue;
         if (this.mode === 'versus' && e.player === -1 && (this.unlock(1) || this.unlock(0))) continue;
         if (!this.locked[0] && !this.locked[1]) {
           audio.sfx('cancel');

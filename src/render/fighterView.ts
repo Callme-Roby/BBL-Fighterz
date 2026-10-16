@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { FighterDef } from '../data/roster';
 import { ARENA_HALF_WIDTH, type FighterState } from '../sim/types';
-import { MOVES } from '../sim/moves';
+import { ARCHETYPES, baseMoveFrame, moveFor, statsOf } from '../sim/archetypes';
+import { fighterShotKind } from './shots';
 import { Afterimage } from './afterimage';
 import { Animator } from './animator';
 import { buildCharacter, type CharacterModel } from './characterModel';
@@ -64,6 +65,11 @@ export class FighterView {
   private prevActionFrame = 0;
   /** the current juggle started with a bounce (wall: thrown off a wall splat, ground: floor bounce) */
   private bounce: 'wall' | 'ground' | null = null;
+  /** walk cycle position (clip frames): advances with the sim at the profile's walk speed */
+  private walkPhase = 0;
+  private lastSimFrame = -1;
+  /** the throw of the ranged profile: lob (grenade) or straight */
+  private readonly throwClip: string;
 
   constructor(
     readonly def: FighterDef,
@@ -74,6 +80,7 @@ export class FighterView {
     const mat = new THREE.MeshBasicMaterial({ map: getShadowTexture(), transparent: true, depthWrite: false });
     this.shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), mat);
     this.shadow.renderOrder = 1;
+    this.throwClip = fighterShotKind(def) === 'grenade' ? 'move:projectile:lob' : 'move:projectile';
   }
 
   get root() {
@@ -138,7 +145,7 @@ export class FighterView {
         return 0xffe070;
       case 'attack':
       case 'airAttack': {
-        const m = f.moveId ? MOVES[f.moveId] : null;
+        const m = f.moveId ? moveFor(f.archetype ?? 'balanced', f.moveId) : null;
         if (!m) return null;
         if (m.id === 'super') return f.actionFrame <= m.startup + m.active ? 0xffa030 : null;
         if (m.id === 'powerPunch' || m.id === 'knee' || m.id === 'airSmash')
@@ -210,16 +217,29 @@ export class FighterView {
     const [sx, sy, sz] = this.squash();
     this.setFacing(f.facing, sx, sy, sz);
     const start = simFrame - f.actionFrame;
+    // profiles move at their own speed: the walk cycle advances with the sim's frames at
+    // walk speed / the reference speed (no moonwalking), the dashes are stretched to their length
+    const prof = statsOf(f.archetype ?? 'balanced');
+    const ref = ARCHETYPES.balanced;
+    const dSim = simFrame - this.lastSimFrame;
+    this.lastSimFrame = simFrame;
+    if ((f.action === 'walkF' || f.action === 'walkB') && dSim > 0 && dSim < 5) {
+      this.walkPhase += dSim * (f.action === 'walkF' ? prof.walkF / ref.walkF : prof.walkB / ref.walkB);
+    }
     let clip = 'idle';
     let frame = f.actionFrame;
     let blend = 4;
     let key = f.action + ':' + start;
     switch (f.action) {
       case 'idle':
+        clip = f.action;
+        frame = time * 60;
+        blend = 6;
+        break;
       case 'walkF':
       case 'walkB':
         clip = f.action;
-        frame = time * 60;
+        frame = this.walkPhase;
         blend = 6;
         break;
       case 'crouch':
@@ -243,14 +263,26 @@ export class FighterView {
       case 'prejump':
       case 'jump':
       case 'land':
-      case 'dashF':
-      case 'dashB':
         clip = f.action;
         blend = 3;
         break;
+      case 'dashF':
+      case 'dashB':
+        clip = f.action;
+        frame = (f.actionFrame * (f.action === 'dashF' ? ref.dashFFrames / prof.dashFFrames : ref.dashBFrames / prof.dashBFrames));
+        blend = 3;
+        break;
+      case 'guardCrush':
+        // guard broken: burst open, then a long wobbling stagger (scaled to the sim's length)
+        clip = 'guardCrush';
+        frame = (f.actionFrame / Math.max(1, f.stunTotal)) * CLIPS.guardCrush.length;
+        blend = 2;
+        break;
       case 'attack':
       case 'airAttack':
-        clip = 'move:' + f.moveId;
+        clip = f.moveId === 'projectile' ? this.throwClip : 'move:' + f.moveId;
+        // profiles change the frame data: the strike pose still lands on the active frame
+        if (f.moveId) frame = baseMoveFrame(f.archetype ?? 'balanced', f.moveId, f.actionFrame);
         key += f.moveId;
         // chained moves start mid-windup: blend a little longer so strings flow
         blend = f.chain > 1 ? 3 : 2;

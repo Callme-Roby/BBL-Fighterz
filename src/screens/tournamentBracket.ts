@@ -17,6 +17,7 @@ import {
   recordResult,
   saveTournament,
   simulateCpuMatch,
+  matchArchetypes,
   stageFor,
   totalMatches,
   type Tournament,
@@ -182,7 +183,7 @@ export class TournamentBracketScreen implements Screen {
     const t = this.t;
     const cur = t.current;
     if (!cur) return;
-    const w = simulateCpuMatch(settings.rounds, settings.difficulty);
+    const w = simulateCpuMatch(settings.rounds, settings.difficulty, matchArchetypes(t, cur.r, cur.m));
     audio.sfx('confirm');
     const msg = applyResult(t, cur.r, cur.m, w, true);
     if (msg === null) goTournamentChampion(t);

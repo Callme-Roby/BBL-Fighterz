@@ -43,6 +43,10 @@ export const RANDOMIZED_SFX: ReadonlySet<SfxId> = new Set<SfxId>([
   'wallBreak',
   'superJump',
   'airDash',
+  'toss',
+  'zap',
+  'splat',
+  'guardBreak',
 ]);
 
 /**
@@ -89,6 +93,10 @@ const LEVEL: Record<SfxId, number> = {
   wallBreak: 0.5,
   superJump: 0.8,
   airDash: 0.9,
+  toss: 1.4,
+  zap: 0.6,
+  splat: 0.8,
+  guardBreak: 0.42,
 };
 
 /** Play a procedural effect. */
@@ -934,5 +942,89 @@ const SFX: Record<SfxId, (env: SfxEnv, t: number, p: number) => void> = {
       filter: 'bandpass', freq: 3600 * p, freqEnd: 700 * p, sweep: 0.16, q: 1.8, peak: 0.65, attack: 0.012, decay: 0.17,
     });
     sweepTone(ctx, out, t, { type: 'triangle', f0: 900 * p, f1: 300 * p, sweep: 0.12, peak: 0.12, decay: 0.14 });
+  },
+
+  /* ---------------- profiles & guard gauge ---------------- */
+
+  /** Overarm throw: a quick rising swish of the arm and a flick at the release. */
+  toss(env, t, p) {
+    const { ctx, out } = env;
+    noiseBurst(ctx, out, t, {
+      filter: 'bandpass', freq: 450 * p, freqEnd: 2600 * p, sweep: 0.11, q: 1.6, peak: 0.55, attack: 0.05, decay: 0.09,
+    });
+    noiseBurst(ctx, out, t + 0.1, { filter: 'highpass', freq: 3500 * p, peak: 0.25, attack: 0.002, decay: 0.03 });
+    sweepTone(ctx, out, t + 0.09, { type: 'triangle', f0: 520 * p, f1: 260 * p, sweep: 0.06, peak: 0.12, decay: 0.07 });
+  },
+
+  /** Energy ball: a buzzy downward zap with a soft low "whomp" under it. */
+  zap(env, t, p) {
+    const { ctx, out } = env;
+    reverbSend(env, 0.15);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 3;
+    bp.frequency.setValueAtTime(3200 * p, t);
+    bp.frequency.exponentialRampToValueAtTime(500 * p, t + 0.22);
+    const g = ctx.createGain();
+    const end = perc(g.gain, t, 0.45, 0.004, 0.24);
+    bp.connect(g);
+    g.connect(crunch(env, 0.6, 0.9));
+    for (const [type, mul] of [['sawtooth', 1], ['square', 1.5]] as const) {
+      const o = osc(ctx, type);
+      o.frequency.setValueAtTime(1400 * p * mul, t);
+      o.frequency.exponentialRampToValueAtTime(220 * p * mul, t + 0.22);
+      o.connect(bp);
+      o.start(t);
+      o.stop(end);
+    }
+    sweepTone(ctx, out, t, { f0: 210 * p, f1: 70 * p, sweep: 0.14, peak: 0.55, decay: 0.18 });
+    noiseBurst(ctx, out, t, { filter: 'highpass', freq: 5000 * p, peak: 0.25, decay: 0.05 });
+  },
+
+  /** Web ball hitting: a wet slap and a sticky stretch. */
+  splat(env, t, p) {
+    const { ctx, out } = env;
+    noiseBurst(ctx, out, t, { filter: 'bandpass', freq: 1100 * p, q: 1.3, peak: 0.85, attack: 0.001, decay: 0.07 });
+    noiseBurst(ctx, out, t, { filter: 'lowpass', freq: 600 * p, peak: 0.5, attack: 0.002, decay: 0.12 });
+    sweepTone(ctx, out, t, { f0: 320 * p, f1: 85 * p, sweep: 0.07, peak: 0.45, decay: 0.12 });
+    // the strands stretching
+    noiseBurst(ctx, out, t + 0.05, {
+      filter: 'bandpass', freq: 2200 * p, freqEnd: 900 * p, sweep: 0.18, q: 4, peak: 0.2, attack: 0.03, decay: 0.16,
+    });
+  },
+
+  /** Guard crush: a heavy crunch, glass bursting into shards and the guard "powering down". */
+  guardBreak(env, t, p) {
+    const { ctx, out } = env;
+    reverbSend(env, 0.4);
+    heavyImpact(env, t, p * 0.9, 1.1);
+    // glass burst: bright noise + a shower of inharmonic tinkles
+    noiseBurst(ctx, crunch(env, 0.8, 0.6), t, { filter: 'highpass', freq: 2800 * p, peak: 0.9, attack: 0.0005, decay: 0.16 });
+    noiseBurst(ctx, out, t + 0.01, { filter: 'bandpass', freq: 6000 * p, q: 0.8, peak: 0.45, attack: 0.002, decay: 0.35, rate: 0.9 });
+    for (let i = 0; i < 14; i++) {
+      const dt = i < 4 ? rnd(0, 0.04) : rnd(0.04, 0.6);
+      const f = rnd(2400, 6400) * p;
+      const lvl = rnd(0.05, 0.11) * (1 - dt);
+      sweepTone(ctx, out, t + dt, { type: 'triangle', f0: f, f1: f * rnd(0.97, 1.0), sweep: 0.1, peak: lvl, decay: rnd(0.08, 0.25) });
+      sweepTone(ctx, out, t + dt, { type: 'triangle', f0: f * 1.48, f1: f * 1.46, sweep: 0.1, peak: lvl * 0.5, decay: rnd(0.05, 0.15) });
+    }
+    // the guard deflating: a falling buzzy tone
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.Q.value = 5;
+    lp.frequency.setValueAtTime(2400 * p, t + 0.06);
+    lp.frequency.exponentialRampToValueAtTime(260 * p, t + 0.6);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t + 0.06);
+    g.gain.linearRampToValueAtTime(0.22, t + 0.09);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.62);
+    lp.connect(g);
+    g.connect(out);
+    const o = osc(ctx, 'square');
+    o.frequency.setValueAtTime(620 * p, t + 0.06);
+    o.frequency.exponentialRampToValueAtTime(95 * p, t + 0.6);
+    o.connect(lp);
+    o.start(t + 0.06);
+    o.stop(t + 0.64);
   },
 };
