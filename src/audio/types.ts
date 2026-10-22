@@ -50,7 +50,12 @@ export type SfxId =
   /** web ball sticking on something */
   | 'splat'
   /** guard crush: the guard shatters like glass */
-  | 'guardBreak';
+  | 'guardBreak'
+  // throws
+  /** hands closing on clothes (a grab connects) */
+  | 'clutch'
+  /** throw escape: sharp double slap + ringing spark */
+  | 'tech';
 
 export type AnnouncerLine =
   | 'round1'

@@ -19,6 +19,8 @@ import type { Archetype } from '../sim/types';
 
 export type HairStyle =
   | 'spiky'
+  /** short spiky crop with a short fringe falling on the forehead */
+  | 'spikyfringe'
   | 'short'
   /** short, tight curls on top, short on the sides */
   | 'curlyshort'
@@ -55,6 +57,7 @@ export const HAIR_STYLES: readonly HairStyle[] = [
   'short',
   'curlyshort',
   'spiky',
+  'spikyfringe',
   'buzz',
   'afro',
   'bigafro',
@@ -498,6 +501,32 @@ export const ROSTER: FighterDef[] = [
     winLines: ['GG ez. Report le jungler.', 'T’as pas lu les patch notes, hein ?', 'FF à quinze, la prochaine fois.'],
     superLines: ['Écoute bien… c’est LA MÉTA !', 'Tier S, zéro counter… BBL MAX !', 'Ton champion est nerf, le mien est cheaté !'],
     voice: { lang: 'fr-FR', pitch: 0.92, rate: 1.18 },
+  },
+  {
+    id: 'matteo',
+    name: 'MATTEO',
+    archetype: 'heavy',
+    page: 2,
+    title: 'Solide sur les appareils',
+    face: 'faces/matteo.jpg',
+    // short blond spiky hair with a fringe; the light moustache and short beard come from the photo
+    hair: { style: 'spikyfringe', color: '#cdaa68' },
+    outfit: {
+      top: 'hoodie',
+      topColor: '#1f2a4a',
+      trimColor: '#c8cedc',
+      pantsColor: '#2c2e36',
+      shoesColor: '#f2f2f2',
+    },
+    // gym guy: a bit tall, broad, muscular
+    height: 1.05,
+    build: 1.18,
+    muscles: 0.55,
+    headScale: 1.18,
+    introLines: ['Je sors de la salle… je vais te tuer.', 'Jour des jambes ? Non, jour de ta défaite.', 'Échauffé, gonflé, prêt.'],
+    winLines: ['Même pas une série complète.', 'Je retourne à la salle.', 'Repos entre deux séries, et toi au tapis.'],
+    superLines: ['Place le ballon… LE M6 !', 'Lucarne garantie… BBL MAX !', 'Tirs au but, mon pote !'],
+    voice: { lang: 'fr-FR', pitch: 0.95, rate: 1.08 },
   },
 ];
 

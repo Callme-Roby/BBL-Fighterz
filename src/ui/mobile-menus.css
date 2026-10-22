@@ -814,3 +814,38 @@ html.touch-ui .btn:hover {
 .options-screen .help-h + table {
   margin-bottom: 10px;
 }
+
+/* --- character catalogues (◀ ▶ around the grid): slimmer arrows on phones --- */
+@media (max-width: 600px), (max-height: 500px) {
+  .rpages {
+    gap: 3px;
+  }
+
+  .rpages .rp-row {
+    gap: 4px;
+  }
+
+  .rp-arrow {
+    width: 30px;
+    gap: 4px;
+  }
+
+  .rp-arrow .rp-ico {
+    font-size: 15px;
+  }
+
+  .rp-label {
+    font-size: 7px;
+    gap: 6px;
+  }
+
+  .rp-dots i {
+    width: 6px;
+    height: 6px;
+  }
+
+  .rp-away b {
+    font-size: 6px;
+    padding: 1px 2px;
+  }
+}

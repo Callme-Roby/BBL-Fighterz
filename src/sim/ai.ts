@@ -45,20 +45,30 @@ interface Tuning {
   zoning: number;
   /** chance to jump over an incoming projectile (instead of blocking it) */
   jumpOver: number;
+  /** chance to end a button chain with a two-button combination (finisher) */
+  finisher: number;
+  /** chance to escape a throw, and the frame (after the grab) it presses the escape */
+  throwTech: number;
+  techFrame: number;
+  /** how much the grab-happy profiles (heavy) go for their direct grab up close */
+  grabUse: number;
 }
 
 const TUNING: Record<Difficulty, Tuning> = {
   easy: {
     reaction: 24, blockChance: 0.2, aggression: 0.28, comboSkill: 0.15, antiAirChance: 0.1, parryChance: 0,
     autoCombo: 0.12, airCombo: 0.05, assistUse: 0.001, airDash: 0, mashFrames: 32, zoning: 0.1, jumpOver: 0.05,
+    finisher: 0.1, throwTech: 0.1, techFrame: 10, grabUse: 0.5,
   },
   normal: {
     reaction: 14, blockChance: 0.55, aggression: 0.55, comboSkill: 0.55, antiAirChance: 0.35, parryChance: 0.12,
-    autoCombo: 0.35, airCombo: 0.55, assistUse: 0.006, airDash: 0.15, mashFrames: 90, zoning: 0.5, jumpOver: 0.2,
+    autoCombo: 0.35, airCombo: 0.55, assistUse: 0.006, airDash: 0.15, mashFrames: 90, zoning: 0.6, jumpOver: 0.25,
+    finisher: 0.35, throwTech: 0.4, techFrame: 7, grabUse: 0.5,
   },
   hard: {
     reaction: 8, blockChance: 0.72, aggression: 0.8, comboSkill: 0.9, antiAirChance: 0.7, parryChance: 0.3,
-    autoCombo: 0.25, airCombo: 0.9, assistUse: 0.012, airDash: 0.35, mashFrames: 90, zoning: 0.35, jumpOver: 0.35,
+    autoCombo: 0.25, airCombo: 0.9, assistUse: 0.012, airDash: 0.35, mashFrames: 90, zoning: 0.15, jumpOver: 0.4,
+    finisher: 0.5, throwTech: 0.4, techFrame: 4, grabUse: 1,
   },
 };
 
@@ -79,7 +89,7 @@ const STYLE: Record<Archetype, Style> = {
   balanced: { aggression: 0.05, autoCombo: 0, grab: 0, keepAway: 0, jumpOver: 1 },
   heavy: { aggression: 0, autoCombo: 0, grab: 0.2, keepAway: 0, jumpOver: 0.8 },
   fast: { aggression: 0.1, autoCombo: 0.1, grab: 0, keepAway: 0, jumpOver: 1.3 },
-  ranged: { aggression: -0.1, autoCombo: 0, grab: 0, keepAway: 0.5, jumpOver: 0.8 },
+  ranged: { aggression: -0.1, autoCombo: 0, grab: 0, keepAway: 0.35, jumpOver: 0.8 },
 };
 
 function styled(t: Tuning, a: Archetype): Tuning {
@@ -94,6 +104,11 @@ function styled(t: Tuning, a: Archetype): Tuning {
 
 /** below this share of its guard gauge the CPU stops turtling (parries, backs off, jumps out) */
 const GUARD_LOW = 0.35;
+
+/** the four attack buttons (button chains: mash one; combination: then press another) */
+const CHAIN_BTNS = [IN_LP, IN_RP, IN_LK, IN_RK];
+/** two-button combination finishers (sim.ts FINISHER) */
+const FINISHERS = new Set<MoveId>(['hammerFist', 'axeKick', 'risingUppercut', 'tornadoKick']);
 
 const STUNNED = new Set(['hitstun', 'blockstun', 'juggle', 'knockdown', 'getup', 'thrown', 'throwing', 'throwBreak', 'wallSplat', 'parried', 'guardCrush']);
 
@@ -114,8 +129,14 @@ export class CpuBrain {
   private seenAttackFrame = -1;
   private blocking = 0;
   private cooldown = 0;
-  /** frames left of LP mashing (auto-combo) */
+  /** frames left of button mashing (button chain), the mashed button, and the combination planned (0 = none) */
   private mash = 0;
+  private mashBtn = IN_LP;
+  private finBtn = 0;
+  private finAt = 1;
+  /** the throw already decided on (frame of the grab) and whether we escape it */
+  private techSeen = -1;
+  private tech = false;
   /** super jump decision taken for the current launcher */
   private sjRolled = false;
   /** following up with an air string after a super jump */
@@ -159,8 +180,15 @@ export class CpuBrain {
     const r = Math.random;
     const tap = (bits: number) => (s.frame % 2 === 0 ? bits : 0);
 
-    // throw escape
-    if (f.action === 'thrown' && f.actionFrame < 8 && r() < this.t.blockChance * 0.08) return IN_LP;
+    // throw escape: decided once per grab, pressed after the reaction delay (inside the 12-frame window)
+    if (f.action === 'thrown') {
+      const at = s.frame - f.actionFrame;
+      if (this.techSeen !== at) {
+        this.techSeen = at;
+        this.tech = r() < this.t.throwTech;
+      }
+      return this.tech && f.actionFrame === this.t.techFrame ? IN_GRAB : 0;
+    }
     // wake up
     if (f.action === 'knockdown') return f.actionFrame > 30 && r() < 0.1 ? IN_UP : 0;
     if (STUNNED.has(f.action)) {
@@ -192,12 +220,16 @@ export class CpuBrain {
       this.airPlan = false;
     }
 
-    // ---- auto-combo: mash LP while the route keeps connecting ----
+    // ---- button chain: mash one button while the route keeps connecting, maybe end with a combination ----
     if (this.mash > 0) {
       this.mash--;
       const busy = f.action === 'attack' || f.action === 'airAttack' || f.action === 'superJump' || f.action === 'jump' || f.action === 'land';
-      if (!busy && f.autoStep === 0 && this.mash < this.t.mashFrames - 12) this.mash = 0;
-      else return this.mash % 5 === 0 ? IN_LP : 0;
+      if (f.action === 'attack' && f.moveId && FINISHERS.has(f.moveId)) this.mash = 0;
+      else if (!busy && f.autoStep === 0 && this.mash < this.t.mashFrames - 12) this.mash = 0;
+      else {
+        const fin = this.finBtn && f.action === 'attack' && f.autoRoute === this.mashBtn && f.autoStep >= this.finAt;
+        return this.mash % 5 === 0 ? (fin ? this.finBtn : this.mashBtn) : 0;
+      }
     }
 
     // scripted sequences (combos, motions)
@@ -265,10 +297,7 @@ export class CpuBrain {
       const free = f.action === 'idle' || f.action === 'walkF' || f.action === 'walkB' || f.action === 'crouch';
       if (free) {
         if (dist > 0.85) return fwd;
-        if (r() < 0.5 + this.t.autoCombo) {
-          this.mash = this.t.mashFrames;
-          return IN_LP;
-        }
+        if (r() < 0.5 + this.t.autoCombo) return this.startMash(f);
         this.queue.push(IN_DOWN | fwd, IN_DOWN | fwd | IN_RP);
         return 0;
       }
@@ -293,7 +322,12 @@ export class CpuBrain {
       if (f.action === 'attack' && f.moveHit && f.meter >= MAX_METER && o.action === 'hitstun' && r() < this.t.comboSkill * 0.3) {
         return IN_SUPER;
       }
-      if (f.action === 'attack' && f.moveHit && f.moveId && r() < this.t.comboSkill * 0.25) {
+      // inside a button chain: another button = the combination finisher
+      if (f.action === 'attack' && f.moveHit && f.autoRoute && f.moveId && !FINISHERS.has(f.moveId) && r() < this.t.finisher * 0.25) {
+        const others = CHAIN_BTNS.filter((b) => b !== f.autoRoute);
+        return others[Math.floor(r() * others.length)];
+      }
+      if (f.action === 'attack' && f.moveHit && f.moveId && !f.autoRoute && r() < this.t.comboSkill * 0.25) {
         const next = mv(f, f.moveId).cancels?.[0];
         if (next === 'cross') return IN_RP;
         if (next === 'roundhouse') return IN_RK;
@@ -400,18 +434,15 @@ export class CpuBrain {
       return 0;
     }
     // heavy: the grab is the big threat up close
-    if (STYLE[f.archetype].grab > 0 && dist < 0.95 && r() < STYLE[f.archetype].grab * 0.12) {
-      this.queue.push(IN_GRAB, 0);
+    if (STYLE[f.archetype].grab > 0 && dist < 0.95 && r() < STYLE[f.archetype].grab * this.t.grabUse * 0.12) {
+      this.queue.push(this.grabInput(f, back), 0);
       this.cooldown = 10 + Math.floor(r() * 16);
       return 0;
     }
     // in range: pick an attack
     if (r() < 0.1 + this.t.aggression * 0.18) {
       // auto-combo: just mash LP up close (the route ends in a launcher + air combo)
-      if (dist < 0.95 && r() < this.t.autoCombo) {
-        this.mash = this.t.mashFrames;
-        return IN_LP;
-      }
+      if (dist < 0.95 && r() < this.t.autoCombo) return this.startMash(f);
       const pick = r();
       const moves: number[][] = [
         [IN_LP, 0, 0, 0, 0, 0, 0, 0, 0, IN_RP],
@@ -420,7 +451,7 @@ export class CpuBrain {
         [IN_DOWN, IN_DOWN | IN_RK],
         [heavyHit],
         [IN_LK],
-        [IN_GRAB],
+        [this.grabInput(f, back)],
         [fwd | IN_LP],
         [IN_DOWN, IN_DOWN | IN_RP],
         [fwd | IN_LK],
@@ -448,6 +479,29 @@ export class CpuBrain {
       this.cooldown = 4;
     }
     return this.hold;
+  }
+
+  /** start mashing one attack button (a button chain), sometimes planning a combination finisher */
+  private startMash(f: FighterState): number {
+    const r = Math.random;
+    // LP (launcher + air combo) is the favourite, the other three share the rest
+    const roll = r();
+    this.mashBtn = roll < 0.4 ? IN_LP : roll < 0.6 ? IN_RP : roll < 0.8 ? IN_LK : IN_RK;
+    this.finBtn = 0;
+    if (r() < this.t.finisher) {
+      const others = CHAIN_BTNS.filter((b) => b !== this.mashBtn);
+      this.finBtn = others[Math.floor(r() * others.length)];
+      this.finAt = 1 + Math.floor(r() * 2);
+    }
+    this.mash = this.t.mashFrames;
+    void f;
+    return this.mashBtn;
+  }
+
+  /** grab: a back throw when our back is near the wall (swaps the sides) */
+  private grabInput(f: FighterState, back: number): number {
+    const room = back === IN_LEFT ? f.x + 7 : 7 - f.x;
+    return room < 1.6 && Math.random() < 0.3 + this.t.comboSkill * 0.6 ? IN_GRAB | back : IN_GRAB;
   }
 
   /**
@@ -553,10 +607,7 @@ export class CpuBrain {
         // walk in, then open with a combo
         if (dist > 0.85) return fwd;
         this.follow = null;
-        if (Math.random() < 0.5 + this.t.autoCombo) {
-          this.mash = this.t.mashFrames;
-          return IN_LP;
-        }
+        if (Math.random() < 0.5 + this.t.autoCombo) return this.startMash(f);
         this.queue.push(IN_DOWN | IN_LP, IN_DOWN, IN_DOWN, IN_DOWN, IN_DOWN, IN_DOWN, IN_DOWN, IN_DOWN, IN_DOWN | IN_LP, IN_DOWN, IN_DOWN, IN_DOWN, IN_DOWN, IN_DOWN, IN_DOWN, IN_DOWN, IN_DOWN | IN_RP);
         return 0;
       }

@@ -974,6 +974,36 @@ function addHair(g: GeoBuilder, def: FighterDef, cy: number, R: THREE.Vector3, t
       }
       break;
     }
+    case 'spikyfringe': {
+      // short spiky crop: many short spikes over the top / back, a short fringe on the forehead
+      dome(1.06, -0.42, 1.36);
+      const spikes = 30;
+      for (let i = 0; i < spikes; i++) {
+        const a = i * 2.39996;
+        const r = Math.sqrt((i + 0.5) / spikes) * 0.95;
+        const dir = new THREE.Vector3(Math.cos(a) * r, 1.0, Math.sin(a) * r * 0.9 - 0.1).normalize();
+        const len = k * (0.04 + 0.03 * hashNoise(i * 3.1));
+        const cone = new THREE.ConeGeometry(k * (0.024 + 0.01 * hashNoise(i)), len, 4);
+        cone.translate(0, len / 2, 0);
+        const tip = dir.clone().add(new THREE.Vector3(0, 0.35, -0.08)).normalize();
+        cone.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), tip));
+        const base = new THREE.Vector3(dir.x * R.x * 0.98, dir.y * R.y * 0.98 + cy, dir.z * R.z * 0.98 + 0.012);
+        cone.translate(base.x, base.y, base.z);
+        add(cone, vary);
+      }
+      // fringe: short locks pointing forward and down over the top of the forehead
+      for (let j = 0; j < 6; j++) {
+        const sx = -0.55 + j * 0.22;
+        const base = skullPoint(new THREE.Vector3(sx * 0.8, 0.8, 0.6), 1.04);
+        const len = k * (0.06 + 0.02 * hashNoise(j * 7.3));
+        const cone = new THREE.ConeGeometry(k * 0.03, len, 4);
+        cone.translate(0, len / 2, 0);
+        cone.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(sx * 0.35, -0.45, 0.85).normalize()));
+        cone.translate(base.x, base.y, base.z);
+        add(cone, vary);
+      }
+      break;
+    }
     case 'afro':
     case 'bigafro': {
       const big = style === 'bigafro';

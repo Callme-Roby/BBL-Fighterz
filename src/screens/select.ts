@@ -7,11 +7,15 @@ import { input, keyLabel, P1_KEYS, P2_KEYS, type MenuEvent } from '../input/inpu
 import type { NetLink, NetMsg } from '../net/peer';
 import { loadFace } from '../render/faceTexture';
 import { Showroom, type ShowroomFit } from '../render/showroom';
-import { backButton, gridColumns, h, isTouchUi, phoneLayout, uiRoot } from '../ui/dom';
+import { backButton, h, isTouchUi, phoneLayout, uiRoot } from '../ui/dom';
 import type { FightMode } from './fight';
 import { goMenu, goStageSelect, startFight } from './flow';
 import { settings } from '../game/settings';
 import { profileBox } from './profile';
+import { PagedGrid } from './rosterPages';
+
+/** last fighter each side validated, per mode: the cursor (and its catalogue) comes back there */
+const lastPick: Partial<Record<FightMode, [string, string]>> = {};
 
 /** What a side is choosing: its fighter, then the friend called with the assist button. */
 type Step = 'fighter' | 'assist' | 'ready';
@@ -32,11 +36,16 @@ export class SelectScreen implements Screen {
   private assist: [FighterDef | null, FighterDef | null] = [null, null];
   private showroom = new Showroom();
   private cells: HTMLDivElement[] = [];
+  /** catalogues (pages of the grid) with their ◀ ▶ arrows */
+  private pages!: PagedGrid;
+  /** catalogue each side browses (for the cursor of its current step) */
+  private pg: [number, number] = [0, 0];
+  /** last cursor of each side on each catalogue, per step: flipping back lands there */
+  private mem = new Map<string, number>();
   private names: HTMLDivElement[] = [];
   private status!: HTMLDivElement;
   private titleEl!: HTMLDivElement;
   private root!: HTMLDivElement;
-  private grid!: HTMLDivElement;
   /** free space between the title and the grid: the 3D fighters stand there on phones */
   private arena!: HTMLDivElement;
   /** touch: confirms the highlighted fighter (a second tap on the cell does it too) */
@@ -57,6 +66,13 @@ export class SelectScreen implements Screen {
     this.roster = fullRoster();
     this.cols = Math.min(8, this.roster.length + 1);
     if (this.roster.length > 1) this.cursor[1] = 1;
+    // back on this screen: cursors on the fighters validated last time
+    const last = lastPick[mode];
+    if (last)
+      for (const c of [0, 1] as const) {
+        const i = this.roster.findIndex((d) => d.id === last[c]);
+        if (i >= 0 && !(mode === 'online' && c !== this.me)) this.cursor[c] = i;
+      }
     if (mode === 'online' && link) {
       this.unsubs.push(link.on((m) => this.onNet(m)));
       this.unsubs.push(
@@ -95,20 +111,16 @@ export class SelectScreen implements Screen {
   enter() {
     audio.playMusic('select');
     void audio.announcer('chooseFighter');
-    const grid = h('div', { class: 'grid', style: `--cols:${this.cols}` });
-    this.grid = grid;
-    const all: (FighterDef | null)[] = [...this.roster, null];
-    all.forEach((def, i) => {
-      const cell = h('div', { class: 'cell' + (def ? '' : ' special') }, def ? h('div', { class: 'nm' }, def.name) : '?');
-      if (def)
-        loadFace(def).then((f) => {
-          cell.style.backgroundImage = `url(${f.portraitUrl})`;
-          this.faces.set(def.id, f.portraitUrl);
-        });
-      cell.addEventListener('click', () => this.clickCell(i));
-      grid.append(cell);
-      this.cells.push(cell);
+    this.pages = new PagedGrid(this.roster, {
+      cols: this.cols,
+      random: true,
+      onCell: (i) => this.clickCell(i),
+      onFlip: (d) => this.tapFlip(d),
+      onFace: (def, url) => this.faces.set(def.id, url),
     });
+    this.cells = this.pages.cells;
+    for (const c of [0, 1] as const) this.pg[c] = this.pages.pageFor(this.cursor[c], 0);
+    this.pages.show(this.pg[this.mode === 'online' ? this.me : 0]);
     this.names = [h('div', { class: 'pname p1' }), h('div', { class: 'pname p2' })];
     const modeLabel =
       this.mode === 'cpu' ? 'ARCADE — CONTRE LE CPU' : this.mode === 'versus' ? 'VERSUS — 2 JOUEURS' : this.mode === 'training' ? 'ENTRAÎNEMENT' : 'EN LIGNE';
@@ -123,7 +135,7 @@ export class SelectScreen implements Screen {
       h('div', { class: 'top' }, this.titleEl, h('div', { class: 'title-hint' }, modeLabel)),
       this.arena,
       h('div', { class: 'names' }, this.names[0], this.names[1]),
-      h('div', { class: 'bottom' }, grid, this.status, this.okBtn),
+      h('div', { class: 'bottom' }, this.pages.el, this.status, this.okBtn),
     );
     uiRoot().append(this.root, backButton(() => this.back()));
     this.refresh();
@@ -165,9 +177,10 @@ export class SelectScreen implements Screen {
     const c = t as 0 | 1;
     const assist = this.step(c) === 'assist';
     const cur = assist ? this.acursor : this.cursor;
-    if (cur[c] === i) this.lock(c);
+    if (cur[c] === i && this.pg[c] === this.pages.shown) this.lock(c);
     else {
       cur[c] = i;
+      this.pg[c] = this.pages.shown;
       audio.sfx('cursor');
       this.refresh();
       this.sendPick();
@@ -185,22 +198,70 @@ export class SelectScreen implements Screen {
     if (st === 'ready') return;
     const cur = st === 'assist' ? this.acursor : this.cursor;
     const own = st === 'assist' ? this.ownIndex(c) : -1;
-    const n = this.roster.length + 1;
+    // the grid shows the catalogue of the player who moves
+    this.focus(c);
     let i = cur[c];
-    if (dx) {
-      i = (i + dx + n) % n;
-      // left / right hop over your own face
-      if (i === own) i = (i + dx + n) % n;
-    }
-    if (dy) {
-      i += dy * gridColumns(this.cells, this.cols);
-      if (i < 0 || i >= n) i = cur[c];
-    }
-    if (i !== cur[c]) {
+    let p = this.pg[c];
+    // left / right: past the edge of a catalogue into the next one, hopping over your own face
+    if (dx) [i, p] = this.pages.stepH(i, p, dx, own);
+    if (dy) i = this.pages.stepV(i, p, dy);
+    if (i !== cur[c] || p !== this.pg[c]) {
+      if (p !== this.pg[c]) this.remember(c);
       cur[c] = i;
+      this.pg[c] = p;
+      this.focus(c);
       audio.sfx('cursor');
       this.refresh();
     }
+  }
+
+  private memKey(c: 0 | 1, page: number) {
+    return `${c}:${this.step(c)}:${page}`;
+  }
+
+  /** keeps side c's cursor on its catalogue (flipping back lands there) */
+  private remember(c: 0 | 1) {
+    const cur = this.step(c) === 'assist' ? this.acursor : this.cursor;
+    this.mem.set(this.memKey(c, this.pg[c]), cur[c]);
+  }
+
+  /** the grid shows side c's catalogue */
+  private focus(c: 0 | 1) {
+    if (this.mode === 'online' && c !== this.me) return;
+    if (this.pages.shown !== this.pg[c]) this.pages.show(this.pg[c]);
+  }
+
+  /** ◀ ▶ (Q / E, PageUp / PageDown, LB / RB): side c goes to the previous / next catalogue */
+  private flip(c: 0 | 1, dir: -1 | 1) {
+    const st = this.step(c);
+    if (st === 'ready' || this.pages.count < 2) return;
+    const cur = st === 'assist' ? this.acursor : this.cursor;
+    const old = this.pg[c];
+    const p = (old + dir + this.pages.count) % this.pages.count;
+    this.remember(c);
+    cur[c] = this.pages.landOn(p, cur[c], old, this.mem.get(this.memKey(c, p)));
+    this.pg[c] = p;
+    this.focus(c);
+    audio.sfx('cursor');
+    this.refresh();
+    this.sendPick();
+  }
+
+  /** arrow tapped / clicked: the player choosing flips (nobody: just browse) */
+  private tapFlip(dir: -1 | 1) {
+    const c = this.waitingStage ? -1 : this.tapCursor();
+    if (c >= 0 && this.step(c as 0 | 1) !== 'ready') this.flip(c as 0 | 1, dir);
+    else {
+      this.pages.show(this.pages.shown + dir);
+      audio.sfx('cursor');
+      this.refresh();
+    }
+  }
+
+  /** side c's catalogue follows its cursor (random cell: stays) */
+  private syncPage(c: 0 | 1) {
+    const cur = this.step(c) === 'assist' ? this.acursor : this.cursor;
+    this.pg[c] = this.pages.pageFor(cur[c], this.pg[c]);
   }
 
   private lock(c: 0 | 1) {
@@ -212,18 +273,24 @@ export class SelectScreen implements Screen {
         // random cell: the cursor shows who the dice picked
         def = this.roster[Math.floor(Math.random() * this.roster.length)];
         this.cursor[c] = this.roster.indexOf(def);
+        this.pg[c] = this.pages.pageFor(this.cursor[c], this.pg[c]);
       }
       this.picked[c] = def;
       this.locked[c] = true;
+      const lp = lastPick[this.mode] ?? ['', ''];
+      lp[c] = def.id;
+      lastPick[this.mode] = lp;
       if (this.cpuSide(c)) {
         // arcade: the CPU's friend is drawn from the fight seed
         this.alocked[c] = true;
         this.assist[c] = null;
       } else {
-        // assist cursor starts next to your own face
+        // assist cursor starts next to your own face (same catalogue; « ? » ends each page)
         const own = this.roster.indexOf(def);
-        this.acursor[c] = own >= 0 ? (own + 1) % this.roster.length : 0;
-        if (this.acursor[c] === own) this.acursor[c] = this.roster.length;
+        const p = this.pages.pageFor(own, this.pg[c]);
+        this.acursor[c] = own >= 0 ? this.pages.stepH(own, p, 1, own)[0] : this.roster.length;
+        if (this.pages.page(this.acursor[c]) !== p) this.acursor[c] = this.roster.length;
+        this.pg[c] = p;
       }
       audio.sfx('confirm');
       this.showroom.play(c, 'win' + (c === 0 ? 0 : 1));
@@ -242,15 +309,25 @@ export class SelectScreen implements Screen {
       if (!def) {
         const pool = this.roster.filter((d) => d.id !== self?.id);
         def = pool[Math.floor(Math.random() * pool.length)] ?? null;
-        if (def) this.acursor[c] = this.roster.indexOf(def);
+        if (def) {
+          this.acursor[c] = this.roster.indexOf(def);
+          this.pg[c] = this.pages.pageFor(this.acursor[c], this.pg[c]);
+        }
       }
       this.assist[c] = def;
       this.alocked[c] = true;
       audio.sfx('confirm');
     }
+    this.focusNext(c);
     this.refresh();
     this.sendPick();
     this.checkDone();
+  }
+
+  /** after a validation / RETOUR: the grid shows the catalogue of whoever chooses next */
+  private focusNext(c: 0 | 1) {
+    const t = this.tapCursor();
+    this.focus(t >= 0 && (this.mode !== 'versus' || isTouchUi() || this.ready(c)) ? (t as 0 | 1) : c);
   }
 
   /** RETOUR for side c: back one step (assist → fighter → nothing). */
@@ -269,6 +346,8 @@ export class SelectScreen implements Screen {
     }
     // online guest changing their mind while the host picks the arena: not ready any more
     if (this.mode === 'online' && c === this.me) this.waitingStage = false;
+    this.syncPage(c);
+    this.focus(c);
     audio.sfx('cancel');
     this.refresh();
     this.sendPick();
@@ -317,6 +396,7 @@ export class SelectScreen implements Screen {
       this.assist[them] = this.alocked[them] ? assist : null;
       this.cursor[them] = this.indexOf(def);
       this.acursor[them] = this.indexOf(assist);
+      this.syncPage(them);
       if (this.locked[them] && !wasLocked) this.showroom.play(them, 'win1');
       if (!this.locked[them] && wasLocked) this.showroom.play(them, 'showcase');
       this.refresh();
@@ -331,7 +411,9 @@ export class SelectScreen implements Screen {
         this.picked[c] = null;
         this.assist[c] = null;
         this.showroom.play(c, 'showcase');
+        this.syncPage(c);
       }
+      this.focus(this.me);
       this.refresh();
     }
     if (m.t === 'start' && !this.link!.isHost) {
@@ -430,6 +512,16 @@ export class SelectScreen implements Screen {
       if (on[1]) cell.append(h('span', { class: 'tag t2' }, this.mode === 'cpu' ? 'CPU' : this.mode === 'training' ? 'CIBLE' : '2P'));
       else if (as[1]) cell.append(h('span', { class: 'tag t2 ta' }, '★2P'));
     }
+    // players browsing another catalogue: their tag on the arrow pointing there
+    this.pages.setAway(
+      ([0, 1] as const)
+        .filter((c) => !(c === 1 && cpuHidden) && !this.ready(c))
+        .map((c) => {
+          const cur = this.step(c) === 'assist' ? this.acursor : this.cursor;
+          const label = c === 0 ? '1P' : this.mode === 'cpu' ? 'CPU' : this.mode === 'training' ? 'CIBLE' : '2P';
+          return { label: (this.step(c) === 'assist' ? '★' : '') + label, cls: c === 0 ? 't1' : 't2', page: this.pages.page(cur[c]) >= 0 ? this.pg[c] : -1 };
+        }),
+    );
     for (const c of [0, 1] as const) {
       const isRemote = this.mode === 'online' && c !== this.me;
       let def = this.picked[c] ?? (isRemote ? this.remoteDef : this.defAt(this.cursor[c]));
@@ -541,7 +633,7 @@ export class SelectScreen implements Screen {
     if (a.width < 40 || a.height < 40) return null;
     const box = { left: a.left, top: a.top, width: a.width, height: a.height };
     if (layout === 'landscape') {
-      const g = this.grid.getBoundingClientRect();
+      const g = this.pages.el.getBoundingClientRect();
       return { box, worldH: 2.45, centerY: 1.06, worldW: 1, slotX: [g.left / 2, (g.right + W) / 2] };
     }
     if (this.root.classList.contains('duo')) return { box, worldH: 2.5, centerY: 1.05, worldW: 3.1, slotX: [a.left + a.width * 0.27, a.left + a.width * 0.73] };
@@ -583,6 +675,8 @@ export class SelectScreen implements Screen {
       else if (e.action === 'up') this.move(cc, 0, -1);
       else if (e.action === 'down') this.move(cc, 0, 1);
       else if (e.action === 'confirm') this.lock(cc);
+      else if (e.action === 'prevPage') this.flip(cc, -1);
+      else if (e.action === 'nextPage') this.flip(cc, 1);
       if (this.mode === 'online' && (e.action === 'left' || e.action === 'right' || e.action === 'up' || e.action === 'down')) this.sendPick();
     }
     this.showroom.fit = this.fitFighters();

@@ -8,7 +8,7 @@ import { FighterView } from '../render/fighterView';
 import { CLIPS } from '../render/poses';
 import { ALL_PROJECTILES, ALL_PROPS, buildProjectile, buildProp, disposeProp } from '../render/props';
 import type { FighterState, GameState } from '../sim/types';
-import { CINE_SPEED, cineTime, curve, getUltimate, type CineEvent, type CineRef, type PropBone, type UltimateScript } from '../sim/ultimates';
+import { CINE_SPEED, cineTime, curve, getUltimate, type CineEvent, type CineRef, type CineSwap, type PropBone, type UltimateScript } from '../sim/ultimates';
 
 /** Somebody who talks in a cinematic (subtitle + voice). */
 export interface CineSpeaker {
@@ -107,11 +107,16 @@ interface Flying {
 const tmp = new THREE.Vector3();
 const tmp2 = new THREE.Vector3();
 
-/** Every CAST id used by a script (swaps and extra actors). */
+/** Every CAST id used by a script (swaps and extra actors; 'self' swaps reuse the fighter's own photo). */
 function castIds(u: UltimateScript): string[] {
   const c = u.cine;
   if (!c) return [];
-  return [...(c.swaps ?? []).map((s) => s.cast), ...(c.actors ?? []).map((a) => a.cast)];
+  return [...(c.swaps ?? []).filter((s) => s.cast !== 'self').map((s) => s.cast), ...(c.actors ?? []).map((a) => a.cast)];
+}
+
+/** Key of a swap look: a cast look is shared, a 'self' restyle belongs to fighter `i`. */
+function swapKey(sw: CineSwap, i: number): string {
+  return sw.cast === 'self' ? `${sw.who}:self:${i}:${JSON.stringify(sw.outfit ?? {})}` : `${sw.who}:${sw.cast}`;
 }
 
 /**
@@ -127,6 +132,13 @@ export class CineDirector {
   private swapViews = new Map<string, CastView>();
   private actorViews = new Map<string, CastView>();
   private props = new Map<number, { obj: THREE.Object3D; holder: string }>();
+  /** scene objects (cine.objects) keyed "<script id>:<index>", and their current world positions by id */
+  private objects = new Map<string, THREE.Object3D>();
+  private objectPos = new Map<string, THREE.Vector3>();
+  /** attacker's start point / facing / script time of the last update (scripted cameras) */
+  private origin = 0;
+  private facing: 1 | -1 = 1;
+  private nowK = 0;
   private flying: Flying[] = [];
   private active = -1;
   private script: UltimateScript | null = null;
@@ -184,14 +196,27 @@ export class CineDirector {
       view.shadow.visible = false;
       return { def, face, view };
     };
-    for (const u of scripts) {
+    scripts.forEach((u, j) => {
       for (const sw of u.cine?.swaps ?? []) {
-        const key = sw.who + ':' + sw.cast;
-        if (!d.swapViews.has(key)) {
+        // script j is played by fighter j: its victim is fighter 1 - j
+        const i = sw.who === 'a' ? j : 1 - j;
+        const key = swapKey(sw, i);
+        if (d.swapViews.has(key)) continue;
+        if (sw.cast === 'self') {
+          // the fighter's own look (same photo) in other clothes
+          const def: FighterDef = { ...defs[i], outfit: { ...defs[i].outfit, ...sw.outfit } };
+          const view = new FighterView(def, faces[i]);
+          view.addTo(scene);
+          view.model.root.visible = false;
+          view.shadow.visible = false;
+          d.swapViews.set(key, { def, face: faces[i], view });
+        } else {
           const cv = make(sw.cast);
           if (cv) d.swapViews.set(key, cv);
         }
       }
+    });
+    for (const u of scripts) {
       for (const a of u.cine?.actors ?? []) {
         if (!d.actorViews.has(a.id)) {
           const cv = make(a.cast);
@@ -213,6 +238,8 @@ export class CineDirector {
       this.tunnel.visible = false;
       this.scene.add(this.tunnel);
     }
+    // scene objects (a goal, a ball...): built now, kept hidden until their cinematic
+    for (const u of this.scripts) (u.cine?.objects ?? []).forEach((o, idx) => this.object(u.id, idx, o.prop));
     return [...ALL_PROPS.map((id) => buildProp(id)), ...ALL_PROJECTILES.map((k) => buildProjectile(k))];
   }
 
@@ -264,11 +291,11 @@ export class CineDirector {
       const i = who === 'a' ? sc : 1 - sc;
       const f = s.fighters[i];
       const sw = c.swaps?.find((w) => w.who === who && k >= w.from && k < w.to);
-      const cv = sw ? this.swapViews.get(who + ':' + sw.cast) : undefined;
+      const cv = sw ? this.swapViews.get(swapKey(sw, i)) : undefined;
       // keep every swap look of this fighter animated so it pops in already posed
       for (const w of c.swaps ?? []) {
         if (w.who !== who) continue;
-        const v = this.swapViews.get(who + ':' + w.cast);
+        const v = this.swapViews.get(swapKey(w, i));
         if (v) {
           v.view.sync(f, s.frame, dtFrames, time);
           v.view.model.root.visible = v === cv;
@@ -352,6 +379,29 @@ export class CineDirector {
       entry.obj.visible = true;
     });
 
+    // ---- scene objects (a ball on its path, a goal...) ----
+    this.origin = A.ultOrigin;
+    this.facing = A.facing;
+    this.nowK = k;
+    (c.objects ?? []).forEach((o, idx) => {
+      const on = k >= o.from && k < o.to;
+      if (!on) {
+        const old = this.objects.get(u.id + ':' + idx);
+        if (old) old.visible = false;
+        this.objectPos.delete(o.id);
+        return;
+      }
+      const obj = this.object(u.id, idx, o.prop);
+      obj.visible = true;
+      obj.position.set(A.ultOrigin + A.facing * curve(o.x, k), curve(o.y, k), curve(o.z, k));
+      obj.rotation.set(0, A.facing * (Math.PI / 2 + (o.yaw ?? 0) * THREE.MathUtils.DEG2RAD), 0);
+      if (o.spin) obj.rotateX(curve(o.spin, k) * THREE.MathUtils.DEG2RAD);
+      obj.scale.setScalar(o.scale ?? 1);
+      let p = this.objectPos.get(o.id);
+      if (!p) this.objectPos.set(o.id, (p = new THREE.Vector3()));
+      p.copy(obj.position);
+    });
+
     // ---- one-shot events crossed since the last update ----
     if (k > this.lastK) {
       const from = this.lastK;
@@ -382,10 +432,57 @@ export class CineDirector {
           this.hooks?.sfx('poof', tmp.x);
         }
       }
+      for (const o of c.objects ?? []) {
+        if (!o.poof || !crossed(o.from) || o.from >= u.length) continue;
+        tmp.set(A.ultOrigin + A.facing * curve(o.x, o.from), curve(o.y, o.from) + 0.6, curve(o.z, o.from) + 0.1);
+        this.effects.cine('poof', tmp, 1.4, A.facing);
+        this.hooks?.sfx('poof', tmp.x);
+      }
       for (const e of c.events ?? []) if (crossed(e.f)) this.fire(e, sc, A, V);
     }
     this.lastK = Math.max(this.lastK, k);
     this.updateFlying(k, false);
+  }
+
+  /** Scene object `idx` of script `id` (built on first use, then kept hidden between cinematics). */
+  private object(id: string, idx: number, prop: Parameters<typeof buildProp>[0]): THREE.Object3D {
+    const key = id + ':' + idx;
+    let obj = this.objects.get(key);
+    if (!obj) {
+      obj = buildProp(prop);
+      obj.visible = false;
+      this.scene.add(obj);
+      this.objects.set(key, obj);
+    }
+    return obj;
+  }
+
+  /**
+   * Scripted camera (the 'path' shot): position and look-at point of the `cine.cams` move
+   * active now. False when none is.
+   */
+  camPath(pos: THREE.Vector3, look: THREE.Vector3): boolean {
+    const c = this.script?.cine;
+    if (this.active < 0 || !c?.cams) return false;
+    const k = this.nowK;
+    const cam = c.cams.find((m) => k >= m.from && k < m.to);
+    if (!cam) return false;
+    const X = (x: number) => this.origin + this.facing * x;
+    pos.set(X(curve(cam.x, k)), curve(cam.y, k), curve(cam.z, k));
+    const L = cam.look;
+    if ('at' in L) {
+      const op = L.at.startsWith('obj:') ? this.objectPos.get(L.at.slice(4)) : undefined;
+      if (op) look.copy(op);
+      else {
+        const v = this.refView(L.at, this.active);
+        if (v) v.headWorld(look);
+        else look.set(X(0), 1.2, 0);
+      }
+      look.y += L.dy ?? 0;
+    } else {
+      look.set(X(curve(L.x, k)), curve(L.y, k), curve(L.z, k));
+    }
+    return true;
   }
 
   /** Display names usable in lines: {a} = attacker, {v} = victim. */
@@ -589,6 +686,8 @@ export class CineDirector {
       disposeProp(p.obj);
     }
     this.props.clear();
+    for (const o of this.objects.values()) o.visible = false;
+    this.objectPos.clear();
     this.views[0].model.root.visible = true;
     this.views[1].model.root.visible = true;
     this.shownViews = [this.views[0], this.views[1]];
@@ -627,6 +726,11 @@ export class CineDirector {
       disposeProp(p.obj);
     }
     this.flying.length = 0;
+    for (const o of this.objects.values()) {
+      o.removeFromParent();
+      disposeProp(o);
+    }
+    this.objects.clear();
     for (const cv of [...this.swapViews.values(), ...this.actorViews.values()]) cv.view.dispose();
     this.swapViews.clear();
     this.actorViews.clear();

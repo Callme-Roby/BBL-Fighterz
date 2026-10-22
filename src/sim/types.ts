@@ -52,7 +52,27 @@ export type MoveId =
   | 'throw'
   | 'super'
   /** ranged profile only: forward + RP throws the fighter's projectile (one on screen at a time) */
-  | 'projectile';
+  | 'projectile'
+  // ---- v6: button chains (mash one button, no direction) — new route steps ----
+  /** RP chain step 2: hook to the head — rear hand swings round in a horizontal arc, hips/shoulders turn hard (high) */
+  | 'hook'
+  /** RP chain step 3: body blow / liver shot — dips the knees, leans in and drives a short uppercut-ish punch into the ribs (mid) */
+  | 'bodyBlow'
+  /** LK / RK chain step: quick snap kick — knee chambers up and the shin snaps out to the belly, then straight back (mid, light) */
+  | 'snapKick'
+  /** RK chain step 2: spinning back heel — full turn on the support foot, the straight leg whips round at head height (mid, heavy) */
+  | 'spinHeel'
+  // ---- v6: two-button combinations (a different button pressed mid-chain): finishers ----
+  /** punch -> punch finisher: double-fist hammer — both fists joined raised over the head, smashed down on the opponent (mid, knockdown) */
+  | 'hammerFist'
+  /** kick -> punch finisher: rising uppercut — crouches then jumps straight up with the fist high (Shoryu-style), feet leave the floor (mid, launcher) */
+  | 'risingUppercut'
+  /** kick -> kick finisher: tornado kick — small jump, the body spins 360 in the air and the leg slashes horizontally (mid, wall bounce) */
+  | 'tornadoKick'
+  /** punch -> kick finisher: axe kick — straight leg raised high above the head, heel dropped on the opponent (mid, ground bounce) */
+  | 'axeKick'
+  /** throw that missed (not an input): arms close on empty air, stumbles one step forward, recovers (no hitbox) */
+  | 'throwWhiff';
 
 /**
  * Character profile (stats in src/sim/archetypes.ts, who is what in src/data/roster.ts):
@@ -203,6 +223,15 @@ export interface FighterState {
   guardMax: number;
   /** frames before the guard gauge starts refilling */
   guardDelay: number;
+  /**
+   * button chain (v6): the button (IN_LP / IN_RP / IN_LK / IN_RK) whose route the current string
+   * follows (0 = none). `autoStep` is the index of the next step of that route.
+   */
+  autoRoute: number;
+  /** the current / last throw is a back throw (back held when it started): the victim lands behind the thrower */
+  throwBack: boolean;
+  /** frames during which this fighter can't be grabbed (after wake-up, hitstun and blockstun) */
+  throwInvuln: number;
 }
 
 /** Projectile of a ranged fighter (part of GameState: rollback-safe). */

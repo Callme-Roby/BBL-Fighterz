@@ -4,6 +4,7 @@ import {
   BEAM_SPEED,
   BEAM_Y,
   PROJ_CLEAR_Y,
+  PROJ_GUARD_DRAIN,
   PROJ_RADIUS,
   PROJ_SPAWN,
   PROJ_SPEED,
@@ -89,18 +90,74 @@ const KNOCKDOWN_MAX = 62;
 const GETUP_FRAMES = 26;
 const THROW_FRAMES = 58;
 const THROW_SLAM_FRAME = 34;
-const THROW_BREAK_WINDOW = 10;
+/** throw escape: press the grab button or any attack button within this many frames of being grabbed */
+const THROW_BREAK_WINDOW = 12;
+/** a press made this many frames before being grabbed also escapes (both pressed at once) */
+const THROW_BREAK_EARLY = 4;
+const THROW_BREAK_FRAMES = 20;
+const THROW_BREAK_PUSH = 0.1;
+/** can't be grabbed for a moment after getting up / leaving hitstun or blockstun (no cheap throws) */
+const THROW_INVULN_WAKE = 12;
+const THROW_INVULN_STUN = 6;
+/** back throw: the victim travels from the front to the back of the thrower between these frames */
+const BACK_THROW_FROM = 12;
 const HITSTOP = { light: 6, medium: 8, heavy: 12 } as const;
 
 // ---- combo system -------------------------------------------------------------
 /**
- * Auto-combo: mashing LP (no direction) on the ground follows this route while every
- * step connects (hit or block). 'superJump' = chase jump after the launcher.
+ * Button chains (auto-combos): mashing ONE attack button (no direction) on the ground follows
+ * that button's route while every step connects (hit or block); a whiffed step ends it.
+ * 'superJump' = chase jump after the launcher (LP route). Per profile: fast = one step longer,
+ * heavy = one step shorter (but harder, see AUTO_DAMAGE). The ranged / balanced profiles use `base`.
+ *  LP: quick punches into the launcher + air combo     RP: heavier punches, power punch ender (wall flight)
+ *  LK: quick kicks, low kick, knee pop-up              RK: heavy kicks, sweep ender (knockdown)
  */
-const AUTO_ROUTE: readonly (MoveId | 'superJump')[] = ['jab', 'jab', 'cross', 'frontKick', 'uppercut', 'superJump', 'jumpPunch', 'jumpKick', 'airSmash'];
-const AUTO_SJ_STEP = 5;
-/** damage multiplier of the moves picked by the auto-combo (manual combos stay more rewarding) */
-const AUTO_DAMAGE = 0.85;
+type RouteStep = MoveId | 'superJump';
+interface Route {
+  base: readonly RouteStep[];
+  fast: readonly RouteStep[];
+  heavy: readonly RouteStep[];
+}
+const AIR_TAIL: readonly RouteStep[] = ['superJump', 'jumpPunch', 'jumpKick', 'airSmash'];
+const ROUTES: Readonly<Record<number, Route>> = {
+  [IN_LP]: {
+    base: ['jab', 'jab', 'cross', 'frontKick', 'uppercut', ...AIR_TAIL],
+    fast: ['jab', 'jab', 'cross', 'hook', 'frontKick', 'uppercut', ...AIR_TAIL],
+    heavy: ['jab', 'cross', 'frontKick', 'uppercut', ...AIR_TAIL],
+  },
+  [IN_RP]: {
+    base: ['cross', 'hook', 'bodyBlow', 'powerPunch'],
+    fast: ['cross', 'jab', 'hook', 'bodyBlow', 'powerPunch'],
+    heavy: ['cross', 'hook', 'powerPunch'],
+  },
+  [IN_LK]: {
+    base: ['frontKick', 'snapKick', 'lowKick', 'knee'],
+    fast: ['frontKick', 'snapKick', 'lowKick', 'snapKick', 'knee'],
+    heavy: ['frontKick', 'lowKick', 'knee'],
+  },
+  [IN_RK]: {
+    base: ['roundhouse', 'spinHeel', 'sweep'],
+    fast: ['roundhouse', 'snapKick', 'spinHeel', 'sweep'],
+    heavy: ['roundhouse', 'sweep'],
+  },
+};
+const NO_ROUTE: readonly RouteStep[] = [];
+/**
+ * Two-button combinations: pressing ANOTHER attack button (no direction) while a chain step
+ * connects (hit or block) ends the string with a finisher (by button family, P = LP / RP, K = LK / RK).
+ */
+const PUNCHES = IN_LP | IN_RP;
+const FINISHER: Readonly<Record<'PP' | 'PK' | 'KP' | 'KK', MoveId>> = {
+  PP: 'hammerFist',
+  PK: 'axeKick',
+  KP: 'risingUppercut',
+  KK: 'tornadoKick',
+};
+const FINISHERS: ReadonlySet<MoveId> = new Set<MoveId>(['hammerFist', 'axeKick', 'risingUppercut', 'tornadoKick']);
+/** route / finisher presses stay buffered this long (mash at any rhythm, the hits still flow) */
+const ROUTE_BUFFER = 16;
+/** damage multiplier of the moves picked by a chain route (manual combos stay more rewarding); heavy hits harder */
+const AUTO_DAMAGE: Readonly<Record<Archetype, number>> = { balanced: 0.85, ranged: 0.85, fast: 0.85, heavy: 1 };
 /** damage scaling: x(1 - SCALE_STEP * hits already in the combo), never below SCALE_MIN */
 const SCALE_STEP = 0.1;
 const SCALE_MIN = 0.3;
@@ -231,6 +288,9 @@ export function createFighter(side: 0 | 1): FighterState {
     guard: GUARD_MAX,
     guardMax: GUARD_MAX,
     guardDelay: 0,
+    autoRoute: 0,
+    throwBack: false,
+    throwInvuln: 0,
   };
 }
 
@@ -394,35 +454,83 @@ function chooseAirMove(btn: number, dir: number): MoveId | null {
   return null;
 }
 
-/** a press that continues the auto-combo: LP alone, no direction */
-function isAutoPress(btn: number, dir: number): boolean {
-  return btn === IN_LP && (dir & R_DIRS) === 0;
+/** a single attack button pressed with no direction (chain / combination input) */
+function isPlainPress(btn: number, dir: number): boolean {
+  return (btn === IN_LP || btn === IN_RP || btn === IN_LK || btn === IN_RK) && (dir & R_DIRS) === 0;
 }
 
-/** next auto-combo move if the buffered press asks for it (null = manual input) */
-function autoNext(f: FighterState): MoveId | 'superJump' | null {
-  if (f.autoStep <= 0 || f.autoStep >= AUTO_ROUTE.length) return null;
-  if (!f.bufBtn || f.bufAge > BUFFER_FRAMES || !isAutoPress(f.bufBtn, f.bufDir | (f.rel & R_D))) return null;
-  return AUTO_ROUTE[f.autoStep];
+/** the chain route of a button for a profile */
+function routeFor(btn: number, a: Archetype): readonly RouteStep[] {
+  const r = ROUTES[btn];
+  if (!r) return NO_ROUTE;
+  return a === 'fast' ? r.fast : a === 'heavy' ? r.heavy : r.base;
 }
 
-/** auto-combo step of a move started from a fresh press (1 = the route's opening jab) */
-function openerStep(id: MoveId, btn: number, dir: number): number {
-  return id === 'jab' && isAutoPress(btn, dir) ? 1 : 0;
+/** the route the fighter is following (empty when none) */
+function routeOf(f: FighterState): readonly RouteStep[] {
+  return f.autoRoute ? routeFor(f.autoRoute, f.archetype) : NO_ROUTE;
+}
+
+/** the route step waiting to be played (whatever the buffer holds) */
+function routeAt(f: FighterState): RouteStep | null {
+  const r = routeOf(f);
+  return f.autoStep > 0 && f.autoStep < r.length ? r[f.autoStep] : null;
+}
+
+function endRoute(f: FighterState) {
+  f.autoStep = 0;
+  f.autoRoute = 0;
+}
+
+/** the buffered press is the route's button again (no direction) */
+function routePressed(f: FighterState): boolean {
+  return f.autoRoute !== 0 && !!f.bufBtn && f.bufAge <= ROUTE_BUFFER && f.bufBtn === f.autoRoute && isPlainPress(f.bufBtn, f.bufDir | (f.rel & R_D));
+}
+
+/** next chain move if the buffered press asks for it (null = manual input) */
+function autoNext(f: FighterState): RouteStep | null {
+  const step = routeAt(f);
+  return step && routePressed(f) ? step : null;
+}
+
+/**
+ * Two-button combination: another attack button (no direction) pressed during a chain
+ * (any step but the route's last one) = that pair's finisher.
+ */
+function finisherNext(f: FighterState): MoveId | null {
+  if (!f.autoRoute || f.autoStep <= 0 || f.autoStep >= routeOf(f).length) return null;
+  if (!f.bufBtn || f.bufAge > ROUTE_BUFFER || f.bufBtn === f.autoRoute || !isPlainPress(f.bufBtn, f.bufDir | (f.rel & R_D))) return null;
+  const from = f.autoRoute & PUNCHES ? 'P' : 'K';
+  const to = f.bufBtn & PUNCHES ? 'P' : 'K';
+  return FINISHER[`${from}${to}` as 'PP' | 'PK' | 'KP' | 'KK'];
+}
+
+/** chain route started by a fresh press: the button whose route opens with this move (0 = none) */
+function openerRoute(f: FighterState, id: MoveId, btn: number, dir: number): number {
+  return isPlainPress(btn, dir) && routeFor(btn, f.archetype)[0] === id ? btn : 0;
+}
+
+/** start a move from a fresh press (opens a chain route when it's a plain button) */
+function startFresh(s: GameState, f: FighterState, o: FighterState, id: MoveId, idx: number, btn: number, dir: number) {
+  const r = openerRoute(f, id, btn, dir);
+  startMove(s, f, o, id, idx, 0, false, r ? 1 : 0, r);
 }
 
 /**
  * @param skip  frames of startup skipped (chained moves come out faster and blend from the previous one)
  * @param chained true when the move cancels a previous one in a string
  */
-function startMove(s: GameState, f: FighterState, o: FighterState, id: MoveId, idx: number, skip = 0, chained = false, auto = 0) {
+function startMove(s: GameState, f: FighterState, o: FighterState, id: MoveId, idx: number, skip = 0, chained = false, auto = 0, route = f.autoRoute) {
   const m = mv(f, id);
   if (m.meterCost) {
     if (f.meter < m.meterCost) return;
     f.meter -= m.meterCost;
   }
-  // auto-combo: index of the next route step (0 = manual move)
+  // chain route: index of the next route step (0 = manual move)
   f.autoStep = auto;
+  f.autoRoute = auto > 0 ? route : 0;
+  // back throw: back held when the throw starts
+  if (m.throw) f.throwBack = ((f.rel | f.bufDir) & R_B) !== 0;
   f.chain = chained ? f.chain + 1 : 1;
   f.repeat = f.lastMove === id ? f.repeat + 1 : 1;
   f.lastMove = id;
@@ -436,8 +544,8 @@ function startMove(s: GameState, f: FighterState, o: FighterState, id: MoveId, i
     f.airChain++;
   }
   if (!m.air) f.vx = 0;
-  // auto-combo steps glide toward the opponent so the route doesn't drop on pushback
-  if (auto > 1 && !m.air && !isAirborne(o)) {
+  // chain steps and finishers glide toward the opponent so the string doesn't drop on pushback
+  if ((auto > 1 || FINISHERS.has(id)) && !m.air && !isAirborne(o)) {
     // where the opponent's pushback will leave them (ground friction: x0.82 per frame)
     const ox = o.x + o.vx / 0.18;
     const gap = Math.abs(ox - f.x) - (m.reach + BODY_RADIUS * 0.4) - (m.advance ?? 0);
@@ -489,8 +597,9 @@ function processInput(s: GameState, f: FighterState, input: number) {
   // the grab button is a shortcut for LP + LK (throw)
   if (f.rel & IN_GRAB && !(f.prevRel & IN_GRAB)) pressed |= IN_LP | IN_LK;
   if (pressed) {
-    // presses within 2 frames are merged (for LP+LK throws)
-    f.bufBtn = (f.bufAge <= 2 ? f.bufBtn : 0) | pressed;
+    // presses within 2 frames are merged (for LP+LK throws); during hitstop the buffer doesn't age,
+    // there the newest press replaces the older one (a chain press then another button = a combination)
+    f.bufBtn = (f.bufAge <= 2 && s.hitstop === 0 ? f.bufBtn : 0) | pressed;
     f.bufDir = dir;
     f.bufQcf = detectQcf(f.dirHist);
     f.bufAge = 0;
@@ -526,17 +635,23 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
   }
   f.actionFrame++;
   if (f.invuln > 0) f.invuln--;
+  if (f.throwInvuln > 0) f.throwInvuln--;
   const dir = f.rel & R_DIRS;
 
   // super jump: UP (or the auto-combo's LP) right after a launcher connected
   if (f.sjWindow > 0) {
     f.sjWindow--;
     if (canSuperJump(f, o)) {
-      const auto = f.autoStep === AUTO_SJ_STEP && autoNext(f) === 'superJump';
+      const auto = autoNext(f) === 'superJump';
       if (upRecently(f) || auto) {
-        const wasAuto = f.autoStep === AUTO_SJ_STEP;
+        const wasAuto = routeAt(f) === 'superJump';
+        const step = f.autoStep;
+        const route = f.autoRoute;
         startSuperJump(s, f, o, idx);
-        f.autoStep = wasAuto ? AUTO_SJ_STEP + 1 : 0;
+        if (wasAuto) {
+          f.autoStep = step + 1;
+          f.autoRoute = route;
+        } else endRoute(f);
         return;
       }
     }
@@ -558,7 +673,7 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
         if (b) {
           const id = chooseGroundMove(f, b.btn, b.dir, b.qcf);
           if (id) {
-            startMove(s, f, o, id, idx, 0, false, openerStep(id, b.btn, b.dir));
+            startFresh(s, f, o, id, idx, b.btn, b.dir);
             break;
           }
         }
@@ -608,14 +723,14 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
       if (f.actionFrame === m.startup) s.events.push({ t: 'whiff', p: idx, heavy: m.strength === 'heavy' });
       // air chains: a connecting air attack flows into the next one (max AIR_CHAIN_MAX per jump)
       const inWindow = f.actionFrame >= m.startup && f.actionFrame <= m.startup + m.active + CHAIN_WINDOW;
-      if (f.moveHit && inWindow && f.airChain < AIR_CHAIN_MAX && f.bufBtn && f.bufAge <= BUFFER_FRAMES) {
+      if (f.moveHit && inWindow && f.airChain < AIR_CHAIN_MAX && f.bufBtn && f.bufAge <= ROUTE_BUFFER) {
         const route = autoNext(f);
         let next: MoveId | null = null;
         let auto = 0;
         if (route && route !== 'superJump' && mv(f, route).air) {
           next = route;
           auto = f.autoStep + 1;
-        } else if (!route) {
+        } else if (!route && f.bufAge <= BUFFER_FRAMES) {
           next = chooseAirMove(f.bufBtn, f.bufDir | (f.rel & R_D));
           if (next === f.moveId && f.repeat >= 2) next = null;
         }
@@ -626,7 +741,7 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
       }
       if (f.actionFrame >= moveTotal(m)) {
         // recovered in the air: back to a plain jump (the jump clip starts on its airborne pose)
-        if (!f.moveHit) f.autoStep = 0;
+        if (!f.moveHit) endRoute(f);
         toAirborne(f, f.vx, f.vy);
       }
       break;
@@ -669,7 +784,7 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
         if (b) {
           const id = chooseGroundMove(f, b.btn, b.dir, b.qcf);
           if (id) {
-            startMove(s, f, o, id, idx, 0, false, openerStep(id, b.btn, b.dir));
+            startFresh(s, f, o, id, idx, b.btn, b.dir);
             break;
           }
         }
@@ -697,33 +812,52 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
         startMove(s, f, o, 'throw', idx);
         break;
       }
+      // a throw that grabbed nothing: short whiff animation (no hitbox), the punish window
+      if (m.throw && f.actionFrame >= m.startup + m.active) {
+        f.moveId = 'throwWhiff';
+        f.actionFrame = 1;
+        f.moveHit = false;
+        s.events.push({ t: 'whiff', p: idx, heavy: false });
+        break;
+      }
       // (the projectile throw is not cancellable: its recovery is the punish window)
-      if (!m.throw && f.moveId !== 'super' && f.moveId !== 'projectile') {
+      if (!m.throw && f.moveId !== 'super' && f.moveId !== 'projectile' && f.moveId !== 'throwWhiff') {
         const inWindow = f.actionFrame >= m.startup && f.actionFrame <= m.startup + m.active + CHAIN_WINDOW;
+        const connected = f.moveHit && inWindow;
         // BBL MAX can cancel any connecting move
-        if (f.moveHit && inWindow && tryStartSuper(s, f, o, idx)) break;
-        if (f.bufBtn && f.bufAge <= BUFFER_FRAMES) {
-          // auto-combo: LP mashed while the previous step connected follows the route
-          const route = f.moveHit && inWindow ? autoNext(f) : null;
+        if (connected && tryStartSuper(s, f, o, idx)) break;
+        // plain presses (one attack button, no direction) during a chain: the route or a combination finisher
+        const plain = !!f.bufBtn && isPlainPress(f.bufBtn, f.bufDir | (f.rel & R_D));
+        const inString = plain && (f.autoRoute !== 0 || FINISHERS.has(f.moveId!));
+        if (connected && f.bufBtn && f.bufAge <= ROUTE_BUFFER) {
+          const route = autoNext(f);
           if (route && route !== 'superJump') {
             startMove(s, f, o, route, idx, Math.floor(mv(f, route).startup * 0.4), true, f.autoStep + 1);
             break;
           }
+          const fin = route ? null : finisherNext(f);
+          if (fin) {
+            startMove(s, f, o, fin, idx, Math.floor(mv(f, fin).startup * 0.4), true);
+            break;
+          }
+        }
+        if (f.bufBtn && f.bufAge <= BUFFER_FRAMES) {
           const next = chooseGroundMove(f, f.bufBtn, f.bufDir | (f.rel & R_D), false);
-          // chains: any move that connected (hit or block) can flow into another one
-          if (!route && next && next !== 'throw' && f.moveHit && inWindow && f.chain < MAX_CHAIN + prof(f).extraChain && !(next === f.moveId && f.repeat >= 2)) {
+          // chains: any move that connected (hit or block) can flow into another one (directional
+          // presses; plain presses inside a button chain only follow the route / the combinations)
+          if (!inString && next && next !== 'throw' && connected && f.chain < MAX_CHAIN + prof(f).extraChain && !(next === f.moveId && f.repeat >= 2)) {
             startMove(s, f, o, next, idx, Math.floor(mv(f, next).startup * 0.4), true);
             break;
           }
           // whiffs: the second half of the recovery can be interrupted by the next attack
           if (next && !f.moveHit && f.actionFrame >= m.startup + m.active + Math.ceil(m.recovery * 0.5)) {
-            startMove(s, f, o, next, idx, 0, false, openerStep(next, f.bufBtn, f.bufDir));
+            startFresh(s, f, o, next, idx, f.bufBtn, f.bufDir);
             break;
           }
         }
       }
-      if (f.actionFrame >= moveTotal(m)) {
-        if (!f.moveHit) f.autoStep = 0;
+      if (f.actionFrame >= moveTotal(mv(f, f.moveId!))) {
+        if (!f.moveHit) endRoute(f);
         toNeutral(f);
         neutral(s, f, o, idx, dir);
       }
@@ -732,9 +866,11 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
 
     case 'hitstun':
     case 'blockstun':
+      if (f.action === 'blockstun') f.crouching = (dir & R_D) !== 0;
       f.stun--;
       if (f.stun <= 0) {
         toNeutral(f);
+        f.throwInvuln = THROW_INVULN_STUN;
         if (dir & R_D) {
           setAction(f, 'crouch');
           f.crouching = true;
@@ -748,6 +884,7 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
       f.stun--;
       if (f.stun <= 0) {
         toNeutral(f);
+        f.throwInvuln = THROW_INVULN_STUN;
         f.guard = f.guardMax;
         f.guardDelay = 0;
       }
@@ -771,6 +908,8 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
       if (f.actionFrame >= GETUP_FRAMES) {
         toNeutral(f);
         endCombo(f);
+        // no throw right on wake-up (the strike invulnerability ends 2 frames later)
+        f.throwInvuln = THROW_INVULN_WAKE;
       }
       break;
 
@@ -780,18 +919,18 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
       break;
 
     case 'thrown': {
-      // throw escape: press a punch right after being grabbed
-      const pressed = f.rel & ~f.prevRel & (IN_LP | IN_RP | IN_GRAB);
-      if (f.actionFrame <= THROW_BREAK_WINDOW && pressed && o.action === 'throwing') {
-        setAction(f, 'throwBreak');
-        setAction(o, 'throwBreak');
-        f.vx = -f.facing * 0.09;
-        o.vx = -o.facing * 0.09;
-        s.events.push({ t: 'throwBreak', p: idx });
+      // throw escape: the grab button or any attack button within THROW_BREAK_WINDOW frames of
+      // being grabbed (a press made just before the grab counts too)
+      const pressed = (f.rel & ~f.prevRel & (IN_BUTTONS | IN_GRAB)) !== 0;
+      const early = f.actionFrame === 1 && !!f.bufBtn && f.bufAge <= THROW_BREAK_EARLY;
+      if (f.actionFrame <= THROW_BREAK_WINDOW && (pressed || early) && o.action === 'throwing') {
+        throwBreak(s, f, o, idx);
         break;
       }
-      // glue to the thrower
-      f.x = o.x + o.facing * 0.62;
+      // glue to the thrower (back throw: carried over to the other side)
+      let side = 0.62;
+      if (o.throwBack && f.actionFrame > BACK_THROW_FROM) side = 0.62 - 1.24 * Math.min(1, (f.actionFrame - BACK_THROW_FROM) / (THROW_SLAM_FRAME - BACK_THROW_FROM));
+      f.x = o.x + o.facing * side;
       if (f.actionFrame === THROW_SLAM_FRAME) {
         // the thrower's profile (heavy = bigger throws)
         const dmg = Math.round(mv(o, 'throw').damage);
@@ -805,10 +944,18 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
         if (f.hp <= 0) f.koed = true;
       }
       if (f.actionFrame >= THROW_FRAMES - 6) {
-        f.x = o.x + o.facing * 1.15;
+        const back = o.throwBack ? -1 : 1;
+        // back throw with the thrower's back to the wall: the thrower steps out so the victim lands in the corner
+        if (back < 0) {
+          const room = ARENA_HALF_WIDTH - 0.05 - Math.abs(o.x - o.facing * 1.15);
+          if (room < 0) o.x += o.facing * -room;
+        }
+        f.x = o.x + o.facing * 1.15 * back;
+        // facing the thrower
+        f.facing = (o.facing * -back) as 1 | -1;
         setAction(f, 'knockdown');
         f.y = 0;
-        f.vx = o.facing * 0.02;
+        f.vx = o.facing * 0.02 * back;
         s.events.push({ t: 'fall', p: idx });
         if (f.koed) setAction(f, 'ko');
       }
@@ -816,7 +963,7 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
     }
 
     case 'throwBreak':
-      if (f.actionFrame >= 20) toNeutral(f);
+      if (f.actionFrame >= THROW_BREAK_FRAMES) toNeutral(f);
       break;
 
     case 'ko':
@@ -825,6 +972,20 @@ function updateFighter(s: GameState, f: FighterState, o: FighterState, idx: numb
     case 'lose':
       break;
   }
+}
+
+/** throw escape (or two throws on the same frame): both pushed apart, back to neutral together */
+function throwBreak(s: GameState, f: FighterState, o: FighterState, idx: number) {
+  for (const x of [f, o]) {
+    setAction(x, 'throwBreak');
+    x.facing = x === f ? (o.x >= f.x ? 1 : -1) : f.x >= o.x ? 1 : -1;
+    x.vx = -x.facing * THROW_BREAK_PUSH;
+    x.crouching = false;
+    x.throwBack = false;
+    endRoute(x);
+  }
+  s.hitstop = Math.max(s.hitstop, 6);
+  s.events.push({ t: 'throwBreak', p: idx });
 }
 
 function toNeutral(f: FighterState) {
@@ -853,8 +1014,8 @@ function neutral(s: GameState, f: FighterState, o: FighterState, idx: number, di
   f.chain = 0;
   f.lastMove = null;
   f.repeat = 0;
-  // back in neutral: the auto-combo is over (unless its super jump step is still possible)
-  if (!(f.autoStep === AUTO_SJ_STEP && f.sjWindow > 0)) f.autoStep = 0;
+  // back in neutral: the chain is over (unless its super jump step is still possible)
+  if (!(routeAt(f) === 'superJump' && f.sjWindow > 0)) endRoute(f);
 
   if (tryStartSuper(s, f, o, idx)) return;
 
@@ -864,7 +1025,7 @@ function neutral(s: GameState, f: FighterState, o: FighterState, idx: number, di
     const d = b.dir | (f.action === 'crouch' ? dir & R_D : 0);
     const id = chooseGroundMove(f, b.btn, d, b.qcf);
     if (id) {
-      startMove(s, f, o, id, idx, 0, false, openerStep(id, b.btn, d));
+      startFresh(s, f, o, id, idx, b.btn, d);
       if (f.action === 'attack') return;
     }
   }
@@ -1006,16 +1167,15 @@ function tryAirDash(s: GameState, f: FighterState, idx: number): boolean {
 /** start an air attack from a buffered press (auto-combo route or manual) */
 function tryAirMove(s: GameState, f: FighterState, o: FighterState, idx: number): boolean {
   const route = autoNext(f);
+  if (route && route !== 'superJump' && mv(f, route).air && !f.airAttackUsed && f.airChain < AIR_CHAIN_MAX) {
+    startMove(s, f, o, route, idx, 0, false, f.autoStep + 1);
+    return true;
+  }
   const b = consumeBuffer(f);
   if (!b || f.airAttackUsed || f.airChain >= AIR_CHAIN_MAX) return false;
-  let id: MoveId | null;
-  let auto = 0;
-  if (route && route !== 'superJump' && mv(f, route).air) {
-    id = route;
-    auto = f.autoStep + 1;
-  } else id = chooseAirMove(b.btn, b.dir | (f.rel & R_D));
+  const id = chooseAirMove(b.btn, b.dir | (f.rel & R_D));
   if (!id) return false;
-  startMove(s, f, o, id, idx, 0, false, auto);
+  startMove(s, f, o, id, idx, 0, false, 0);
   return true;
 }
 
@@ -1129,7 +1289,11 @@ function runSuperCombo(s: GameState, a: FighterState, v: FighterState, idx: numb
   }
   if (reached(u.fall)) s.events.push({ t: 'fall', p: 1 - idx });
   if (k >= u.length) {
-    toNeutral(a);
+    // some scripts end with the attacker lying on the floor too (Matteo's M6)
+    if (u.attackerDown) {
+      setAction(a, 'knockdown');
+      a.crouching = false;
+    } else toNeutral(a);
     a.y = 0;
     v.y = 0;
     if (v.hp <= 0) {
@@ -1220,7 +1384,7 @@ function physics(s: GameState, f: FighterState, idx: number) {
         f.vx = 0;
         f.airChain = 0;
         f.airDashUsed = false;
-        f.autoStep = 0;
+        endRoute(f);
         setAction(f, 'land');
         s.events.push({ t: 'land', p: idx });
       }
@@ -1336,7 +1500,8 @@ function canBlockNow(d: FighterState): boolean {
 
 /** standing guard stops highs & mids, crouching guard stops lows */
 function guardsHeight(d: FighterState, level: Strike['level']): boolean {
-  const crouchBlock = isCrouching(d) || (d.rel & R_D) !== 0;
+  // in blockstun the guard height follows the stick (a low then a mid can both be blocked)
+  const crouchBlock = d.action === 'blockstun' ? (d.rel & R_D) !== 0 : isCrouching(d) || (d.rel & R_D) !== 0;
   return level === 'low' ? crouchBlock : !crouchBlock;
 }
 
@@ -1351,8 +1516,8 @@ function isCounterState(d: FighterState): boolean {
 
 function checkHit(a: FighterState, d: FighterState, ai: number): PendingHit | null {
   if ((a.action !== 'attack' && a.action !== 'airAttack') || !a.moveId || a.moveHit || a.frozen > 0) return null;
-  // the projectile throw has no hitbox of its own (the projectile carries the hit)
-  if (a.moveId === 'projectile') return null;
+  // the projectile throw has no hitbox of its own (the projectile carries the hit), nor a missed throw
+  if (a.moveId === 'projectile' || a.moveId === 'throwWhiff') return null;
   const m = mv(a, a.moveId);
   if (a.actionFrame < m.startup || a.actionFrame >= m.startup + m.active) return null;
 
@@ -1380,7 +1545,8 @@ function checkHit(a: FighterState, d: FighterState, ai: number): PendingHit | nu
   const dCrouch = isCrouching(d);
 
   if (m.throw) {
-    if (dAir || dCrouch || d.action === 'hitstun' || d.action === 'juggle') return null;
+    // no throws on airborne / crouching / stunned fighters, nor right after wake-up / stun (throwInvuln)
+    if (dAir || dCrouch || d.action === 'hitstun' || d.action === 'blockstun' || d.action === 'juggle' || d.throwInvuln > 0) return null;
     return { a: ai, d: 1 - ai, move: m, blocked: false, counter: false, grab: true };
   }
 
@@ -1410,7 +1576,7 @@ function checkHit(a: FighterState, d: FighterState, ai: number): PendingHit | nu
 }
 
 /** blockstun + pushback for a guarded blow (fighters and assists) */
-function applyBlock(s: GameState, di: number, d: FighterState, m: Strike, dir: 1 | -1, hx: number, hy: number) {
+function applyBlock(s: GameState, di: number, d: FighterState, m: Strike, dir: 1 | -1, hx: number, hy: number, drain = 1) {
   d.action = 'blockstun';
   d.actionFrame = 0;
   d.moveId = null;
@@ -1423,7 +1589,7 @@ function applyBlock(s: GameState, di: number, d: FighterState, m: Strike, dir: 1
   s.hitstop = Math.max(s.hitstop, 5);
   s.events.push({ t: 'block', p: di, x: hx, y: hy });
   // the guard wears down; empty = guard crush
-  d.guard -= GUARD_DRAIN[m.strength] * prof(d).guardDrain;
+  d.guard -= GUARD_DRAIN[m.strength] * prof(d).guardDrain * drain;
   d.guardDelay = GUARD_DELAY;
   if (d.guard <= 0) guardCrush(s, di, d, dir);
 }
@@ -1512,7 +1678,7 @@ function landHit(s: GameState, oi: number, d: FighterState, m: Strike, dir: 1 | 
   d.frozen = 0;
   d.dizzy = false;
   // the victim's own pending options are gone
-  d.autoStep = 0;
+  endRoute(d);
   d.sjWindow = 0;
   const wasCrouch = isCrouching(d);
   const jc = d.juggleCount;
@@ -1535,12 +1701,13 @@ function landHit(s: GameState, oi: number, d: FighterState, m: Strike, dir: 1 | 
       d.vy = Math.max(m.launch ?? 0, 0.11);
       d.vx = dir * 0.055;
     }
-  } else if (m.id === 'airSmash' && dAir) {
+  } else if ((m.id === 'airSmash' && dAir) || (m.groundBounce && !d.groundBounced)) {
     // spiked to the floor: bounces once per combo (see physics), a second spike is a plain knockdown
     setAction(d, 'juggle');
     d.flight = 'spike';
     d.vy = SPIKE_VY;
-    d.vx = dir * 0.02;
+    // the axe kick's heel drop pulls the victim in a little (its bounce stays in reach for a follow-up)
+    d.vx = m.groundBounce && !dAir ? -dir * 0.024 : dir * 0.02;
     d.y = Math.max(d.y, 0.02);
     d.juggleCount++;
     d.crouching = false;
@@ -1553,7 +1720,7 @@ function landHit(s: GameState, oi: number, d: FighterState, m: Strike, dir: 1 | 
     d.y = Math.max(d.y, 0.02);
     d.juggleCount++;
     d.crouching = false;
-  } else if (m.launch || dAir || m.knockdown) {
+  } else if (m.launch || dAir || m.knockdown || m.groundBounce) {
     setAction(d, 'juggle');
     d.flight = 'none';
     // juggle decay: the lift fades with every juggle hit, and a falling victim keeps
@@ -1631,11 +1798,12 @@ function applyHit(s: GameState, h: PendingHit) {
 
   const atWall = Math.abs(d.x) > ARENA_HALF_WIDTH - 0.3 && Math.sign(d.x) === a.facing;
   const dAir = isAirborne(d);
-  // heavy enders: powerPunch / roundhouse at the end of a chain or on a counter hit send the victim flying
-  const ender = (m.id === 'powerPunch' || m.id === 'roundhouse') && (a.chain >= 2 || h.counter);
-  const dmg = landHit(s, h.a, d, m, a.facing, hx, hy, {
+  // heavy enders: powerPunch / roundhouse at the end of a chain or on a counter hit send the victim
+  // flying (knockdown once the wall bounce was used); the tornado kick always does
+  const ender = ((m.id === 'powerPunch' || m.id === 'roundhouse') && (a.chain >= 2 || h.counter)) || !!m.wallBounce;
+  const dmg = landHit(s, h.a, d, ender && !m.knockdown ? { ...m, knockdown: true } : m, a.facing, hx, hy, {
     counter: h.counter,
-    scale: a.autoStep >= 2 ? AUTO_DAMAGE : 1,
+    scale: a.autoStep >= 2 ? AUTO_DAMAGE[a.archetype] : 1,
     wallBounce: ender,
     finisher: false,
   });
@@ -1776,7 +1944,7 @@ function assistDizzy(s: GameState, i: number, as: AssistState, m: AssistMove) {
   d.counterHit = false;
   d.moveHit = false;
   d.frozen = 0;
-  d.autoStep = 0;
+  endRoute(d);
   d.sjWindow = 0;
   d.flight = 'none';
   d.comboCount++;
@@ -1921,7 +2089,7 @@ function projectileContact(s: GameState, i: number, p: ProjectileState) {
   // guard: hold away from the projectile (or the guard button)
   const away = dir === -d.facing ? R_B : R_F;
   if (canBlockNow(d) && (d.rel & (away | IN_GUARD)) !== 0) {
-    applyBlock(s, 1 - i, d, m, dir, hx, hy);
+    applyBlock(s, 1 - i, d, m, dir, hx, hy, PROJ_GUARD_DRAIN);
     owner.meter = Math.min(MAX_METER, owner.meter + 2);
     endProjectile(s, i, 'block', hx);
     return;
@@ -2180,9 +2348,11 @@ function runFight(s: GameState, inputs: readonly [number, number]) {
   // simultaneous hit detection (trades are possible)
   const h1 = checkHit(a, b, 0);
   const h2 = checkHit(b, a, 1);
-  // a throw loses to a strike that connects on the same frame
+  // a throw loses to a strike that connects on the same frame; two throws on the same frame = throw break
   if (h1 && h2 && h1.grab !== h2.grab) {
     applyHit(s, h1.grab ? h2 : h1);
+  } else if (h1 && h2 && h1.grab && h2.grab) {
+    throwBreak(s, b, a, 1);
   } else {
     if (h1) applyHit(s, h1);
     if (h2) applyHit(s, h2);

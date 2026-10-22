@@ -427,6 +427,145 @@ button {
   }
 }
 
+/* --- character catalogues: ◀ CATALOGUE 1 · 1 / 2 ▶ around the grid (src/screens/rosterPages.ts) --- */
+.rpages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.rpages .rp-row {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.rpages .rp-row > .grid {
+  min-width: 0;
+}
+
+.rp-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--pixel);
+  font-size: 9px;
+  color: var(--orange2);
+  text-shadow: 2px 2px 0 #000;
+  white-space: nowrap;
+}
+
+.rp-label .rp-num {
+  color: var(--muted);
+}
+
+.rp-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.rp-dots i {
+  width: 7px;
+  height: 7px;
+  background: #555;
+  box-shadow: 1px 1px 0 #000;
+}
+
+.rp-dots i.on {
+  background: var(--orange);
+}
+
+.rp-arrow {
+  position: relative;
+  flex: 0 0 auto;
+  width: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.55);
+  border: 2px solid var(--line);
+  color: var(--orange);
+  font-family: var(--pixel);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.rp-arrow .rp-ico {
+  font-size: 20px;
+  line-height: 1;
+  text-shadow: 2px 2px 0 #000;
+}
+
+.rp-arrow .rp-key {
+  font-size: 8px;
+  color: var(--muted);
+}
+
+.rp-arrow:hover,
+.rp-arrow:active {
+  border-color: var(--orange);
+  color: #fff;
+  background: rgba(255, 138, 28, 0.25);
+}
+
+/* players browsing the catalogue that arrow leads to */
+.rp-away {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.rp-away:empty {
+  display: none;
+}
+
+.rp-away b {
+  font-size: 7px;
+  font-weight: normal;
+  padding: 2px 3px;
+  color: #fff;
+  background: #3aa0ff;
+}
+
+.rp-away b.t2 {
+  background: var(--red);
+}
+
+.rpages.single .rp-arrow,
+.rpages.single .rp-label {
+  display: none;
+}
+
+.cell.off {
+  display: none !important;
+}
+
+.cell.ghost {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.grid.rp-flip {
+  animation: rp-flip 0.18s ease-out;
+}
+
+@keyframes rp-flip {
+  from {
+    opacity: 0.2;
+    transform: translateX(var(--rp-dx, 0));
+  }
+}
+
 /* fighter profile under the name / title: LOURD · RAPIDE · DISTANCE · ÉQUILIBRÉ + 4 stat bars */
 .profile {
   display: flex;

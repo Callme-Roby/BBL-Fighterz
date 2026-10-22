@@ -61,7 +61,7 @@ export const ARCHETYPES: Record<Archetype, ArchetypeStats> = {
   // Zangief / Hugo / Jack: +12.5 % health, +10 % damage, +25 % throws (longer), big guard;
   // 25 % slower walk, slower dash / jump, normals +1 / +2 / +3 frames (light / medium / heavy)
   heavy: {
-    hp: 225, damage: 1.1, throwDamage: 1.25, throwReach: 0.1,
+    hp: 228, damage: 1.12, throwDamage: 1.15, throwReach: 0.1,
     guardMax: 140, guardDrain: 1, guardRefill: 1,
     walkF: 0.0285, walkB: 0.0225, dashF: 0.088, dashFFrames: 17, dashB: 0.085, dashBFrames: 20,
     prejump: 5, jumpVx: 0.039,
@@ -71,7 +71,7 @@ export const ARCHETYPES: Record<Archetype, ArchetypeStats> = {
   // Chun-Li / Cammy: -12.5 % health, -13 % damage, small guard; normals 1 frame faster with
   // 2 frames less recovery, +24 % walk / dash, longer jumps, one more move per string
   fast: {
-    hp: 175, damage: 0.87, throwDamage: 0.87, throwReach: 0,
+    hp: 175, damage: 0.9, throwDamage: 0.87, throwReach: 0,
     guardMax: 70, guardDrain: 1, guardRefill: 1.15,
     walkF: 0.047, walkB: 0.037, dashF: 0.13, dashFFrames: 14, dashB: 0.12, dashBFrames: 16,
     prejump: 3, jumpVx: 0.056,
@@ -85,21 +85,25 @@ export const ARCHETYPES: Record<Archetype, ArchetypeStats> = {
     walkF: 0.032, walkB: 0.027, dashF: 0.105, dashFFrames: 15, dashB: 0.1, dashBFrames: 18,
     prejump: 4, jumpVx: 0.046,
     startup: { light: 0, medium: 0, heavy: 0 }, recovery: { light: 0, medium: 0, heavy: 0 },
-    reachKick: 1.04, reachHeavy: 1.02, extraChain: 0,
+    reachKick: 1.02, reachHeavy: 1, extraChain: 0,
   },
 };
 
 const GROUND_NORMALS: ReadonlySet<MoveId> = new Set<MoveId>([
   'jab', 'cross', 'frontKick', 'roundhouse', 'elbow', 'powerPunch', 'knee', 'crouchJab', 'uppercut', 'lowKick', 'sweep',
+  // v6 chains and two-button finishers
+  'hook', 'bodyBlow', 'snapKick', 'spinHeel', 'hammerFist', 'risingUppercut', 'tornadoKick', 'axeKick',
 ]);
-const KICKS: ReadonlySet<MoveId> = new Set<MoveId>(['frontKick', 'roundhouse', 'knee', 'lowKick', 'sweep', 'jumpKick', 'airSmash']);
+const KICKS: ReadonlySet<MoveId> = new Set<MoveId>([
+  'frontKick', 'roundhouse', 'knee', 'lowKick', 'sweep', 'jumpKick', 'airSmash', 'snapKick', 'spinHeel', 'tornadoKick', 'axeKick',
+]);
 const AIR_NORMALS: ReadonlySet<MoveId> = new Set<MoveId>(['jumpPunch', 'jumpKick', 'airSmash']);
 const MIN_STARTUP = 4;
 const MIN_RECOVERY = 5;
 
 /** Frame data of a move for a profile (the BBL MAX strike is never changed). */
 function adjust(p: ArchetypeStats, m: MoveDef): MoveDef {
-  if (m.id === 'super') return m;
+  if (m.id === 'super' || m.id === 'throwWhiff') return m;
   const r: MoveDef = { ...m };
   if (m.id === 'throw') {
     r.damage = m.damage * p.throwDamage;

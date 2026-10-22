@@ -1,8 +1,10 @@
 import type { MusicId, SfxId } from '../audio/types';
+import type { Outfit } from '../data/roster';
 import type { Strength } from './types';
 import { crew1Scripts } from './ults/crew1';
 import { crew2Scripts } from './ults/crew2';
 import { crew3Scripts } from './ults/crew3';
+import { crew4Scripts } from './ults/crew4';
 
 /**
  * BBL MAX cinematic combos ("ultimates").
@@ -78,7 +80,9 @@ export type CamShot =
   /** looking down at the floor around the victim (someone lying K.O.) */
   | 'floor'
   /** medium full-body shot of the attacker at the height of the model shown (a toddler stays big in frame) */
-  | 'amid';
+  | 'amid'
+  /** scripted camera: the `cine.cams` path active at that frame (position curves + what it looks at) */
+  | 'path';
 
 export interface UltimateScript {
   id: string;
@@ -105,6 +109,11 @@ export interface UltimateScript {
   victimTurn?: [number, number][];
   /** blows the attacker inflicts on themself (never below 1 HP), e.g. a knee giving way */
   selfHits?: { f: number; dmg: number; y: number }[];
+  /**
+   * the attacker ends the cinematic on the floor too (knocked down, gets up normally) instead
+   * of standing: the attacker clip must then end in LYING, like the victim's
+   */
+  attackerDown?: boolean;
   /** presentation-only timeline: extra characters, props, dialogue, effects (ignored by the simulation) */
   cine?: Cinematic;
 }
@@ -141,8 +150,12 @@ export type PropBone = 'handR' | 'handL' | 'head' | 'chest' | 'shoulderR' | 'sho
  *  rose     – a red rose
  *  glove    – boxing glove (attach one to handL and one to handR; it wraps the fist)
  *  headgear – amateur boxing headgear (attach to 'head'; the face stays visible)
+ *  gkglove  – big padded goalkeeper glove (attach one to handL and one to handR)
+ *  football – classic black-and-white football (held in the fist, or a scene object: centred on its origin)
+ *  goal     – football goal with its net, a scene object (`cine.objects`): its origin is the middle
+ *             of the goal line on the floor, the mouth faces the object's +Z, the net goes toward -Z
  */
-export type PropId = 'smg' | 'grenade' | 'bazooka' | 'mic' | 'shades' | 'phone' | 'rose' | 'glove' | 'headgear';
+export type PropId = 'smg' | 'grenade' | 'bazooka' | 'mic' | 'shades' | 'phone' | 'rose' | 'glove' | 'headgear' | 'gkglove' | 'football' | 'goal';
 
 /**
  * One-shot visual effects (src/render/effects.ts):
@@ -205,13 +218,56 @@ export interface CineActor {
 export interface CineSwap {
   /** whose model is replaced: the attacker or the victim */
   who: 'a' | 'v';
-  /** replacement look (it plays the same animation): a CAST id (src/data/cast.ts) or a roster fighter id (e.g. 'dylan') */
+  /**
+   * replacement look (it plays the same animation): a CAST id (src/data/cast.ts), a roster
+   * fighter id (e.g. 'dylan'), or 'self' = the fighter's own look with the `outfit` below
+   */
   cast: string;
+  /** with cast 'self': clothes changed (merged over the fighter's own outfit) */
+  outfit?: Partial<Outfit>;
   /** active during [from, to) */
   from: number;
   to: number;
   /** effect at both switches: smoke puff, or a golden power burst (default 'poof') */
   fx?: 'poof' | 'power' | 'none';
+}
+
+/**
+ * A prop placed in the arena (not held): a ball flying along a scripted path, a goal...
+ * Positions use the same frame as the actors: x forward on the attacker's axis from the
+ * attacker's start point (like `ax`), y up from the floor, z toward the gameplay camera.
+ */
+export interface CineObject {
+  /** id for `look: { at: 'obj:<id>' }` of the scripted cameras */
+  id: string;
+  prop: PropId;
+  /** present during [from, to) */
+  from: number;
+  to: number;
+  x: CurveKeys;
+  y?: CurveKeys;
+  z?: CurveKeys;
+  /** turn in degrees around the vertical; 0 = the prop's +Z along the attacker's facing, 180 = toward the attacker */
+  yaw?: number;
+  /** rolling: degrees per script frame around the prop's own X axis (curve: speed over time) */
+  spin?: CurveKeys;
+  scale?: number;
+  /** smoke puff + sound when appearing (default false) */
+  poof?: boolean;
+}
+
+/**
+ * Scripted camera move, shown by the 'path' shot of `cams` while it is active. Same frame
+ * as `CineObject` (x on the attacker's axis from the start point, y up, z toward the gameplay camera).
+ */
+export interface CineCam {
+  from: number;
+  to: number;
+  x: CurveKeys;
+  y: CurveKeys;
+  z: CurveKeys;
+  /** looks at a character's head ('a', 'v', actor id) or a scene object ('obj:<id>'), raised by `dy` */
+  look: { at: CineRef; dy?: number } | { x: CurveKeys; y: CurveKeys; z?: CurveKeys };
 }
 
 export interface CineProp {
@@ -268,6 +324,10 @@ export interface Cinematic {
   swaps?: CineSwap[];
   actors?: CineActor[];
   props?: CineProp[];
+  /** props standing / moving in the arena on their own */
+  objects?: CineObject[];
+  /** scripted camera moves (used by the 'path' shot) */
+  cams?: CineCam[];
   /** screen fade: 0 = picture, 1 = black (e.g. [[40,0],[46,1],[120,1],[126,0]]) */
   fade?: CurveKeys;
   /** stage lighting multiplier (default: 0.4 dimmed during the whole cinematic, 1 = normal) */
@@ -1356,7 +1416,7 @@ export const ULTIMATES: Record<string, UltimateScript> = {
   handbag,
 };
 
-for (const u of [...crew1Scripts(), ...crew2Scripts(), ...crew3Scripts()]) ULTIMATES[u.id] = u;
+for (const u of [...crew1Scripts(), ...crew2Scripts(), ...crew3Scripts(), ...crew4Scripts()]) ULTIMATES[u.id] = u;
 
 export function getUltimate(id: string | undefined): UltimateScript {
   return (id && ULTIMATES[id]) || rush;

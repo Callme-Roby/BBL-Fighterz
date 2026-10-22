@@ -1,6 +1,7 @@
 import { audio } from '../audio/audio';
 import type { App, Screen } from '../app';
-import type { BodyType, FaceGen, FighterDef, HairStyle, TopStyle } from '../data/roster';
+import { ROSTER, type BodyType, type FaceGen, type FighterDef, type HairStyle, type TopStyle } from '../data/roster';
+import { catalogueOf } from './rosterPages';
 import { loadCustoms, saveCustoms } from '../game/settings';
 import { input } from '../input/input';
 import { cropFileToDataUrl } from '../render/faceTexture';
@@ -384,7 +385,7 @@ export class LabScreen implements Screen {
     const list = loadCustoms().filter((x) => x.id !== this.def.id);
     list.push(structuredClone(this.def));
     if (saveCustoms(list)) {
-      this.msg.textContent = `${this.def.name} est prêt au combat ! Il apparaît dans la sélection.`;
+      this.msg.textContent = `${this.def.name} est prêt au combat ! Il apparaît dans la sélection${new Set(catalogueOf(ROSTER)).size > 1 ? ' (dernier catalogue)' : ''}.`;
       this.msg.classList.remove('err');
       audio.sfx('confirm');
     } else {

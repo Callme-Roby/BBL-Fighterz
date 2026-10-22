@@ -39,6 +39,10 @@ export interface MoveDef {
   invulnFrames?: number;
   /** freeze the opponent for N frames when the move starts (super flash) */
   freezeOpponent?: number;
+  /** on hit: sends the victim flying toward the wall (wall bounce, once per combo) */
+  wallBounce?: boolean;
+  /** on hit: slams the victim into the floor, it bounces back up into a juggle (once per combo) */
+  groundBounce?: boolean;
 }
 
 const M = (m: MoveDef) => m;
@@ -59,10 +63,12 @@ export const MOVES: Record<MoveId, MoveDef> = {
     reach: 0.98, hitY: 1.15, hitstun: 20, blockstun: 12, pushHit: 0.07, pushBlock: 0.06,
     strength: 'medium', cancels: ['roundhouse'], advance: 0.06,
   }),
+  // v6: knocks down only as a chain ender (2nd+ move of a string) or on a counter hit (wall flight, see applyHit),
+  // so mashing RK (its chain opener) can continue
   roundhouse: M({
     id: 'roundhouse', name: 'Roundhouse', startup: 15, active: 4, recovery: 20, damage: 22, level: 'high',
     reach: 1.02, hitY: 1.65, hitstun: 22, blockstun: 14, pushHit: 0.08, pushBlock: 0.07,
-    strength: 'heavy', knockdown: true, advance: 0.08,
+    strength: 'heavy', advance: 0.08,
   }),
   elbow: M({
     id: 'elbow', name: 'Coude', startup: 11, active: 3, recovery: 12, damage: 14, level: 'mid',
@@ -128,9 +134,58 @@ export const MOVES: Record<MoveId, MoveDef> = {
   // ranged profile: the throw itself (the projectile carries the hit, see PROJ_* below). Spawns on
   // frame `startup`; the long recovery is the price: jumped over on reaction from mid range = punished
   projectile: M({
-    id: 'projectile', name: 'Projectile', startup: 13, active: 1, recovery: 34, damage: 13, level: 'mid',
+    id: 'projectile', name: 'Projectile', startup: 13, active: 1, recovery: 38, damage: 11, level: 'mid',
     reach: 0, hitY: 1.0, hitstun: 20, blockstun: 16, pushHit: 0.06, pushBlock: 0.06,
     strength: 'medium',
+  }),
+
+  // ---- v6: button chains (see sim.ts ROUTES) ----
+  hook: M({
+    id: 'hook', name: 'Crochet', startup: 8, active: 3, recovery: 12, damage: 10, level: 'high',
+    reach: 0.78, hitY: 1.6, hitstun: 20, blockstun: 11, pushHit: 0.04, pushBlock: 0.045,
+    strength: 'medium', advance: 0.06,
+  }),
+  bodyBlow: M({
+    id: 'bodyBlow', name: 'Au foie', startup: 10, active: 3, recovery: 14, damage: 12, level: 'mid',
+    reach: 0.76, hitY: 1.15, hitstun: 21, blockstun: 12, pushHit: 0.045, pushBlock: 0.05,
+    strength: 'medium', advance: 0.12,
+  }),
+  snapKick: M({
+    id: 'snapKick', name: 'Fouetté', startup: 7, active: 3, recovery: 11, damage: 9, level: 'mid',
+    reach: 0.9, hitY: 1.1, hitstun: 18, blockstun: 10, pushHit: 0.04, pushBlock: 0.04,
+    strength: 'light',
+  }),
+  spinHeel: M({
+    id: 'spinHeel', name: 'Talon retourné', startup: 13, active: 4, recovery: 18, damage: 17, level: 'mid',
+    reach: 1.0, hitY: 1.5, hitstun: 22, blockstun: 13, pushHit: 0.055, pushBlock: 0.06,
+    strength: 'heavy', advance: 0.1,
+  }),
+  // ---- v6: two-button combinations (finishers) ----
+  hammerFist: M({
+    id: 'hammerFist', name: 'Marteau', startup: 13, active: 4, recovery: 22, damage: 24, level: 'mid',
+    reach: 0.84, hitY: 1.55, hitstun: 24, blockstun: 15, pushHit: 0.08, pushBlock: 0.02,
+    strength: 'heavy', knockdown: true, advance: 0.15,
+  }),
+  risingUppercut: M({
+    id: 'risingUppercut', name: 'Uppercut sauté', startup: 10, active: 6, recovery: 26, damage: 17, level: 'mid',
+    reach: 0.78, hitY: 1.7, hitstun: 22, blockstun: 14, pushHit: 0.02, pushBlock: 0.035,
+    strength: 'heavy', launch: 0.19, advance: 0.15,
+  }),
+  tornadoKick: M({
+    id: 'tornadoKick', name: 'Tornade', startup: 14, active: 5, recovery: 24, damage: 21, level: 'mid',
+    reach: 1.05, hitY: 1.5, hitstun: 24, blockstun: 15, pushHit: 0.1, pushBlock: 0.03,
+    strength: 'heavy', knockdown: true, wallBounce: true, advance: 0.25,
+  }),
+  axeKick: M({
+    id: 'axeKick', name: 'Hache', startup: 15, active: 4, recovery: 22, damage: 19, level: 'mid',
+    reach: 0.9, hitY: 1.65, hitstun: 24, blockstun: 16, pushHit: 0.02, pushBlock: 0.025,
+    strength: 'heavy', groundBounce: true, advance: 0.12,
+  }),
+  // a throw that grabbed nothing turns into this (no hitbox): the price of a missed throw
+  throwWhiff: M({
+    id: 'throwWhiff', name: 'Choppe ratée', startup: 1, active: 1, recovery: 24, damage: 0, level: 'high',
+    reach: 0, hitY: 1.3, hitstun: 0, blockstun: 0, pushHit: 0, pushBlock: 0,
+    strength: 'light',
   }),
 };
 
@@ -154,6 +209,8 @@ export interface Strike {
   launch?: number;
   /** jumping attack */
   air?: boolean;
+  /** slams the victim into the floor (bounce, once per combo) */
+  groundBounce?: boolean;
 }
 
 /**
@@ -213,11 +270,13 @@ export const ASSIST_COOLDOWN = 480;
  * on screen: pressing again while it is alive plays the throw but spawns nothing (Street
  * Fighter's one-fireball rule). Opposite projectiles clash; a BBL MAX sends them away.
  */
-export const PROJ_SPEED = 0.09;
+export const PROJ_SPEED = 0.075;
 /** flight height (m) and spawn distance in front of the thrower (m) */
 export const PROJ_Y = 1.0;
 export const PROJ_SPAWN = 0.55;
 /** horizontal half-size of the projectile's hitbox (m) */
 export const PROJ_RADIUS = 0.22;
 /** a jumper whose feet are above this height flies over it (m) */
-export const PROJ_CLEAR_Y = 0.72;
+export const PROJ_CLEAR_Y = 0.6;
+/** a blocked projectile drains only this share of a normal blow's guard (it is easy to block) */
+export const PROJ_GUARD_DRAIN = 0.5;

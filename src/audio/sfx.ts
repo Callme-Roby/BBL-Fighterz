@@ -47,6 +47,8 @@ export const RANDOMIZED_SFX: ReadonlySet<SfxId> = new Set<SfxId>([
   'zap',
   'splat',
   'guardBreak',
+  'clutch',
+  'tech',
 ]);
 
 /**
@@ -97,6 +99,8 @@ const LEVEL: Record<SfxId, number> = {
   zap: 0.6,
   splat: 0.8,
   guardBreak: 0.42,
+  clutch: 0.9,
+  tech: 0.6,
 };
 
 /** Play a procedural effect. */
@@ -1026,5 +1030,28 @@ const SFX: Record<SfxId, (env: SfxEnv, t: number, p: number) => void> = {
     o.connect(lp);
     o.start(t + 0.06);
     o.stop(t + 0.64);
+  },
+  /** Hands closing on clothes: a short fabric rustle and a dull grip thud. */
+  clutch(env, t, p) {
+    const { ctx, out } = env;
+    noiseBurst(ctx, out, t, { filter: 'bandpass', freq: 1800 * p, freqEnd: 900 * p, sweep: 0.08, q: 1.2, peak: 0.6, attack: 0.004, decay: 0.09 });
+    noiseBurst(ctx, out, t + 0.035, { filter: 'bandpass', freq: 1100 * p, q: 1.6, peak: 0.4, attack: 0.003, decay: 0.07 });
+    sweepTone(ctx, out, t, { f0: 170 * p, f1: 80 * p, sweep: 0.06, peak: 0.55, decay: 0.12 });
+  },
+
+  /** Throw escape: two sharp slaps (hands knocked apart) + a bright ringing ping. */
+  tech(env, t, p) {
+    const { ctx, out } = env;
+    reverbSend(env, 0.25);
+    for (const dt of [0, 0.045]) {
+      noiseBurst(ctx, crunch(env, 0.5, 0.8), t + dt, { filter: 'bandpass', freq: 2900 * p, q: 0.9, peak: 0.9, attack: 0.0005, decay: 0.06 });
+      noiseBurst(ctx, out, t + dt, { filter: 'highpass', freq: 5200 * p, peak: 0.5, attack: 0.0005, decay: 0.02 });
+      sweepTone(ctx, out, t + dt, { f0: 380 * p, f1: 150 * p, sweep: 0.04, peak: 0.45, decay: 0.07 });
+    }
+    // the spark between them: metallic ping, slightly detuned pair
+    sweepTone(ctx, out, t + 0.01, { type: 'triangle', f0: 1980 * p, f1: 1960 * p, sweep: 0.3, peak: 0.22, decay: 0.38 });
+    sweepTone(ctx, out, t + 0.01, { type: 'triangle', f0: 2970 * p, f1: 2950 * p, sweep: 0.3, peak: 0.12, decay: 0.26 });
+    // air pushed out as they skid apart
+    noiseBurst(ctx, out, t + 0.05, { filter: 'bandpass', freq: 500 * p, freqEnd: 1600 * p, sweep: 0.14, q: 1.3, peak: 0.3, attack: 0.04, decay: 0.12 });
   },
 };

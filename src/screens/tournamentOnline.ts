@@ -14,12 +14,12 @@ import { fullRoster, settings } from '../game/settings';
 import { assistOfParticipant, fighterOf, humansIn, matchTitle, MAX_PARTICIPANTS, NAME_MAX, totalMatches } from '../game/tournament';
 import { input } from '../input/input';
 import { preloadNet, tournamentInviteUrl } from '../net/peer';
-import { loadFace } from '../render/faceTexture';
 import { Showroom } from '../render/showroom';
 import { backButton, h, Menu, uiRoot, type MenuItem } from '../ui/dom';
 import { goMenu, goTournament, goTournamentOnline } from './flow';
 import { profileBadge } from './profile';
 import { assistTag, bracketTree, centerShowroom, controlsEl, guardButtons, portrait, syncMenuFocus } from './tournamentShared';
+import { catalogueOf, PagedGrid } from './rosterPages';
 
 const DIFF_LABEL = { easy: 'FACILE', normal: 'NORMAL', hard: 'DIFFICILE' } as const;
 
@@ -234,6 +234,10 @@ export class TournamentOnlineScreen implements Screen {
   /** lobby: grid cursor (keyboard) */
   private cursor = 0;
   private cols = 6;
+  /** catalogues of the fighter / assist grids (rebuilt on each render: the page shown is kept here) */
+  private fgrid: PagedGrid | null = null;
+  private fpage = -1;
+  private apage = -1;
   private nameField: HTMLInputElement | null = null;
   private shownFighter = '';
   /** players mashing buttons at the end of a fight must not launch the next one by accident */
@@ -326,35 +330,51 @@ export class TournamentOnlineScreen implements Screen {
       });
       const all = this.roster;
       this.cols = Math.min(6, all.length);
-      const grid = h('div', { class: 'grid tn-lgrid', style: `--cols:${this.cols}` });
-      all.forEach((def, i) => {
-        const cell = h('div', { class: 'cell' + (myDef?.id === def.id ? ' p1' : '') + (i === this.cursor ? ' cur' : '') }, h('div', { class: 'nm' }, def.name));
-        loadFace(def).then((f) => (cell.style.backgroundImage = `url(${f.portraitUrl})`));
-        cell.addEventListener('click', () => this.pick(i));
-        grid.append(cell);
+      // first time: cursor and catalogue on my fighter
+      const myIdx = myDef ? all.findIndex((d) => d.id === myDef.id) : -1;
+      const fg = new PagedGrid(all, { cols: this.cols, gridClass: 'tn-lgrid', onCell: (i) => this.pick(i), onFlip: (d) => this.flipFighters(d) });
+      if (this.fpage < 0) {
+        if (myIdx >= 0) this.cursor = myIdx;
+        this.fpage = fg.pageFor(this.cursor, 0);
+      }
+      fg.show(this.fpage);
+      fg.cells.forEach((cell, i) => {
+        cell.classList.toggle('p1', i === myIdx);
+        cell.classList.toggle('cur', i === this.cursor);
       });
+      this.fgrid = fg;
+      const grid = fg.el;
       // assist: the built-in fighters (every browser knows them) except mine, « ? » = au hasard
       const myAssist = mine.assistId ? (ROSTER.find((d) => d.id === mine.assistId) ?? null) : null;
-      const agrid = h('div', { class: 'grid tn-lgrid tn-agrid', style: `--cols:${this.cols}` });
-      [...ROSTER, null].forEach((def) => {
-        const own = !!def && def.id === myDef?.id;
-        const on = def ? myAssist?.id === def.id : !myAssist;
-        const cell = h(
-          'div',
-          { class: 'cell' + (def ? '' : ' special') + (on ? ' a1' : '') + (own ? ' own' : ''), title: def ? `${def.name} : ${assistOf(def).name}` : 'Au hasard' },
-          def ? h('div', { class: 'nm' }, def.name) : '?',
-        );
-        if (def) loadFace(def).then((f) => (cell.style.backgroundImage = `url(${f.portraitUrl})`));
-        cell.addEventListener('click', () => {
-          if (own) {
+      const ag = new PagedGrid(ROSTER, {
+        cols: this.cols,
+        random: true,
+        gridClass: 'tn-lgrid tn-agrid',
+        title: (def) => (def ? `${def.name} : ${assistOf(def).name}` : 'Au hasard'),
+        onCell: (i) => {
+          const def = ROSTER[i] ?? null;
+          if (def && def.id === myDef?.id) {
             audio.sfx('cancel');
             return;
           }
           audio.sfx('confirm');
           ot.setMe(this.nameField?.value ?? mine.name, myDef, def?.id ?? '');
-        });
-        agrid.append(cell);
+        },
+        onFlip: (d) => {
+          this.apage = ag.shown + d;
+          ag.show(this.apage);
+          this.apage = ag.shown;
+          audio.sfx('cursor');
+        },
       });
+      if (this.apage < 0) this.apage = ag.pageFor(myAssist ? ROSTER.indexOf(myAssist) : -1, 0);
+      ag.show(this.apage);
+      ag.cells.forEach((cell, i) => {
+        const def = ROSTER[i] ?? null;
+        cell.classList.toggle('own', !!def && def.id === myDef?.id);
+        cell.classList.toggle('a1', def ? myAssist?.id === def.id : !myAssist);
+      });
+      const agrid = ag.el;
       const a = myAssist ? assistOf(myAssist) : null;
       me = h(
         'div',
@@ -457,8 +477,12 @@ export class TournamentOnlineScreen implements Screen {
     if (!mine) return;
     const ids = ['', ...ROSTER.map((d) => d.id).filter((id) => id !== mine.fighterId)];
     const k = ids.indexOf(mine.assistId);
+    const next = ids[(k + 1) % ids.length];
+    // the assist grid shows the catalogue of the new friend
+    const idx = ROSTER.findIndex((d) => d.id === next);
+    if (idx >= 0) this.apage = catalogueOf(ROSTER)[idx];
     audio.sfx('cursor');
-    ot.setMe(this.nameField?.value ?? mine.name, entryFighter(mine, this.roster), ids[(k + 1) % ids.length]);
+    ot.setMe(this.nameField?.value ?? mine.name, entryFighter(mine, this.roster), next);
   }
 
   private updateShowroom(def: FighterDef | null) {
@@ -637,10 +661,17 @@ export class TournamentOnlineScreen implements Screen {
       const ot = this.ot;
       // lobby: arrows move in the fighter grid, the menu is reached with up/down at its edges
       if (!this.confirmMenu && ot && !ot.started && ot.me >= 0 && (e.action === 'left' || e.action === 'right')) {
-        const n = this.roster.length;
-        this.cursor = (this.cursor + (e.action === 'left' ? -1 : 1) + n) % n;
+        // past the edge of a catalogue into the next one
+        const fg = this.fgrid;
+        if (fg) [this.cursor, this.fpage] = fg.stepH(this.cursor, fg.shown, e.action === 'left' ? -1 : 1);
+        else this.cursor = (this.cursor + (e.action === 'left' ? -1 : 1) + this.roster.length) % this.roster.length;
+        fg?.show(this.fpage);
         audio.sfx('cursor');
         this.markCursor();
+        continue;
+      }
+      if (!this.confirmMenu && ot && !ot.started && ot.me >= 0 && (e.action === 'prevPage' || e.action === 'nextPage')) {
+        this.flipFighters(e.action === 'prevPage' ? -1 : 1);
         continue;
       }
       if (!menu) continue;
@@ -654,9 +685,21 @@ export class TournamentOnlineScreen implements Screen {
     this.showroom.render(this.app.pipeline, dt, this.app.aspect);
   }
 
+  /** ◀ ▶ (Q / E, PageUp / PageDown, LB / RB): the fighter grid shows the previous / next catalogue (nothing picked until ← →) */
+  private flipFighters(dir: -1 | 1) {
+    const fg = this.fgrid;
+    if (!fg || fg.count < 2) return;
+    const old = fg.shown;
+    fg.show(old + dir);
+    this.fpage = fg.shown;
+    this.cursor = fg.landOn(fg.shown, this.cursor, old);
+    fg.cells.forEach((c, i) => c.classList.toggle('cur', i === this.cursor));
+    audio.sfx('cursor');
+  }
+
   /** Keyboard / gamepad in the lobby: ← → browse the fighters (the highlighted one is chosen). */
   private markCursor() {
-    this.root.querySelectorAll('.tn-lgrid .cell').forEach((c, i) => c.classList.toggle('cur', i === this.cursor));
+    this.fgrid?.cells.forEach((c, i) => c.classList.toggle('cur', i === this.cursor));
     const ot = this.ot;
     if (ot && ot.me >= 0) this.pick(this.cursor);
   }

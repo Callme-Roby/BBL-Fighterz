@@ -22,7 +22,8 @@ leurs photos sont plaquées sur le visage des combattants par un shader.
   ASSIST l'appelle : il débarque, place son attaque signature (ruée, lanceur, projectile ou distraction)
   et repart, puis il faut attendre qu'il recharge
 - **LABO** : crée un perso dans le navigateur avec une photo (recadrage, cheveux, fringues, voix, répliques)
-- Sélection des persos avec aperçu 3D, choix de l'arène, écran VS, intro de chaque perso
+- Sélection des persos avec aperçu 3D, **deux catalogues de persos** (flèches ◀ ▶ pour passer de l'un
+  à l'autre), choix de l'arène, écran VS, intro de chaque perso
   (« Je vais te tuer. »), ROUND 1… FIGHT !, K.O. au ralenti, poses de victoire
 - 3 arènes : **Sunset Hood** (cul-de-sac de Los Santos au coucher du soleil), **Sky Dojo**
   (plateforme au-dessus des nuages, hommage à Tekken 3), **Neon Parking** (toit de parking la nuit)
@@ -87,8 +88,14 @@ jauge **BBL** qui se remplit en tapant/encaissant : pleine, la touche **BBL MAX*
 (gros plan sur le visage + réplique, puis ruée : si elle touche, cinématique propre à chaque perso),
 utilisable aussi en fin de combo.
 
-**Combos façon FighterZ** : **auto-combo** en martelant Poing G (sans direction) : poings, pied,
-uppercut, super saut et smash s'enchaînent tout seuls · **combos aériens** : après un lanceur, HAUT =
+**Enchaînements sur les 4 boutons** : martèle UN bouton sans direction et les coups s'enchaînent
+tout seuls — Poing G : poings, pied, uppercut, super saut et smash · Poing D : direct, crochet, au foie,
+grosse patate (contre le mur) · Pied G : front kick, fouetté, low kick, genou (décolle) · Pied D :
+roundhouse, talon retourné, balayette. **Combinaisons** : en plein enchaînement, change de bouton —
+poing → poing = MARTEAU, poing → pied = HACHE (rebond au sol), pied → poing = UPPERCUT SAUTÉ, pied →
+pied = TORNADE (contre le mur). **Saisies** : SAISIE (ou Poing G + Pied G), + ARRIÈRE = projection
+arrière ; pour se libérer, appuie vite (0,2 s) sur SAISIE ou n'importe quelle attaque ; on ne peut pas
+saisir quelqu'un en garde ou qui se relève ; une saisie ratée se punit · **combos aériens** : après un lanceur, HAUT =
 super saut à la poursuite de l'adversaire, puis poings / pieds en l'air, avant-avant = dash aérien,
 bas + pied = smash qui l'écrase au sol · rebonds sur le mur et au sol pour prolonger · dégâts et
 étourdissement dégressifs dans les longs combos (pas d'infini) · **finish DESTRUCTION** : le coup du
@@ -131,6 +138,23 @@ l'arène. Pas de chrono (∞), pas de rounds. **Pause** (Échap / Start / II) ou
 
 Sur téléphone en hauteur, l'historique des touches s'affiche sur la manette (au-dessus du stick) et le
 menu de pause prend la place de la manette : les persos restent visibles.
+
+### Les catalogues de persos
+
+La grille de sélection est rangée en **catalogues** (CATALOGUE 1, CATALOGUE 2…) affichés un à la fois,
+avec l'indicateur « 1 / 2 » au-dessus. Pour passer de l'un à l'autre :
+
+- souris / tactile : les flèches **◀ ▶** de chaque côté de la grille ;
+- clavier : **Q / E** (J2 en versus : **/ et P**), ou **Page↑ / Page↓**, ou continue simplement au-delà
+  de la première / dernière case de la grille ;
+- manette : **L1 / R1** (LB / RB), ou continue au-delà du bord de la grille.
+
+Ça marche partout où on choisit un perso : versus, arcade, entraînement (partenaire compris), en ligne,
+assists, tournoi et salon du tournoi en ligne. En versus local, chaque joueur feuillette de son côté : la
+grille montre le catalogue de celui qui bouge, et l'étiquette 1P / 2P sur une flèche indique que l'autre
+est sur un autre catalogue. La case « ? » termine chaque catalogue et tire au sort parmi tout le monde ;
+les persos du **LABO** sont dans le dernier catalogue. En revenant sur l'écran de sélection, le curseur
+(et son catalogue) reprend le dernier perso validé.
 
 ### Les assists
 
@@ -193,6 +217,7 @@ fondus, musique) jouée par `src/game/cinematic.ts`.
   outfit: { top: 'tank', topColor: '#ffffff', trimColor: '#dddddd',
             pantsColor: '#3b5a8c', shoesColor: '#111111' }, // tank | tshirt | tracksuit | hoodie | shirtless
   build: 1.1,       // carrure
+  page: 2,          // catalogue de la sélection (1 par défaut)
   headScale: 1.18,  // grosse tête = visage plus reconnaissable
   introLines: ['Je vais te tuer.'],
   winLines: ['Trop facile.'],

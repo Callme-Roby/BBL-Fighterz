@@ -568,6 +568,33 @@ export class Effects {
     }
   }
 
+  /**
+   * Throw escape: a white / gold spark burst between the two fighters, a flat shockwave
+   * and streaks flying out to both sides (they are pushed apart).
+   */
+  tech(x: number, y: number) {
+    const t = tex();
+    const p = new THREE.Vector3(x, y, 0.4);
+    this.spawn(t.star, 0xffffff, p.clone(), new THREE.Vector3(), 0.9, 7, { grow: 0.06, rot: 0.785 });
+    this.spawn(t.star, 0xffe070, p.clone(), new THREE.Vector3(), 1.1, 9, { grow: 0.03 });
+    this.spawn(t.ring, 0xffffff, p.clone(), new THREE.Vector3(), 0.15, 9, { grow: 0.15, opacity: 0.9 });
+    this.spawn(t.ring, 0xffc040, p.clone(), new THREE.Vector3(), 0.1, 13, { grow: 0.1 });
+    for (let i = 0; i < 16; i++) {
+      const side = i % 2 ? 1 : -1;
+      const a = (side > 0 ? 0 : Math.PI) + rnd(-0.6, 0.6);
+      const sp = rnd(0.07, 0.15);
+      this.spawn(t.dot, i % 3 ? 0xffe9a0 : 0xffffff, p.clone(), new THREE.Vector3(Math.cos(a) * sp, Math.sin(a) * sp, 0), rnd(0.05, 0.07), rnd(8, 13), {
+        aspect: rnd(5, 8),
+        rot: a,
+        drag: 0.12,
+      });
+    }
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * Math.PI * 2;
+      this.spawn(t.dot, 0xfff4c0, p.clone(), new THREE.Vector3(Math.cos(a) * 0.04, Math.sin(a) * 0.04 + 0.02, 0), 0.06, rnd(14, 22), { gravity: 0.003 });
+    }
+  }
+
   dust(x: number, big = false) {
     const t = tex();
     const n = big ? 10 : 5;
@@ -830,6 +857,7 @@ export class Effects {
     this.hit(0, 1, 'light', false);
     this.block(0, 1);
     this.parry(0, 1);
+    this.tech(0, 1);
     this.dust(0, true);
     this.aura(p);
     for (const fx of ALL_CINE_FX) this.cine(fx, p);

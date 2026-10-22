@@ -271,6 +271,407 @@ const THROW_FOLLOW: Pose = merge(THROW_RELEASE, {
   shinR: [26, 0, 0],
 });
 
+// ---------------------------------------------------------------------------
+// grabs (throw, back throw, whiff, escape)
+// ---------------------------------------------------------------------------
+/** grab anticipation: low, shoulders forward, both hands open and drawn back to the hips */
+const GRAB_LOAD: Pose = merge(STANCE, {
+  root: [0, -0.16, -0.02],
+  hips: [0, -14, 0],
+  spine: [18, -2, 0],
+  chest: [10, 0, 0],
+  neck: [-8, 0, 0],
+  head: [-12, 4, 0],
+  upperArmL: [-36, 0, 34],
+  foreArmL: [-70, 0, 0],
+  handL: [-30, 0, 0],
+  upperArmR: [-30, 0, -34],
+  foreArmR: [-70, 0, 0],
+  handR: [-30, 0, 0],
+  thighL: [-46, 0, 8],
+  shinL: [62, 0, 0],
+  thighR: [18, 0, -8],
+  shinR: [36, 0, 0],
+});
+/** lunge: lead foot steps in, both arms fully out at collar height, hands open */
+const GRAB_REACH: Pose = merge(STANCE, {
+  root: [0, -0.1, 0.16],
+  hips: [0, -6, 0],
+  spine: [16, 0, 0],
+  chest: [6, 0, 0],
+  neck: [-6, 0, 0],
+  head: [-10, 0, 0],
+  upperArmL: [-92, 0, 20],
+  foreArmL: [-12, 0, 0],
+  handL: [-34, 0, 0],
+  upperArmR: [-92, 0, -20],
+  foreArmR: [-12, 0, 0],
+  handR: [-34, 0, 0],
+  thighL: [-56, 0, 6],
+  shinL: [52, 0, 0],
+  footL: [-4, 0, 0],
+  thighR: [26, 0, -6],
+  shinR: [14, 0, 0],
+  footR: [-36, 0, 0],
+});
+/** whiff: the hands close on nothing, the body falls forward past its lead foot */
+const GRAB_MISS: Pose = merge(STANCE, {
+  root: [0, -0.2, 0.2],
+  hips: [8, 4, 0],
+  spine: [30, 0, 0],
+  chest: [16, 0, 0],
+  neck: [10, 0, 0],
+  head: [12, -6, 0],
+  upperArmL: [-70, 0, -6],
+  foreArmL: [-92, 0, 0],
+  handL: [30, 0, 0],
+  upperArmR: [-66, 0, 8],
+  foreArmR: [-96, 0, 0],
+  handR: [30, 0, 0],
+  thighL: [-64, 0, 6],
+  shinL: [78, 0, 0],
+  footL: [-8, 0, 0],
+  thighR: [40, 0, -6],
+  shinR: [46, 0, 0],
+  footR: [-30, 0, 0],
+});
+/** hold: fists twisted in the collar, elbows down, pulled in chest to chest */
+const GRAB_HOLD: Pose = merge(STANCE, {
+  root: [0, -0.08, 0.08],
+  hips: [0, -8, 0],
+  spine: [10, 0, 0],
+  chest: [4, 0, 0],
+  head: [-6, 0, 0],
+  upperArmL: [-70, 0, 10],
+  foreArmL: [-60, 0, 0],
+  handL: [20, 0, 0],
+  upperArmR: [-70, 0, -10],
+  foreArmR: [-60, 0, 0],
+  handR: [20, 0, 0],
+  thighL: [-40, 0, 8],
+  shinL: [48, 0, 0],
+  thighR: [18, 0, -8],
+  shinR: [24, 0, 0],
+});
+/** throw escape: the lead arm slaps the grab away, body jerked back */
+const TECH_SLAP: Pose = merge(STANCE, {
+  root: [0, -0.1, -0.1],
+  hips: [-6, -46, 0],
+  spine: [-10, -10, 0],
+  chest: [-8, -14, 0],
+  neck: [-6, 0, 0],
+  head: [-14, 14, 0],
+  upperArmL: [-96, 0, 74],
+  foreArmL: [-22, 0, 0],
+  handL: [-30, 0, 0],
+  upperArmR: [-56, 0, -26],
+  foreArmR: [-120, 0, 0],
+  thighL: [-22, 0, 8],
+  shinL: [30, 0, 0],
+  thighR: [30, 0, -8],
+  shinR: [40, 0, 0],
+  footR: [-44, 0, 0],
+});
+
+// ---------------------------------------------------------------------------
+// v6 chains and finishers: key poses
+// ---------------------------------------------------------------------------
+/** rear hook landing: rear shoulder through, elbow at 90 degrees, heel pivoting */
+const HOOK_HIT: Pose = merge(STANCE, {
+  root: [0, -0.1, 0.08],
+  hips: [0, 22, 0],
+  spine: [8, 12, 0],
+  chest: [6, 14, 0],
+  neck: [0, -6, 0],
+  head: [-4, -22, 0],
+  // (Euler worked out so the upper arm is level at shoulder height, pointing forward-out,
+  // and the elbow bends horizontally inward: a true hook arc)
+  upperArmR: [-12, 46, -90],
+  foreArmR: [-92, 0, 0],
+  handR: [0, 0, 0],
+  upperArmL: [-46, 0, 24],
+  foreArmL: [-130, 0, 0],
+  thighL: [-40, 0, 8],
+  shinL: [50, 0, 0],
+  thighR: [22, 0, -6],
+  shinR: [22, 0, 0],
+  footR: [-44, 0, 0],
+});
+/** liver shot: low, leaning in, lead fist driven up into the ribs */
+const BODY_HIT: Pose = merge(STANCE, {
+  root: [0, -0.26, 0.14],
+  hips: [0, -14, 0],
+  spine: [24, -4, 0],
+  chest: [10, -8, 0],
+  neck: [-6, 0, 0],
+  head: [-2, 8, 0],
+  upperArmL: [-58, 0, 6],
+  foreArmL: [-64, 0, 0],
+  handL: [0, 0, 0],
+  upperArmR: [-52, 0, -18],
+  foreArmR: [-126, 0, 0],
+  thighL: [-68, 0, 8],
+  shinL: [82, 0, 0],
+  footL: [-6, 0, 0],
+  thighR: [26, 0, -6],
+  shinR: [42, 0, 0],
+  footR: [-40, 0, 0],
+});
+/** spinning heel, half way: back turned to the opponent, head looking over the shoulder */
+const SPIN_BACK: Pose = merge(STANCE, {
+  root: [0, -0.1, 0.02],
+  hips: [0, -150, 0],
+  spine: [6, -10, 0],
+  chest: [4, -10, 0],
+  neck: [0, -20, 0],
+  head: [-4, -40, 0],
+  upperArmL: [-30, 0, 46],
+  foreArmL: [-100, 0, 0],
+  upperArmR: [-40, 0, -40],
+  foreArmR: [-100, 0, 0],
+  thighL: [-14, 0, 6],
+  shinL: [20, 0, 0],
+  thighR: [-30, 0, -40],
+  shinR: [70, 0, 0],
+});
+/** spinning heel, impact: the straight rear leg whips round at head height, torso leaning away */
+const SPIN_HEEL: Pose = merge(STANCE, {
+  root: [0, -0.02, 0.02],
+  hips: [0, -268, 0],
+  spine: [0, 0, -30],
+  chest: [0, 0, -14],
+  neck: [0, -20, 12],
+  head: [0, -26, 12],
+  upperArmL: [-26, 0, 70],
+  foreArmL: [-70, 0, 0],
+  upperArmR: [-36, 0, -16],
+  foreArmR: [-90, 0, 0],
+  thighR: [-14, 0, -124],
+  shinR: [2, 0, 0],
+  footR: [30, 0, 0],
+  thighL: [0, 0, 16],
+  shinL: [12, 0, 0],
+  footL: [0, 0, 0],
+});
+/** hammer fist windup: up on the toes, leaning back, both fists joined high over the head */
+const HAMMER_UP: Pose = merge(STANCE, {
+  root: [0, 0.03, -0.06],
+  hips: [-6, -10, 0],
+  spine: [-16, 0, 0],
+  chest: [-10, 0, 0],
+  neck: [-6, 0, 0],
+  head: [-18, 0, 0],
+  upperArmL: [-172, 0, -10],
+  foreArmL: [-44, 0, 0],
+  handL: [10, 0, 0],
+  upperArmR: [-172, 0, 10],
+  foreArmR: [-44, 0, 0],
+  handR: [10, 0, 0],
+  thighL: [-30, 0, 6],
+  shinL: [24, 0, 0],
+  footL: [20, 0, 0],
+  thighR: [14, 0, -6],
+  shinR: [10, 0, 0],
+  footR: [10, 0, 0],
+});
+/** hammer fist impact: the joined fists smashed down in front, whole body folded into it */
+const HAMMER_DOWN: Pose = merge(STANCE, {
+  root: [0, -0.18, 0.2],
+  hips: [6, -6, 0],
+  spine: [24, 0, 0],
+  chest: [12, 0, 0],
+  neck: [4, 0, 0],
+  head: [4, 0, 0],
+  upperArmL: [-108, 0, -14],
+  foreArmL: [-14, 0, 0],
+  handL: [-10, 0, 0],
+  upperArmR: [-108, 0, 14],
+  foreArmR: [-14, 0, 0],
+  handR: [-10, 0, 0],
+  thighL: [-74, 0, 8],
+  shinL: [92, 0, 0],
+  footL: [-14, 0, 0],
+  thighR: [28, 0, -6],
+  shinR: [56, 0, 0],
+  footR: [-40, 0, 0],
+});
+const HAMMER_SETTLE: Pose = merge(HAMMER_DOWN, {
+  root: [0, -0.26, 0.16],
+  spine: [26, 0, 0],
+  upperArmL: [-50, 0, -4],
+  foreArmL: [-30, 0, 0],
+  upperArmR: [-50, 0, 4],
+  foreArmR: [-30, 0, 0],
+});
+/** rising uppercut: deep crouch, rear fist cocked low at the hip */
+const SHORYU_LOAD: Pose = merge(CROUCH, {
+  root: [0, -0.46, 0.02],
+  hips: [0, -56, 0],
+  spine: [22, -12, 0],
+  chest: [10, -10, 0],
+  head: [-14, 10, 0],
+  upperArmR: [0, 0, -24],
+  foreArmR: [-120, 0, 0],
+  upperArmL: [-62, 0, 20],
+  foreArmL: [-110, 0, 0],
+});
+/** rising uppercut, take-off: rear fist driven straight up, lead knee up, toes leaving the floor */
+const SHORYU_RISE: Pose = merge(STANCE, {
+  root: [0, 0.16, 0.1],
+  hips: [-6, 26, 0],
+  spine: [-8, 14, 0],
+  chest: [-10, 14, 0],
+  neck: [-8, 0, 0],
+  head: [-22, -16, 0],
+  upperArmR: [-168, 0, -6],
+  foreArmR: [-16, 0, 0],
+  handR: [0, 0, 0],
+  upperArmL: [-26, 0, 30],
+  foreArmL: [-90, 0, 0],
+  thighL: [-86, 0, 8],
+  shinL: [104, 0, 0],
+  footL: [16, 0, 0],
+  thighR: [8, 0, -6],
+  shinR: [26, 0, 0],
+  footR: [44, 0, 0],
+});
+/** top of the rising uppercut: fully stretched, about to fall back down */
+const SHORYU_TOP: Pose = merge(SHORYU_RISE, {
+  root: [0, 0.42, 0.12],
+  hips: [-10, 40, 0],
+  spine: [-12, 18, 0],
+  upperArmR: [-176, 0, -2],
+  foreArmR: [-6, 0, 0],
+  thighL: [-70, 0, 8],
+  shinL: [110, 0, 0],
+  thighR: [-10, 0, -6],
+  shinR: [60, 0, 0],
+});
+/** tornado: loaded low, shoulders wound back the other way */
+const TORNADO_LOAD: Pose = merge(CROUCH, {
+  root: [0, -0.34, 0],
+  hips: [0, -80, 0],
+  spine: [18, -20, 0],
+  chest: [8, -14, 0],
+  head: [-10, 26, 0],
+  upperArmL: [-40, 0, 60],
+  foreArmL: [-60, 0, 0],
+  upperArmR: [-70, 0, -30],
+  foreArmR: [-90, 0, 0],
+});
+/** tornado, in the air with the back to the opponent: legs tucked, arms wrapped in to spin fast */
+const TORNADO_AIR: Pose = merge(AIR, {
+  root: [0, 0.3, 0.06],
+  hips: [0, -190, 0],
+  spine: [4, -10, 0],
+  chest: [0, -10, 0],
+  neck: [0, -16, 0],
+  head: [-6, -30, 0],
+  upperArmL: [-60, 0, 10],
+  foreArmL: [-120, 0, 0],
+  upperArmR: [-60, 0, -10],
+  foreArmR: [-120, 0, 0],
+  thighL: [-80, 0, 8],
+  shinL: [110, 0, 0],
+  thighR: [-50, 0, -20],
+  shinR: [100, 0, 0],
+});
+/** tornado impact: still airborne, the rear leg slashes across at chest height */
+const TORNADO_SLASH: Pose = merge(AIR, {
+  root: [0, 0.34, 0.08],
+  hips: [0, -286, 0],
+  spine: [0, 0, -26],
+  chest: [0, 0, -10],
+  neck: [0, -24, 10],
+  head: [0, -24, 10],
+  upperArmL: [-20, 0, 80],
+  foreArmL: [-50, 0, 0],
+  upperArmR: [-30, 0, -40],
+  foreArmR: [-80, 0, 0],
+  thighR: [-10, 0, -112],
+  shinR: [4, 0, 0],
+  footR: [24, 0, 0],
+  thighL: [-60, 0, 14],
+  shinL: [100, 0, 0],
+  footL: [-10, 0, 0],
+});
+/** tornado landing: crouched, the spin running out */
+const TORNADO_LAND: Pose = merge(CROUCH, {
+  root: [0, -0.3, 0.02],
+  hips: [0, -370, 0],
+  spine: [20, -6, 0],
+  upperArmL: [-40, 0, 50],
+  foreArmL: [-70, 0, 0],
+  upperArmR: [-40, 0, -40],
+  foreArmR: [-90, 0, 0],
+});
+/** axe kick: the straight lead leg raised above the head, arms out for balance */
+const AXE_UP: Pose = merge(STANCE, {
+  root: [0, 0.0, -0.08],
+  hips: [-18, -16, 0],
+  spine: [-14, 0, 0],
+  chest: [-8, 0, 0],
+  neck: [-4, 0, 0],
+  head: [-8, 6, 0],
+  thighL: [-168, 0, 8],
+  shinL: [4, 0, 0],
+  footL: [-24, 0, 0],
+  thighR: [10, 0, -6],
+  shinR: [8, 0, 0],
+  footR: [-10, 0, 0],
+  upperArmL: [-40, 0, 64],
+  foreArmL: [-50, 0, 0],
+  upperArmR: [-30, 0, -60],
+  foreArmR: [-60, 0, 0],
+});
+/** axe kick impact: the heel chopped down in front, body folding forward over it */
+const AXE_DOWN: Pose = merge(STANCE, {
+  root: [0, -0.06, 0.14],
+  hips: [4, -14, 0],
+  spine: [14, 0, 0],
+  chest: [12, 0, 0],
+  neck: [6, 0, 0],
+  head: [8, 4, 0],
+  thighL: [-130, 0, 6],
+  shinL: [4, 0, 0],
+  footL: [-34, 0, 0],
+  thighR: [12, 0, -6],
+  shinR: [14, 0, 0],
+  footR: [-20, 0, 0],
+  upperArmL: [-20, 0, 46],
+  foreArmL: [-70, 0, 0],
+  upperArmR: [-26, 0, -46],
+  foreArmR: [-70, 0, 0],
+});
+const AXE_LAND: Pose = merge(STANCE, {
+  root: [0, -0.18, 0.12],
+  hips: [6, -20, 0],
+  spine: [16, -2, 0],
+  thighL: [-52, 0, 8],
+  shinL: [64, 0, 0],
+  footL: [-10, 0, 0],
+  thighR: [22, 0, -6],
+  shinR: [36, 0, 0],
+  footR: [-36, 0, 0],
+});
+/** missed grab, after the clap: staggering a half step past the lead foot, arms flailing for balance */
+const GRAB_STUMBLE: Pose = merge(STANCE, {
+  root: [0, -0.16, 0.14],
+  hips: [4, -18, 0],
+  spine: [20, -4, 0],
+  chest: [10, 0, 0],
+  head: [6, 10, 0],
+  upperArmL: [-40, 0, 50],
+  foreArmL: [-40, 0, 0],
+  upperArmR: [-20, 0, -46],
+  foreArmR: [-50, 0, 0],
+  thighL: [-50, 0, 8],
+  shinL: [56, 0, 0],
+  thighR: [30, 0, -8],
+  shinR: [50, 0, 0],
+  footR: [-40, 0, 0],
+});
+
 export const ATTACKS: Record<MoveId, AttackPoses> = {
   jab: {
     windup: merge(STANCE, { hips: [0, -22, 0], upperArmL: [-70, 0, 10], foreArmL: [-80, 0, 0] }),
@@ -529,18 +930,95 @@ export const ATTACKS: Record<MoveId, AttackPoses> = {
       foreArmR: [-80, 0, 0],
     }),
   },
+  // the grab: both hands shoot out, open; on a connect the 'throwing' clip takes over,
+  // so the rest of this clip is the whiff (clutching empty air, off balance, back to guard)
   throw: {
-    windup: merge(STANCE, { upperArmL: [-80, 0, 20], foreArmL: [-40, 0, 0], upperArmR: [-80, 0, -20], foreArmR: [-40, 0, 0], hips: [0, -10, 0] }),
-    strike: merge(STANCE, {
-      root: [0, -0.06, 0.1],
-      hips: [0, -5, 0],
-      spine: [10, 0, 0],
-      upperArmL: [-88, 0, 8],
-      foreArmL: [-20, 0, 0],
-      upperArmR: [-88, 0, -8],
-      foreArmR: [-20, 0, 0],
-    }),
+    windup: GRAB_LOAD,
+    strike: GRAB_REACH,
+    follow: GRAB_MISS,
   },
+  // ---- v6 button chains ----
+  // RP chain step 2: rear hook to the head, hips and shoulders twist hard through
+  hook: {
+    windup: merge(STANCE, {
+      root: [0, -0.1, -0.02],
+      hips: [0, -50, 0],
+      spine: [4, -10, 0],
+      chest: [4, -14, 0],
+      head: [-6, 14, 0],
+      upperArmR: [-30, 0, -70],
+      foreArmR: [-100, 0, 0],
+      thighR: [18, 0, -6],
+      shinR: [30, 0, 0],
+    }),
+    strike: HOOK_HIT,
+    follow: merge(HOOK_HIT, { hips: [0, 50, 0], chest: [6, 30, 0], upperArmR: [-8, 80, -90], foreArmR: [-104, 0, 0], head: [-2, -30, 0] }),
+  },
+  // RP chain step 3: knees dip, the LEAD fist digs up into the ribs (alternates with the rear hook)
+  bodyBlow: {
+    windup: merge(STANCE, {
+      root: [0, -0.24, 0.0],
+      hips: [0, -54, 0],
+      spine: [18, -12, 0],
+      chest: [10, -10, 0],
+      head: [-4, 14, 0],
+      upperArmL: [-14, 0, 30],
+      foreArmL: [-112, 0, 0],
+      upperArmR: [-58, 0, -18],
+      foreArmR: [-128, 0, 0],
+      thighL: [-60, 0, 8],
+      shinL: [84, 0, 0],
+      thighR: [12, 0, -6],
+      shinR: [58, 0, 0],
+      footR: [-34, 0, 0],
+    }),
+    strike: BODY_HIT,
+    follow: merge(BODY_HIT, { root: [0, -0.2, 0.1], upperArmL: [-80, 0, 6], foreArmL: [-70, 0, 0] }),
+  },
+  // LK / RK chain: knee chambers, the shin snaps out to the belly and straight back
+  snapKick: {
+    windup: merge(STANCE, {
+      root: [0, -0.03, -0.02],
+      hips: [0, -26, 0],
+      spine: [-4, -4, 0],
+      thighL: [-104, 0, 6],
+      shinL: [122, 0, 0],
+      footL: [24, 0, 0],
+      thighR: [8, 0, -6],
+      shinR: [14, 0, 0],
+      upperArmR: [-40, 0, -30],
+    }),
+    strike: merge(STANCE, {
+      root: [0, -0.02, -0.03],
+      hips: [0, -22, 0],
+      spine: [-12, -4, 0],
+      chest: [-4, 0, 0],
+      head: [2, 6, 0],
+      thighL: [-86, 0, 4],
+      shinL: [6, 0, 0],
+      footL: [-40, 0, 0],
+      thighR: [6, 0, -6],
+      shinR: [10, 0, 0],
+      footR: [-14, 0, 0],
+      upperArmR: [-34, 0, -34],
+      foreArmR: [-110, 0, 0],
+    }),
+    follow: merge(STANCE, { thighL: [-96, 0, 6], shinL: [118, 0, 0], footL: [20, 0, 0], thighR: [8, 0, -6], shinR: [14, 0, 0] }),
+  },
+  // RK chain step 2: spinning back heel (clip: spinClip, the hips keep turning the same way)
+  spinHeel: {
+    windup: SPIN_BACK,
+    strike: SPIN_HEEL,
+    follow: merge(SPIN_HEEL, { hips: [0, -300, 0], thighR: [-30, 0, -80], shinR: [40, 0, 0] }),
+    end: merge(STANCE, { hips: [0, -392, 0] }),
+  },
+  // ---- v6 two-button finishers (custom clips below, these are their key poses) ----
+  hammerFist: { windup: HAMMER_UP, strike: HAMMER_DOWN, follow: HAMMER_SETTLE },
+  risingUppercut: { base: CROUCH, windup: SHORYU_LOAD, strike: SHORYU_RISE, follow: SHORYU_TOP },
+  tornadoKick: { windup: TORNADO_LOAD, strike: TORNADO_SLASH, follow: TORNADO_LAND, end: merge(STANCE, { hips: [0, -392, 0] }) },
+  axeKick: { windup: AXE_UP, strike: AXE_DOWN, follow: AXE_LAND },
+  // a grab that caught nothing (follows the throw's reach): hands clap shut on air, stumble, recover
+  throwWhiff: { base: GRAB_REACH, windup: GRAB_REACH, strike: GRAB_MISS, follow: GRAB_STUMBLE },
   super: {
     base: merge(STANCE, {
       root: [0, -0.22, -0.05],
@@ -606,6 +1084,99 @@ function moveClip(id: MoveId): Clip {
   if (a.follow) keys.push({ f: strikeEnd + Math.round(m.recovery * 0.4), p: a.follow, ease: 'smooth' });
   keys.push({ f: total, p: a.end ?? base, ease: 'smooth' });
   return { length: total, keys };
+}
+
+/**
+ * Clip of a move from timed keys: `at` = 'S' + offset (startup), 'A' + offset (last active
+ * frame), 'T' + offset (total), or a fraction of the startup / recovery. Strike keys land
+ * exactly on the move's active frames (MOVES = base timings; fighterView maps the profiles).
+ */
+type At = number | `S${string}` | `A${string}` | `T${string}` | `R${string}`;
+function timedClip(id: MoveId, keys: [At, Pose, Key['ease']?][]): Clip {
+  const m = MOVES[id];
+  const total = moveTotal(m);
+  const lastActive = m.startup + m.active - 1;
+  const at = (a: At): number => {
+    if (typeof a === 'number') return Math.round(a * m.startup);
+    const n = Number(a.slice(1) || 0);
+    if (a[0] === 'S') return m.startup + n;
+    if (a[0] === 'A') return lastActive + n;
+    if (a[0] === 'R') return lastActive + Math.round(n * m.recovery);
+    return total + n;
+  };
+  const out: Key[] = [];
+  for (const [a, p, ease] of keys) {
+    const f = Math.max(0, Math.min(total, at(a)));
+    if (out.length && f <= out[out.length - 1].f) continue;
+    out.push({ f, p, ease });
+  }
+  return { length: total, keys: out };
+}
+
+/** the v6 finishers / special moves: more keys than windup -> strike -> recovery */
+function customMoveClips(): Partial<Record<MoveId, Clip>> {
+  const A = ATTACKS;
+  return {
+    // fists joined over the head, a held beat of anticipation, then smashed down
+    hammerFist: timedClip('hammerFist', [
+      [0, STANCE],
+      [0.5, HAMMER_UP, 'out'],
+      ['S-3', merge(HAMMER_UP, { root: [0, 0.05, -0.08], spine: [-22, 0, 0], upperArmL: [-182, 0, -10], upperArmR: [-182, 0, 10] }), 'smooth'],
+      ['S', HAMMER_DOWN, 'in'],
+      ['A', merge(HAMMER_DOWN, { root: [0, -0.3, 0.22], spine: [36, 0, 0], chest: [18, 0, 0], upperArmL: [-72, 0, -14], upperArmR: [-72, 0, 14] }), 'out'],
+      ['R0.4', HAMMER_SETTLE, 'smooth'],
+      ['T', STANCE, 'smooth'],
+    ]),
+    // crouch, explode upward fist first, hang at the top, drop back down, land
+    risingUppercut: timedClip('risingUppercut', [
+      [0, STANCE],
+      [0.55, SHORYU_LOAD, 'out'],
+      ['S-1', merge(SHORYU_LOAD, { root: [0, -0.48, 0.04] })],
+      ['S', SHORYU_RISE, 'out'],
+      ['A', SHORYU_TOP, 'out'],
+      ['R0.45', merge(AIR, { root: [0, 0.1, 0.08], hips: [0, 10, 0], upperArmR: [-120, 0, -20], foreArmR: [-50, 0, 0] }), 'in'],
+      ['R0.62', merge(CROUCH, { root: [0, -0.34, 0.06] }), 'in'],
+      ['T', STANCE, 'smooth'],
+    ]),
+    // load, hop and spin with the back to the opponent, the rear leg slashes through, land
+    tornadoKick: timedClip('tornadoKick', [
+      [0, STANCE],
+      [0.4, TORNADO_LOAD, 'out'],
+      [0.78, TORNADO_AIR, 'smooth'],
+      ['S', TORNADO_SLASH, 'linear'],
+      ['A', merge(TORNADO_SLASH, { hips: [0, -318, 0], root: [0, 0.28, 0.1] }), 'linear'],
+      ['R0.35', TORNADO_LAND, 'in'],
+      ['T', A.tornadoKick.end!, 'smooth'],
+    ]),
+    // knee chambers, the straight leg goes up over the head, held, then the heel chops down
+    axeKick: timedClip('axeKick', [
+      [0, STANCE],
+      [0.35, merge(STANCE, { root: [0, -0.04, -0.04], spine: [-6, -4, 0], thighL: [-110, 0, 8], shinL: [110, 0, 0], footL: [10, 0, 0] }), 'out'],
+      [0.75, AXE_UP, 'smooth'],
+      ['S-2', merge(AXE_UP, { thighL: [-176, 0, 8], spine: [-18, 0, 0] })],
+      ['S', AXE_DOWN, 'in'],
+      ['A', merge(AXE_DOWN, { root: [0, -0.14, 0.16], hips: [14, -14, 0], spine: [28, 0, 0], thighL: [-66, 0, 6] }), 'in'],
+      ['R0.4', AXE_LAND, 'smooth'],
+      ['T', STANCE, 'smooth'],
+    ]),
+    // hands clap shut on empty air, stumbling half a step, guard back up
+    throwWhiff: timedClip('throwWhiff', [
+      [0, GRAB_REACH],
+      ['S3', GRAB_MISS, 'in'],
+      ['S8', GRAB_MISS],
+      ['S15', GRAB_STUMBLE, 'smooth'],
+      ['T', STANCE, 'smooth'],
+    ]),
+    // the hook winds the rear shoulder back hard, then whips through
+    hook: timedClip('hook', [
+      [0, STANCE],
+      [0.6, A.hook.windup, 'out'],
+      ['S', A.hook.strike, 'in'],
+      ['A', A.hook.strike],
+      ['R0.35', A.hook.follow!, 'smooth'],
+      ['T', STANCE, 'smooth'],
+    ]),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -709,7 +1280,7 @@ function getup(): Clip {
 }
 
 function throwing(): Clip {
-  const grab = ATTACKS.throw.strike;
+  const grab = GRAB_HOLD;
   const lift = merge(STANCE, {
     root: [0, -0.02, -0.05],
     hips: [0, -10, 0],
@@ -745,6 +1316,120 @@ function throwing(): Clip {
   };
 }
 
+/**
+ * Back throw (thrower): grab, pivot on the lead foot pulling the victim round, heave them
+ * over the shoulder, slam them down BEHIND (sim: the victim travels from the front to
+ * behind between frames ~14 and 34), then turn back to guard.
+ */
+function throwingBack(): Clip {
+  const pivot = merge(GRAB_HOLD, {
+    root: [0, -0.14, 0.02],
+    hips: [0, -70, 0],
+    spine: [4, -24, 0],
+    chest: [0, -20, 0],
+    head: [-10, 30, 0],
+    upperArmL: [-110, 0, 30],
+    foreArmL: [-40, 0, 0],
+    upperArmR: [-120, 0, -10],
+    foreArmR: [-50, 0, 0],
+    thighL: [-50, 0, 10],
+    shinL: [60, 0, 0],
+    thighR: [20, 0, -10],
+    shinR: [40, 0, 0],
+  });
+  const heave = merge(STANCE, {
+    root: [0, -0.06, -0.04],
+    hips: [0, -120, 0],
+    spine: [-20, -20, 0],
+    chest: [-14, -16, 0],
+    neck: [-10, 0, 0],
+    head: [-20, 20, 0],
+    upperArmL: [-176, 0, 20],
+    foreArmL: [-30, 0, 0],
+    upperArmR: [-176, 0, -20],
+    foreArmR: [-30, 0, 0],
+    thighL: [-30, 0, 10],
+    shinL: [30, 0, 0],
+    thighR: [6, 0, -10],
+    shinR: [20, 0, 0],
+  });
+  // facing the slam behind: chest turned to the back, bent over the victim, arms driven down
+  const slam = merge(STANCE, {
+    root: [0, -0.3, -0.12],
+    hips: [0, -196, 0],
+    spine: [34, 0, 0],
+    chest: [18, 0, 0],
+    neck: [4, 0, 0],
+    head: [6, 0, 0],
+    upperArmL: [-56, 0, 10],
+    foreArmL: [-12, 0, 0],
+    upperArmR: [-56, 0, -10],
+    foreArmR: [-12, 0, 0],
+    thighL: [-60, 0, 8],
+    shinL: [84, 0, 0],
+    thighR: [20, 0, -8],
+    shinR: [60, 0, 0],
+  });
+  const rise = merge(STANCE, { hips: [0, -150, 0], spine: [10, -10, 0], head: [-6, 30, 0] });
+  return {
+    length: 58,
+    keys: [
+      { f: 0, p: GRAB_HOLD },
+      { f: 8, p: GRAB_HOLD },
+      { f: 16, p: pivot, ease: 'smooth' },
+      { f: 26, p: heave, ease: 'smooth' },
+      { f: 34, p: slam, ease: 'in' },
+      { f: 44, p: slam },
+      { f: 52, p: rise, ease: 'smooth' },
+      { f: 58, p: merge(STANCE, { hips: [0, -32, 0] }), ease: 'smooth' },
+    ],
+  };
+}
+
+/** Back throw (victim): pulled in, flipped head over heels over the thrower, slammed flat on the back. */
+function thrownBack(): Clip {
+  const held = merge(HIT_HIGH, { root: [0, -0.02, 0] });
+  const pulled = merge(HIT_HIGH, {
+    root: [0, 0.3, 0],
+    hips: [40, -10, 0],
+    spine: [10, 0, 0],
+    upperArmL: [-60, 0, 70],
+    upperArmR: [-50, 0, -70],
+    thighL: [-30, 0, 14],
+    shinL: [50, 0, 0],
+    thighR: [-10, 0, -14],
+    shinR: [60, 0, 0],
+  });
+  const over = merge(pulled, {
+    root: [0, 1.0, 0],
+    hips: [110, 110, 0],
+    spine: [-10, 0, 0],
+    head: [-20, 0, 0],
+    upperArmL: [-20, 0, 100],
+    upperArmR: [-20, 0, -100],
+    thighL: [-20, 0, 20],
+    shinL: [30, 0, 0],
+    thighR: [-6, 0, -20],
+    shinR: [40, 0, 0],
+  });
+  // landed face up with the head away from the thrower: LYING turned round (yaw 180 then
+  // tipped back = Euler [90, 170, 0]), so the facing flip at the knockdown doesn't pop
+  const slammed = merge(LYING, { root: [0, -0.8, 0.45], hips: [90, 170, 0], upperArmL: [-60, 0, 100], upperArmR: [-70, 0, -100] });
+  const lying = merge(LYING, { root: [0, -0.86, 0.5], hips: [90, 170, 0] });
+  return {
+    length: 58,
+    keys: [
+      { f: 0, p: held },
+      { f: 10, p: held },
+      { f: 18, p: pulled, ease: 'smooth' },
+      { f: 26, p: over, ease: 'smooth' },
+      { f: 34, p: slammed, ease: 'in' },
+      { f: 44, p: lying, ease: 'smooth' },
+      { f: 58, p: lying },
+    ],
+  };
+}
+
 function thrown(): Clip {
   const held = merge(HIT_HIGH, { root: [0, -0.02, 0] });
   const lifted = merge(HIT_HIGH, {
@@ -756,7 +1441,9 @@ function thrown(): Clip {
     thighR: [-30, 0, -10],
     shinL: [40, 0, 0],
   });
-  const slammed = merge(LYING, { root: [0, -0.86, 0.05] });
+  // slammed down clear of the thrower's feet (the sim slides the victim further at the end)
+  const slammed = merge(LYING, { root: [0, -0.86, -0.4] });
+  const lying = merge(LYING, { root: [0, -0.86, -0.45] });
   return {
     length: 58,
     keys: [
@@ -764,7 +1451,22 @@ function thrown(): Clip {
       { f: 10, p: held },
       { f: 24, p: lifted, ease: 'smooth' },
       { f: 34, p: slammed, ease: 'in' },
-      { f: 58, p: LYING },
+      { f: 58, p: lying, ease: 'smooth' },
+    ],
+  };
+}
+
+/** throw escape (both fighters): the grab is slapped away, both skid apart, guard back up */
+function throwBreak(): Clip {
+  const skid = merge(STANCE, { root: [0, -0.12, -0.08], spine: [4, -4, 0], head: [-4, 8, 0], upperArmL: [-74, 0, 30], foreArmL: [-70, 0, 0] });
+  return {
+    length: 20,
+    keys: [
+      { f: 0, p: GRAB_HOLD },
+      { f: 3, p: TECH_SLAP, ease: 'out' },
+      { f: 7, p: TECH_SLAP },
+      { f: 13, p: skid, ease: 'smooth' },
+      { f: 20, p: STANCE, ease: 'smooth' },
     ],
   };
 }
@@ -1659,7 +2361,9 @@ function buildLibrary(): Record<ClipId, Clip> {
     getup: getup(),
     throwing: throwing(),
     thrown: thrown(),
-    throwBreak: reaction(merge(HIT_HIGH, { head: [-10, 0, 0] }), STANCE, 20),
+    throwingBack: throwingBack(),
+    thrownBack: thrownBack(),
+    throwBreak: throwBreak(),
     intro0: intro(0),
     intro1: intro(1),
     win0: win(0),
@@ -1693,6 +2397,7 @@ function buildLibrary(): Record<ClipId, Clip> {
     'assist:stun': assistStun(),
   };
   for (const id of Object.keys(MOVES) as MoveId[]) lib['move:' + id] = moveClip(id);
+  for (const [id, clip] of Object.entries(customMoveClips())) lib['move:' + id] = clip;
   lib['move:projectile'] = projectileClip(false);
   lib['move:projectile:lob'] = projectileClip(true);
   lib.guardCrush = guardCrush();

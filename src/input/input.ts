@@ -71,7 +71,8 @@ const BIT: Record<keyof Binding, number> = {
   assist: IN_ASSIST,
 };
 
-export type MenuAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'back' | 'start';
+/** prevPage / nextPage: previous / next character catalogue (CHOPE / BBL MAX keys, PageUp / PageDown, LB / RB) */
+export type MenuAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'back' | 'start' | 'prevPage' | 'nextPage';
 export interface MenuEvent {
   action: MenuAction;
   /** 0 = left side / P1 controls, 1 = right side / P2 controls, -1 = unknown */
@@ -87,6 +88,8 @@ const MENU_KEYS: Record<string, [MenuAction, number]> = {
   KeyF: ['confirm', 0],
   KeyT: ['back', 0],
   KeyG: ['back', 0],
+  KeyQ: ['prevPage', 0],
+  KeyE: ['nextPage', 0],
   ArrowUp: ['up', 1],
   ArrowDown: ['down', 1],
   ArrowLeft: ['left', 1],
@@ -97,6 +100,12 @@ const MENU_KEYS: Record<string, [MenuAction, number]> = {
   KeyL: ['back', 1],
   Numpad4: ['confirm', 1],
   Numpad5: ['back', 1],
+  Slash: ['prevPage', 1],
+  KeyP: ['nextPage', 1],
+  Numpad3: ['prevPage', 1],
+  Numpad6: ['nextPage', 1],
+  PageUp: ['prevPage', -1],
+  PageDown: ['nextPage', -1],
   Enter: ['confirm', -1],
   NumpadEnter: ['confirm', -1],
   Space: ['confirm', -1],
@@ -522,6 +531,9 @@ class InputManager {
     // in a fight, B / ○ is RK (and RETOUR in menus): a blow, not a pause
     if (edge & PAD_BIT.back && !(fighting && edge & BUTTON_MASK)) push('back');
     if (edge & PAD_BIT.start) push('start');
+    // shoulder buttons (CHOPE / BBL MAX): previous / next character catalogue
+    if (edge & PAD_BIT.grab) push('prevPage');
+    if (edge & PAD_BIT.super) push('nextPage');
   }
 
   /**

@@ -148,8 +148,11 @@ export class FighterView {
         const m = f.moveId ? moveFor(f.archetype ?? 'balanced', f.moveId) : null;
         if (!m) return null;
         if (m.id === 'super') return f.actionFrame <= m.startup + m.active ? 0xffa030 : null;
-        if (m.id === 'powerPunch' || m.id === 'knee' || m.id === 'airSmash')
+        if (m.id === 'powerPunch' || m.id === 'knee' || m.id === 'airSmash' || m.id === 'spinHeel')
           return f.actionFrame >= m.startup * 0.4 && f.actionFrame <= m.startup + m.active ? 0xff7a50 : null;
+        // two-button finishers: a hotter, longer trail
+        if (m.id === 'hammerFist' || m.id === 'risingUppercut' || m.id === 'tornadoKick' || m.id === 'axeKick')
+          return f.actionFrame >= m.startup * 0.3 && f.actionFrame <= m.startup + m.active + 2 ? 0xffb030 : null;
         return null;
       }
       case 'throwing':
@@ -192,7 +195,8 @@ export class FighterView {
     this.updateMaterials(dtFrames);
   }
 
-  sync(f: FighterState, simFrame: number, dtFrames: number, time: number) {
+  /** `o` = the opponent (a back throw's victim follows the thrower's flag) */
+  sync(f: FighterState, simFrame: number, dtFrames: number, time: number, o?: FighterState) {
     this.model.root.position.set(f.x, f.y, 0);
     // reactions from the state itself (robust to rollbacks and missing events)
     if (f.action !== this.prevAction || f.actionFrame < this.prevActionFrame) this.bounce = null;
@@ -350,9 +354,13 @@ export class FighterView {
         break;
       case 'throwing':
       case 'thrown':
+        // back throw: the victim is swung over the thrower's shoulder and lands behind
+        clip = ((f.action === 'throwing' ? f : o) as { throwBack?: boolean } | undefined)?.throwBack ? f.action + 'Back' : f.action;
+        blend = 3;
+        break;
       case 'throwBreak':
         clip = f.action;
-        blend = 3;
+        blend = 2;
         break;
       case 'superFlash':
         clip = 'superFlash';

@@ -515,9 +515,19 @@ export class FightWorld {
       case 'projectileEnd':
         this.projectileEnd(ev, s);
         break;
-      case 'whiff':
-        this.sfx(ev.heavy ? 'whiffHeavy' : 'whiff', s.fighters[ev.p].x, 0.7);
+      case 'whiff': {
+        const f = s.fighters[ev.p];
+        if (f.moveId === 'throwWhiff') {
+          // missed grab: the hands clap shut on air, a puzzled "?" over the head
+          this.sfx('clutch', f.x, 0.8, 1.35);
+          this.effects.glyph('question', tmpV.set(f.x + f.facing * 0.15, f.y + 2.05, 0.2), 0.9);
+          break;
+        }
+        this.sfx(ev.heavy ? 'whiffHeavy' : 'whiff', f.x, 0.7);
+        // spinning kicks: a second, lower whoosh as the leg comes round
+        if (f.moveId === 'spinHeel' || f.moveId === 'tornadoKick') this.sfx('dash', f.x, 0.45, 0.8);
         break;
+      }
       case 'land':
         this.sfx('land', s.fighters[ev.p].x, 0.6);
         this.effects.dust(s.fighters[ev.p].x);
@@ -531,9 +541,26 @@ export class FightWorld {
         this.sfx('throw', s.fighters[ev.p].x);
         this.shake = Math.max(this.shake, 0.1);
         break;
-      case 'throwBreak':
-        this.sfx('block', s.fighters[ev.p].x);
+      case 'throwBreak': {
+        // throw escape: spark between the two, both pushed apart
+        const a = s.fighters[0];
+        const b = s.fighters[1];
+        const x = (a.x + b.x) / 2;
+        const y = Math.max(a.y, b.y) + 1.3;
+        this.effects.tech(x, y);
+        this.sfx('tech', x, 1);
+        this.views[0].hitFlash(0xfff0b0, 0.45);
+        this.views[1].hitFlash(0xfff0b0, 0.45);
+        this.shake = Math.max(this.shake, 0.06);
+        if (!inCinematic(s)) {
+          this.linesPoint.set(x, y, 0);
+          this.linesMax = 10;
+          this.linesT = 10;
+          this.linesAmt = 0.6;
+          this.punch(tmpV2.set(x, y, 0), 0.05);
+        }
         break;
+      }
       case 'parry':
         this.effects.parry(ev.x, ev.y);
         this.sfx('block', ev.x, 1, 1.5);
@@ -542,7 +569,8 @@ export class FightWorld {
         this.shake = Math.max(this.shake, 0.04);
         break;
       case 'grab':
-        this.sfx('whiffHeavy', s.fighters[ev.p].x, 0.8, 0.8);
+        this.sfx('whiffHeavy', s.fighters[ev.p].x, 0.6, 0.8);
+        this.sfx('clutch', s.fighters[ev.p].x, 1);
         break;
       case 'super':
         this.sfx('super', s.fighters[ev.p].x);
@@ -636,6 +664,14 @@ export class FightWorld {
     } else if (ev.strength === 'heavy') {
       // launcher: the victim leaves the ground fast
       const launched = victim.action === 'juggle' && victim.vy > 0.11 && victim.y < 0.8;
+      // two-button finishers (end of a string): the big treatment, even without a counter
+      // (the axe kick's own ground bounce right after gets the impact frame)
+      const fin = att.action === 'attack' ? att.moveId : null;
+      if (fin === 'hammerFist' || fin === 'risingUppercut' || fin === 'tornadoKick' || fin === 'axeKick') {
+        this.bigHit(ev.x, ev.y, 2, dir, ev.counter, tmpV2.set(victim.x, victim.y + 1.1, 0), fin === 'axeKick');
+        if (fin === 'hammerFist') this.effects.dust(victim.x, true);
+        return;
+      }
       // spiked to the floor (air smash): the ground bounce right after gets the impact frame
       const spiked = (victim as { flight?: string }).flight === 'spike';
       this.bigHit(ev.x, ev.y, ev.counter || launched ? 2 : 1, dir, ev.counter, undefined, spiked);
@@ -743,7 +779,7 @@ export class FightWorld {
     if (s.phase !== 'ko' && s.phase !== 'roundOver') this.breakSide = 0;
     for (let i = 0; i < 2; i++) {
       this.views[i].simRate = slow ? 1 / 3 : 1;
-      this.views[i].sync(s.fighters[i], s.frame, dtFrames, this.time);
+      this.views[i].sync(s.fighters[i], s.frame, dtFrames, this.time, s.fighters[1 - i]);
       // the BBL MAX cinematic cuts away: no ghosts of the dash strike in its shots
       const act = s.fighters[i].action;
       if (act === 'superCombo' || act === 'superVictim') this.views[i].clearTrail();
@@ -935,6 +971,13 @@ export class FightWorld {
           targetLook.y -= 0.35;
           break;
         }
+        case 'path':
+          // scripted camera move of the cinematic (cine.cams); falls back to the side view
+          if (!this.cine.camPath(targetPos, targetLook)) {
+            targetPos.set(mid, 1.25, 3.6);
+            targetLook.set(mid, 1.05, 0);
+          }
+          break;
       }
       const shot = cams[seg]?.[1];
       if (seg !== this.superSeg) {
@@ -945,7 +988,8 @@ export class FightWorld {
           this.camLook.copy(targetLook);
         }
       }
-      snap = 1 - Math.exp(-dt * (shot === 'floor' ? 1.8 : 5));
+      // a scripted path is already smooth: followed exactly
+      snap = shot === 'path' ? 1 : 1 - Math.exp(-dt * (shot === 'floor' ? 1.8 : 5));
     } else if (s.phase === 'intro') {
       const who = pf < INTRO_SPLIT ? 0 : 1;
       const local = who === 0 ? pf : pf - INTRO_SPLIT;

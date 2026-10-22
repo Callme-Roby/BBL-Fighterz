@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { ProjectileKind, PropId } from '../sim/ultimates';
 import { createPS1Material } from './ps1Material';
 
@@ -173,6 +174,140 @@ function headgear(hs: number): THREE.Group {
   return g;
 }
 
+const GK_GREEN = 0xb6ea2a;
+const GK_DARK = 0x1b1c20;
+
+/**
+ * Goalkeeper glove: a big padded open hand (hand bone origin = wrist, the hand hangs along -Y,
+ * palm toward the body's centre line), black palm, neon back, wide strap on the wrist.
+ */
+function gkglove(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(
+    box(0.075, 0.17, 0.15, GK_GREEN, 0, -0.1, 0.01), // padded back of the hand
+    box(0.068, 0.11, 0.135, GK_GREEN, 0, -0.225, 0.006), // fingers
+    box(0.012, 0.11, 0.004, GK_DARK, 0, -0.225, 0.075), // finger seams (front)
+    box(0.078, 0.004, 0.13, GK_DARK, 0, -0.2, 0.006), // finger seam
+    box(0.078, 0.004, 0.13, GK_DARK, 0, -0.245, 0.006), // finger seam
+    box(0.05, 0.1, 0.05, GK_GREEN, 0, -0.1, 0.095), // thumb
+    box(0.088, 0.065, 0.165, GK_DARK, 0, 0.0, 0.01), // wrist strap
+    box(0.09, 0.02, 0.02, 0xf2f2ee, 0, 0.0, 0.095), // strap logo
+  );
+  return g;
+}
+
+const BALL_R = 0.13;
+
+/** Classic football: white icosphere with the 12 black pentagons (centred on the origin). */
+function football(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.IcosahedronGeometry(BALL_R, 1), mat(0xf4f4f0)));
+  const ico = new THREE.IcosahedronGeometry(1, 0).getAttribute('position');
+  const dirs: THREE.Vector3[] = [];
+  const v = new THREE.Vector3();
+  for (let i = 0; i < ico.count; i++) {
+    v.fromBufferAttribute(ico, i).normalize();
+    if (!dirs.some((d) => d.distanceToSquared(v) < 1e-4)) dirs.push(v.clone());
+  }
+  const parts: THREE.BufferGeometry[] = [];
+  const o = new THREE.Object3D();
+  for (const d of dirs) {
+    const pent = new THREE.CircleGeometry(BALL_R * 0.4, 5);
+    o.position.copy(d).multiplyScalar(BALL_R * 1.005);
+    o.lookAt(d.clone().multiplyScalar(2));
+    o.updateMatrix();
+    pent.applyMatrix4(o.matrix);
+    parts.push(pent);
+  }
+  g.add(new THREE.Mesh(mergeGeometries(parts), mat(0x141416)));
+  return g;
+}
+
+/**
+ * Football goal (a bit smaller than a real one, fighters must fit in): white posts and crossbar,
+ * a box-shaped net behind. Origin = middle of the goal line on the floor, mouth toward +Z,
+ * width along X, the net goes back toward -Z.
+ */
+const GOAL_W = 3.4;
+const GOAL_H = 2.05;
+const GOAL_D = 1.5;
+function goal(): THREE.Group {
+  const g = new THREE.Group();
+  const W = GOAL_W / 2;
+  const H = GOAL_H;
+  const D = GOAL_D;
+  const r = 0.055;
+  // frame
+  const frame: THREE.BufferGeometry[] = [];
+  const bar = (w: number, h: number, d: number, x: number, y: number, z: number) => {
+    const b = new THREE.BoxGeometry(w, h, d);
+    b.translate(x, y, z);
+    frame.push(b);
+  };
+  bar(r * 2, H + r, r * 2, -W, (H + r) / 2, 0); // posts
+  bar(r * 2, H + r, r * 2, W, (H + r) / 2, 0);
+  bar(GOAL_W + r * 2, r * 2, r * 2, 0, H, 0); // crossbar
+  g.add(new THREE.Mesh(mergeGeometries(frame), mat(0xf6f6f2)));
+  // back supports (grey)
+  const sup: THREE.BufferGeometry[] = [];
+  const sbar = (w: number, h: number, d: number, x: number, y: number, z: number) => {
+    const b = new THREE.BoxGeometry(w, h, d);
+    b.translate(x, y, z);
+    sup.push(b);
+  };
+  const s = 0.025;
+  for (const x of [-W, W]) {
+    sbar(s, H * 0.85, s, x, (H * 0.85) / 2, -D); // back stanchions
+    sbar(s, s, D, x, 0.02, -D / 2); // floor bars
+    sbar(s, s, D, x, H * 0.85 + (H - H * 0.85) / 2, -D / 2); // top bars
+  }
+  sbar(GOAL_W, s, s, 0, 0.02, -D); // back floor bar
+  sbar(GOAL_W, s, s, 0, H * 0.85, -D);
+  g.add(new THREE.Mesh(mergeGeometries(sup), mat(0x9a9ca4)));
+  // net: thin cords in a grid (roof slopes from the crossbar down to the back)
+  const net: THREE.BufferGeometry[] = [];
+  const t = 0.014;
+  const step = 0.17;
+  const cord = (a: THREE.Vector3, b: THREE.Vector3) => {
+    const len = a.distanceTo(b);
+    const c = new THREE.BoxGeometry(t, t, len);
+    const o = new THREE.Object3D();
+    o.position.copy(a).add(b).multiplyScalar(0.5);
+    o.lookAt(b);
+    o.updateMatrix();
+    c.applyMatrix4(o.matrix);
+    net.push(c);
+  };
+  const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+  const hb = H * 0.85;
+  const nx = Math.round(GOAL_W / step);
+  for (let i = 0; i <= nx; i++) {
+    const x = -W + (GOAL_W * i) / nx;
+    cord(V(x, 0, -D), V(x, hb, -D)); // back, vertical
+    cord(V(x, H, 0), V(x, hb, -D)); // roof, front to back
+  }
+  const ny = Math.round(hb / step);
+  for (let j = 1; j <= ny; j++) {
+    const y = (hb * j) / ny;
+    cord(V(-W, y, -D), V(W, y, -D)); // back, horizontal
+  }
+  const nz = Math.round(D / step);
+  for (let j = 1; j < nz; j++) {
+    const z = -(D * j) / nz;
+    const y = H + (hb - H) * (j / nz);
+    cord(V(-W, y, z), V(W, y, z)); // roof, across
+    for (const x of [-W, W]) cord(V(x, 0, z), V(x, y, z)); // sides, vertical
+  }
+  const nyS = Math.round(H / step);
+  for (let j = 1; j < nyS; j++) {
+    const y = (H * j) / nyS;
+    const zEnd = y <= hb ? -D : -D * ((H - y) / (H - hb));
+    for (const x of [-W, W]) cord(V(x, y, 0), V(x, y, zEnd)); // sides, horizontal
+  }
+  g.add(new THREE.Mesh(mergeGeometries(net), mat(0xe2e4e8)));
+  return g;
+}
+
 /** every prop / projectile (a missing one is a compile error) */
 export const ALL_PROPS = Object.keys({
   smg: 1,
@@ -184,6 +319,9 @@ export const ALL_PROPS = Object.keys({
   rose: 1,
   glove: 1,
   headgear: 1,
+  gkglove: 1,
+  football: 1,
+  goal: 1,
 } satisfies Record<PropId, 1>) as PropId[];
 export const ALL_PROJECTILES = Object.keys({ grenade: 1, rocket: 1, web: 1, bullet: 1 } satisfies Record<ProjectileKind, 1>) as ProjectileKind[];
 
@@ -208,6 +346,12 @@ export function buildProp(id: PropId, headScale = 1.15): THREE.Object3D {
       return glove();
     case 'headgear':
       return headgear(headScale);
+    case 'gkglove':
+      return gkglove();
+    case 'football':
+      return football();
+    case 'goal':
+      return goal();
   }
 }
 

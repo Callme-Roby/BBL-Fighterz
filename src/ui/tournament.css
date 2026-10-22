@@ -1664,3 +1664,15 @@
     align-items: center;
   }
 }
+
+/* lobby catalogues on landscape phones: the auto-fill grids take the room between the ◀ ▶ arrows */
+@media (max-height: 500px) and (min-aspect-ratio: 1/1) {
+  .tn-lme .rpages,
+  .tn-lme .rp-row {
+    align-self: stretch;
+    width: 100%;
+  }
+  .tn-lme .rp-row > .tn-lgrid {
+    flex: 1 1 0;
+  }
+}

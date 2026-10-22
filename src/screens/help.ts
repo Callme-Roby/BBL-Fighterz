@@ -1,5 +1,6 @@
 import { ARCHETYPE_INFO, ARCHETYPE_ORDER } from '../data/archetypes';
 import { archetypeOf, ROSTER } from '../data/roster';
+import { catalogueOf } from './rosterPages';
 import { keyLabel, P1_KEYS, P2_KEYS, SOLO_KEYS } from '../input/input';
 import { h } from '../ui/dom';
 
@@ -18,8 +19,11 @@ function moveRows(touch: boolean): [string, (HTMLElement | string)[]][] {
     ['Dash', [touch ? 'stick avant-avant / arrière-arrière' : 'avant-avant / arrière-arrière']],
     [
       'Saisie (passe la garde)',
-      touch ? [tb('SAISIE', 'pill'), ' ou ', tb('LP'), ' + ', tb('LK'), ' · se libérer : SAISIE ou poing aussitôt'] : ['touche SAISIE ou Poing G + Pied G · se libérer : SAISIE ou poing aussitôt'],
+      touch
+        ? [tb('SAISIE', 'pill'), ' ou ', tb('LP'), ' + ', tb('LK'), ' · + stick arrière = projection arrière · ratée = punissable']
+        : ['touche SAISIE ou Poing G + Pied G · + ARRIÈRE = projection arrière · ratée = punissable'],
     ],
+    ['Se libérer', ['saisi ? appuie vite (0,2 s) sur SAISIE ou n’importe quelle attaque · impossible de saisir quelqu’un en garde ou qui se relève']],
     ['Uppercut (lance en l’air)', touch ? ['bas + ', tb('RP')] : ['bas + Poing D']],
     ['Genou (lance en l’air)', touch ? ['avant + ', tb('LK')] : ['avant + Pied G']],
     ['Balayette', touch ? ['bas + ', tb('RK')] : ['bas + Pied D']],
@@ -27,11 +31,12 @@ function moveRows(touch: boolean): [string, (HTMLElement | string)[]][] {
     ['Projectile (profil DISTANCE)', touch ? ['avant + ', tb('RP'), ' au lieu de la grosse patate · un seul à l’écran'] : ['avant + Poing D au lieu de la grosse patate · un seul à l’écran']],
     ['Combos', ['tout coup qui touche s’enchaîne avec le suivant (jusqu’à 6)']],
     [
-      'Auto-combo',
+      'Enchaînements',
       touch
-        ? ['martèle ', tb('LP'), ' (sans toucher au stick) : poings, pied, uppercut, super saut et smash, tout seul']
-        : ['martèle Poing G (sans direction) : poings, pied, uppercut, super saut et smash, tout seul'],
+        ? ['martèle UN bouton sans toucher au stick : ', tb('LP'), ' poings → super saut · ', tb('RP'), ' gros poings → mur · ', tb('LK'), ' pieds rapides → décolle · ', tb('RK'), ' gros pieds → au sol']
+        : ['martèle UN bouton sans direction : Poing G = poings → super saut · Poing D = gros poings → mur · Pied G = pieds rapides → décolle · Pied D = gros pieds → au sol'],
     ],
+    ['Combinaisons', ['en plein enchaînement, change de bouton : poing → poing = MARTEAU · poing → pied = HACHE (rebond) · pied → poing = UPPERCUT SAUTÉ · pied → pied = TORNADE (mur)']],
     [
       'Combo aérien',
       touch
@@ -63,6 +68,15 @@ function profileRows(): [string, (HTMLElement | string)[]][] {
     };
     return [`${info.label} (façon ${info.model.split(',')[0]})`, [`${who.join(', ')} : ${what[a]}`]];
   });
+  // second character catalogue (FighterDef.page)
+  const pages = Math.max(1, ...catalogueOf(ROSTER).map((p) => p + 1));
+  if (pages > 1)
+    rows.push([
+      'Catalogues de persos',
+      [
+        `${pages} catalogues à la sélection : flèches ◀ ▶ (ou ${keyLabel('KeyQ')} / ${keyLabel('KeyE')}, Page↑ / Page↓, L1 / R1 à la manette, ou continue au-delà du bord de la grille) · J2 au clavier : ${keyLabel('Slash')} / ${keyLabel('KeyP')} · le « ? » tire au sort parmi tout le monde · les persos du LABO sont dans le dernier`,
+      ],
+    ]);
   rows.push(['Entraînement', ['menu ENTRAÎNEMENT : mannequin réglable (garde, saut, CPU, enregistrement), vie qui remonte, historique des touches, avantage en frames · Pause = réglages']]);
   return rows;
 }

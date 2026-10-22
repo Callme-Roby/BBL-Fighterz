@@ -9,12 +9,12 @@ import { assistOf, ASSIST_KIND_LABEL } from '../data/assists';
 import type { FighterDef } from '../data/roster';
 import { fullRoster } from '../game/settings';
 import { assistOfParticipant, fighterIndexByName, saveTournament, type Tournament } from '../game/tournament';
-import { input } from '../input/input';
-import { loadFace } from '../render/faceTexture';
+import { input, keyLabel } from '../input/input';
 import { Showroom, type ShowroomFit } from '../render/showroom';
-import { backButton, gridColumns, h, phoneLayout, uiRoot } from '../ui/dom';
+import { backButton, h, phoneLayout, uiRoot } from '../ui/dom';
 import { goTournament, goTournamentBracket } from './flow';
 import { profileBox } from './profile';
+import { PagedGrid } from './rosterPages';
 import { centerShowroom, guardButtons, portrait } from './tournamentShared';
 
 /** delay between a confirmed pick and the next participant (win pose time) */
@@ -36,6 +36,10 @@ export class TournamentPickScreen implements Screen {
   private disposed = false;
   private timer = 0;
   private cells: HTMLDivElement[] = [];
+  /** catalogues (pages of the grid) with their ◀ ▶ arrows; the one shown = the cursor's */
+  private pages!: PagedGrid;
+  /** last cursor on each catalogue, per step: flipping back lands there */
+  private mem = new Map<string, number>();
   private titleEl!: HTMLDivElement;
   private subEl!: HTMLDivElement;
   private nameEl!: HTMLDivElement;
@@ -55,15 +59,8 @@ export class TournamentPickScreen implements Screen {
 
   enter() {
     audio.playMusic('select');
-    const grid = h('div', { class: 'grid', style: `--cols:${this.cols}` });
-    const all: (FighterDef | null)[] = [...this.roster, null];
-    all.forEach((def, i) => {
-      const cell = h('div', { class: 'cell' + (def ? '' : ' special') }, def ? h('div', { class: 'nm' }, def.name) : '?');
-      if (def) loadFace(def).then((f) => (cell.style.backgroundImage = `url(${f.portraitUrl})`));
-      cell.addEventListener('click', () => this.clickCell(i));
-      grid.append(cell);
-      this.cells.push(cell);
-    });
+    this.pages = new PagedGrid(this.roster, { cols: this.cols, random: true, onCell: (i) => this.clickCell(i), onFlip: (d) => this.flip(d) });
+    this.cells = this.pages.cells;
     this.titleEl = h('div', { class: 'h1 tn-pick-title' });
     this.subEl = h('div', { class: 'title-hint' });
     this.nameEl = h('div', { class: 'pname p1' });
@@ -80,8 +77,8 @@ export class TournamentPickScreen implements Screen {
       h(
         'div',
         { class: 'tn-pick-bottom' },
-        grid,
-        h('div', { class: 'title-hint kbd-only' }, '← → ↑ ↓ / ZQSD · Entrée = valider (le perso, puis son assist) · Échap = retour'),
+        this.pages.el,
+        h('div', { class: 'title-hint kbd-only' }, `← → ↑ ↓ / ZQSD · ${this.pages.count > 1 ? `${keyLabel('KeyQ')} ${keyLabel('KeyE')} = catalogue · ` : ''}Entrée = valider (le perso, puis son assist) · Échap = retour`),
         h('div', { class: 'title-hint touch-only' }, 'Touche un perso, puis son assist · RETOUR = étape précédente'),
         ok,
       ),
@@ -108,6 +105,7 @@ export class TournamentPickScreen implements Screen {
     if (idx < 0) idx = fighterIndexByName(p.name, this.roster);
     if (idx < 0) idx = this.roster.length;
     this.cursor = idx;
+    this.mem.clear();
     this.setStep(p.fighterId ? step : 'fighter');
     this.renderStrip();
     this.refresh();
@@ -123,7 +121,15 @@ export class TournamentPickScreen implements Screen {
       const prev = p.assistId && p.assistId !== p.fighterId ? this.roster.findIndex((d) => d.id === p.assistId) : -1;
       this.acursor = prev >= 0 ? prev : own >= 0 ? (own + 1) % this.roster.length : this.roster.length;
       if (this.acursor === own) this.acursor = this.roster.length;
+      // next to your own face: same catalogue
+      if (prev < 0 && own >= 0) {
+        const pg = this.pages.pageFor(own, 0);
+        const [i2] = this.pages.stepH(own, pg, 1, own);
+        this.acursor = this.pages.page(i2) === pg ? i2 : this.roster.length;
+      }
     }
+    // the grid shows the catalogue of the cursor (« ? »: the one shown)
+    this.pages.show(this.pages.pageFor(step === 'assist' ? this.acursor : this.cursor, this.pages.shown));
     const n = this.t.participants.length;
     const what = step === 'assist' ? 'ASSIST' : 'COMBATTANT';
     this.titleEl.textContent = `PARTICIPANT ${i + 1}/${n} — ${p.name}, ${p.cpu ? 'CHOISIS SON' : 'CHOISIS TON'} ${what}`;
@@ -226,22 +232,35 @@ export class TournamentPickScreen implements Screen {
     const assist = this.step === 'assist';
     const cur = assist ? this.acursor : this.cursor;
     const own = assist ? this.ownIndex() : -1;
-    const n = this.roster.length + 1;
     let i = cur;
-    if (dx) {
-      i = (i + dx + n) % n;
-      if (i === own) i = (i + dx + n) % n;
-    }
-    if (dy) {
-      i += dy * gridColumns(this.cells, this.cols);
-      if (i < 0 || i >= n) i = cur;
-    }
-    if (i !== cur) {
+    let p = this.pages.shown;
+    // left / right: past the edge of a catalogue into the next one
+    if (dx) [i, p] = this.pages.stepH(i, p, dx, own);
+    if (dy) i = this.pages.stepV(i, p, dy);
+    if (i !== cur || p !== this.pages.shown) {
+      if (p !== this.pages.shown) this.mem.set(`${this.step}:${this.pages.shown}`, cur);
       if (assist) this.acursor = i;
       else this.cursor = i;
+      this.pages.show(p);
       audio.sfx('cursor');
       this.refresh();
     }
+  }
+
+  /** ◀ ▶ (Q / E, PageUp / PageDown, LB / RB): previous / next catalogue */
+  private flip(dir: -1 | 1) {
+    if (this.busy || this.pages.count < 2) return;
+    const assist = this.step === 'assist';
+    const cur = assist ? this.acursor : this.cursor;
+    const old = this.pages.shown;
+    const p = (old + dir + this.pages.count) % this.pages.count;
+    this.mem.set(`${this.step}:${old}`, cur);
+    const i = this.pages.landOn(p, cur, old, this.mem.get(`${this.step}:${p}`));
+    if (assist) this.acursor = i;
+    else this.cursor = i;
+    this.pages.show(p);
+    audio.sfx('cursor');
+    this.refresh();
   }
 
   private confirm() {
@@ -252,6 +271,7 @@ export class TournamentPickScreen implements Screen {
         // random cell: show who the dice picked
         def = this.roster[Math.floor(Math.random() * this.roster.length)];
         this.cursor = this.roster.indexOf(def);
+        this.pages.show(this.pages.pageFor(this.cursor, this.pages.shown));
       }
       this.t.participants[this.index].fighterId = def.id;
       saveTournament(this.t);
@@ -276,7 +296,10 @@ export class TournamentPickScreen implements Screen {
     if (!friend) {
       const pool = this.roster.filter((_, k) => k !== own);
       friend = pool[Math.floor(Math.random() * pool.length)] ?? null;
-      if (friend) this.acursor = this.roster.indexOf(friend);
+      if (friend) {
+        this.acursor = this.roster.indexOf(friend);
+        this.pages.show(this.pages.pageFor(this.acursor, this.pages.shown));
+      }
     }
     const def = this.defAt(this.cursor);
     if (!def) return;
@@ -301,6 +324,7 @@ export class TournamentPickScreen implements Screen {
     if (this.busy) return;
     audio.sfx('cancel');
     if (this.step === 'assist') {
+      this.mem.clear();
       this.setStep('fighter');
       this.showroom.play(0, 'showcase');
       this.refresh();
@@ -318,6 +342,8 @@ export class TournamentPickScreen implements Screen {
       else if (e.action === 'up') this.move(0, -1);
       else if (e.action === 'down') this.move(0, 1);
       else if (e.action === 'confirm') this.confirm();
+      else if (e.action === 'prevPage') this.flip(-1);
+      else if (e.action === 'nextPage') this.flip(1);
       else if (e.action === 'back') {
         this.back();
         if (this.disposed) return;
