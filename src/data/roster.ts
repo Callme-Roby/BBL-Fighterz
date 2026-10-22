@@ -153,6 +153,8 @@ export interface FighterDef {
   name: string;
   /** character profile (heavy / fast / ranged / balanced); lab creations are balanced */
   archetype?: Archetype;
+  /** select-screen catalogue (1 = first page, 2 = second page; default 1) */
+  page?: number;
   /** short line under the name on the select screen */
   title: string;
   /** face photo url (relative, no leading slash) or data URL */
