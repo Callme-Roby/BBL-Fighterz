@@ -112,10 +112,10 @@ sélection avec 4 jauges : puissance, vitesse, portée, défense) :
 
 | Profil | Façon | Qui | En bref |
 |---|---|---|---|
-| **LOURD** | Zangief, Jack | Dylan, Isis, Elies | plus de vie, de dégâts et de garde, grosses saisies ; marche, dash, saut et coups plus lents |
+| **LOURD** | Zangief, Jack | Dylan, Isis, Elies, Matteo | plus de vie, de dégâts et de garde, grosses saisies ; marche, dash, saut et coups plus lents |
 | **RAPIDE** | Chun-Li, Cammy | Thomas, Zia, Benji | coups et déplacements vifs, enchaînements plus longs ; moins de vie, de dégâts et de garde |
 | **DISTANCE** | Guile, Dhalsim | Clément, Enola, Billel | **projectile : avant + Poing D** (un seul à l'écran, à la place de la grosse patate), longs coups ; un peu moins de vie, marche plus lente |
-| **ÉQUILIBRÉ** | Ryu, Ken | Rayan, Mihaï, Alex (+ les persos du LABO) | bon partout : la référence |
+| **ÉQUILIBRÉ** | Ryu, Ken | Rayan, Mihaï, Alex, Aroa (+ les persos du LABO) | bon partout : la référence |
 
 Réglages : `src/sim/archetypes.ts` (chiffres), `src/data/roster.ts` (qui est quoi),
 `src/data/archetypes.ts` (textes des écrans).
@@ -169,6 +169,8 @@ il est prêt.
 | Dylan | CHARGE DU BIDON | ruée (gros coup qui fait tomber) |
 | Thomas | COUP EN TRAÎTRE | ruée |
 | Rayan | CROCHET PACIFISTE | ruée |
+| Matteo | FRAPPE DU M6 | ruée |
+| Aroa | RAFALE PEEK-A-BOO | ruée |
 | Isis | UPPERCUT MUSCLÉ | lanceur (enchaîne en combo aérien) |
 | Elies | RETOUR À L'ENVOYEUR | lanceur |
 | Mihaï | COUP DE PIED SAYAN | lanceur |
@@ -197,6 +199,8 @@ Les persos du LABO ont aussi un assist (type tiré de leur identifiant). Donnée
 | Enola | SPIDER-POTE | son pote masqué débarque et ils enchaînent à deux |
 | Rayan | PACIFISTE… OU PAS | « moi je suis pacifiste »… puis l'adversaire devient Dylan : gants, casque, combo de boxe anglaise et uppercut |
 | Billel | LA MÉTA | face caméra, un tunnel derrière lui, il explique la méta de League of Legends jusqu'à ce que l'adversaire s'effondre |
+| Matteo | LE M6 | l'adversaire devient gardien, penalty raté, la balle rebondit partout et les emporte tous les deux au fond des filets : GOAL ! |
+| Aroa | PEEK-A-BOO | gants, garde à la Tyson, 30 secondes de rafales en disparaissant d'un côté à l'autre, puis un uppercut qui l'envoie valser |
 
 Les cinématiques sont des données (`src/sim/ultimates.ts`, `src/sim/ults/`) : coups, positions,
 caméras et une timeline de présentation (persos invités, accessoires, répliques, textes BD,

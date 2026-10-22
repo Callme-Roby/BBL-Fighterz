@@ -5,6 +5,7 @@ import { crew1Scripts } from './ults/crew1';
 import { crew2Scripts } from './ults/crew2';
 import { crew3Scripts } from './ults/crew3';
 import { crew4Scripts } from './ults/crew4';
+import { crew5Scripts } from './ults/crew5';
 
 /**
  * BBL MAX cinematic combos ("ultimates").
@@ -43,6 +44,12 @@ export interface UltimateHit {
    *  none – nothing at all (e.g. while the screen is black); the script adds its own sounds
    */
   kind?: HitKind;
+  /**
+   * freeze of the whole game on impact, in game frames (default: 4 light / 6 medium / 10 heavy,
+   * 0 for verbal / off-screen / bullet blows, 16 for the finisher). Small values keep a very
+   * fast flurry fluid.
+   */
+  stop?: number;
 }
 
 export type HitKind = 'hit' | 'shot' | 'boom' | 'word' | 'none';
@@ -270,6 +277,21 @@ export interface CineCam {
   look: { at: CineRef; dy?: number } | { x: CurveKeys; y: CurveKeys; z?: CurveKeys };
 }
 
+/**
+ * Presentation-only placement of the attacker / victim models (the simulation keeps its x / y):
+ * a sideways offset (e.g. to stand beside the other fighter) and frames during which the model
+ * vanishes (smoke puffs at both ends by default).
+ */
+export interface CinePlace {
+  who: 'a' | 'v';
+  /** offset toward the gameplay camera in metres (negative = the far side); default 0 */
+  z?: CurveKeys;
+  /** frame ranges [from, to) during which the model (and its shadow, held props) is not drawn */
+  hidden?: [number, number][];
+  /** smoke puff + sound when vanishing / reappearing (default true) */
+  poof?: boolean;
+}
+
 export interface CineProp {
   prop: PropId;
   /** holder: attacker, victim or actor id */
@@ -328,6 +350,8 @@ export interface Cinematic {
   objects?: CineObject[];
   /** scripted camera moves (used by the 'path' shot) */
   cams?: CineCam[];
+  /** sideways offsets / vanishing of the attacker or the victim */
+  place?: CinePlace[];
   /** screen fade: 0 = picture, 1 = black (e.g. [[40,0],[46,1],[120,1],[126,0]]) */
   fade?: CurveKeys;
   /** stage lighting multiplier (default: 0.4 dimmed during the whole cinematic, 1 = normal) */
@@ -1416,7 +1440,7 @@ export const ULTIMATES: Record<string, UltimateScript> = {
   handbag,
 };
 
-for (const u of [...crew1Scripts(), ...crew2Scripts(), ...crew3Scripts(), ...crew4Scripts()]) ULTIMATES[u.id] = u;
+for (const u of [...crew1Scripts(), ...crew2Scripts(), ...crew3Scripts(), ...crew4Scripts(), ...crew5Scripts()]) ULTIMATES[u.id] = u;
 
 export function getUltimate(id: string | undefined): UltimateScript {
   return (id && ULTIMATES[id]) || rush;

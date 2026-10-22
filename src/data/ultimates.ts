@@ -19,6 +19,7 @@ export const FIGHTER_ULTIMATES: Record<string, { script: string; name: string }>
   rayan: { script: 'pacifist', name: 'PACIFISTE… OU PAS' },
   billel: { script: 'meta', name: 'LA MÉTA' },
   matteo: { script: 'm6', name: 'LE M6' },
+  aroa: { script: 'peekaboo', name: 'PEEK-A-BOO' },
 };
 
 export function ultimateOf(def: FighterDef): { script: string; name: string } {

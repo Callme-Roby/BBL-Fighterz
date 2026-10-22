@@ -147,6 +147,8 @@ export class CineDirector {
   private renamed = false;
   private tunnel: THREE.Mesh | null = null;
   private sceneryHidden = false;
+  /** a script moved / hid the fighters' models (cine.place): restored at the end */
+  private placed = false;
   /** per fighter: the view currently shown (base or swap) */
   private shownViews: [FighterView, FighterView];
   fade = 0;
@@ -353,6 +355,19 @@ export class CineDirector {
       this.restoreScenery();
     }
 
+    // ---- placement: sideways offsets, vanished fighters (pure function of k) ----
+    for (const pl of c.place ?? []) {
+      const i = pl.who === 'a' ? sc : 1 - sc;
+      const z = curve(pl.z, k);
+      const hidden = (pl.hidden ?? []).some(([t0, t1]) => k >= t0 && k < t1);
+      const view = this.shownViews[i];
+      view.root.position.z = z;
+      this.views[i].shadow.position.z = z;
+      if (hidden) view.model.root.visible = false;
+      this.views[i].shadow.visible = !hidden && !bd;
+      this.placed = true;
+    }
+
     // ---- props ----
     (c.props ?? []).forEach((p, idx) => {
       const on = k >= p.from && k < p.to;
@@ -430,6 +445,18 @@ export class CineDirector {
           tmp.set(A.ultOrigin + A.facing * curve(a.x, f), curve(a.y, f) + 0.9, 0.1);
           this.effects.cine('poof', tmp, 1.1, A.facing);
           this.hooks?.sfx('poof', tmp.x);
+        }
+      }
+      for (const pl of c.place ?? []) {
+        if (pl.poof === false) continue;
+        const F = s.fighters[pl.who === 'a' ? sc : 1 - sc];
+        for (const [t0, t1] of pl.hidden ?? []) {
+          for (const f of [t0, t1]) {
+            if (!crossed(f) || f >= u.length) continue;
+            tmp.set(F.x, F.y + 0.9, curve(pl.z, f) + 0.1);
+            this.effects.cine('poof', tmp, 1.1, A.facing);
+            this.hooks?.sfx('poof', tmp.x);
+          }
         }
       }
       for (const o of c.objects ?? []) {
@@ -690,6 +717,14 @@ export class CineDirector {
     this.objectPos.clear();
     this.views[0].model.root.visible = true;
     this.views[1].model.root.visible = true;
+    if (this.placed) {
+      this.placed = false;
+      for (const v of this.views) {
+        v.root.position.z = 0;
+        v.shadow.position.z = 0;
+        v.shadow.visible = true;
+      }
+    }
     this.shownViews = [this.views[0], this.views[1]];
     if (this.musicChanged) this.hooks?.music(null);
     this.musicChanged = false;

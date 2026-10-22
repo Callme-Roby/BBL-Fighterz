@@ -1254,6 +1254,77 @@ function addHair(g: GeoBuilder, def: FighterDef, cy: number, R: THREE.Vector3, t
       add(bun, vary);
       break;
     }
+    case 'topknot': {
+      // hair pulled up into a messy bun on the crown: darker roots on the skull, lighter ends
+      const root = (p: THREE.Vector3, i: number) => col.clone().multiplyScalar(0.5 + 0.16 * hashNoise(i + p.x * 10) + 0.12 * clamp01((p.y - cy) / R.y));
+      const ends = (p: THREE.Vector3, i: number) => col.clone().multiplyScalar(0.92 + 0.3 * hashNoise(i * 1.7 + p.y * 20));
+      dome(1.06, -0.44, 1.42, root, 0.04);
+      // the bun: a few overlapping clumps, high and slightly back
+      const dir = new THREE.Vector3(0, 0.94, -0.34).normalize();
+      const base = skullPoint(dir, 1.04);
+      const tie = new THREE.CylinderGeometry(0.036 * k, 0.042 * k, 0.02 * k, 8);
+      tie.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+      tie.translate(base.x, base.y, base.z);
+      add(tie, varyOf(col.clone().multiplyScalar(0.45), 0.1));
+      const centre = base.clone().addScaledVector(dir, 0.062 * k);
+      const clumps: [number, number, number, number][] = [
+        [0, 0, 0, 0.068],
+        [0.04, 0.02, 0.02, 0.046],
+        [-0.042, 0.012, -0.012, 0.048],
+        [0.01, 0.04, -0.03, 0.042],
+        [-0.012, 0.03, 0.036, 0.04],
+        [0.026, -0.012, -0.044, 0.038],
+      ];
+      clumps.forEach(([dx, dy, dz, r], i) => {
+        const geo = new THREE.IcosahedronGeometry(1, 1);
+        geo.scale(r * k * (1.05 + 0.15 * hashNoise(i * 3.3)), r * k * 0.82, r * k);
+        geo.rotateY(hashNoise(i * 5.9) * Math.PI * 2);
+        geo.translate(centre.x + dx * k, centre.y + dy * k, centre.z + dz * k);
+        add(geo, ends);
+      });
+      // a few wisps sticking out of the bun
+      for (let i = 0; i < 5; i++) {
+        const az = i * 2.39996 + 0.6;
+        const d = new THREE.Vector3(Math.cos(az) * 0.8, 0.55 + 0.3 * hashNoise(i * 2.1), Math.sin(az) * 0.8).normalize();
+        const len = k * (0.05 + 0.03 * hashNoise(i * 7.7));
+        const cone = new THREE.ConeGeometry(k * 0.012, len, 3);
+        cone.translate(0, len / 2, 0);
+        cone.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d));
+        cone.translate(centre.x + d.x * 0.055 * k, centre.y + d.y * 0.045 * k, centre.z + d.z * 0.055 * k);
+        add(cone, ends);
+      }
+      // loose strands: in front of the ears (beside the face, never over it) and at the nape
+      const strand = (pts: THREE.Vector3[], r0: number, seed: number) => {
+        const n = pts.length;
+        g.pathTube(
+          pts,
+          pts.map((_, i) => r0 * (1 - (0.6 * i) / (n - 1))),
+          pts.map(() => w),
+          3,
+          (i) => col.clone().multiplyScalar((i === 0 ? 0.62 : 0.95) + 0.12 * hashNoise(seed + i)),
+        );
+      };
+      for (const sx of [1, -1]) {
+        for (let j = 0; j < 2; j++) {
+          const top = skullPoint(new THREE.Vector3(sx * 0.82, 0.42 - 0.12 * j, 0.42 + 0.06 * j), 1.04);
+          strand(
+            [
+              top,
+              new THREE.Vector3(sx * R.x * (1.04 + 0.03 * j), cy - R.y * (0.18 + 0.05 * j), R.z * (0.36 - 0.08 * j)),
+              new THREE.Vector3(sx * R.x * (1.0 + 0.05 * j), cy - R.y * (0.62 + 0.1 * j), R.z * (0.3 - 0.06 * j)),
+            ],
+            k * 0.011,
+            sx * 10 + j,
+          );
+        }
+      }
+      for (let j = 0; j < 3; j++) {
+        const x = (j - 1) * 0.36;
+        const top = skullPoint(new THREE.Vector3(x, -0.15, -0.95), 1.02);
+        strand([top, new THREE.Vector3(top.x * 1.05, cy - R.y * 0.7, -R.z * 0.86), new THREE.Vector3(top.x * 1.1, cy - R.y * (0.98 + 0.06 * j), -R.z * 0.8)], k * 0.012, 30 + j);
+      }
+      break;
+    }
     case 'cap': {
       // backwards baseball cap; with a separate cap colour, the hair shows at the sides and back
       const capCol = headwear ?? col;

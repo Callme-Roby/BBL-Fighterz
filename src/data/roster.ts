@@ -31,6 +31,8 @@ export type HairStyle =
   | 'mohawk'
   | 'ponytail'
   | 'bun'
+  /** messy bun high on the crown, loose strands at the temples and the nape (darker roots, lighter ends) */
+  | 'topknot'
   /** backwards baseball cap (colour: `accessories.cap`, else hair colour) */
   | 'cap'
   /** knit beanie worn low on the forehead (colour: `accessories.cap`, else hair colour; with a cap colour, the hair shows under it) */
@@ -71,6 +73,7 @@ export const HAIR_STYLES: readonly HairStyle[] = [
   'ssj',
   'ponytail',
   'bun',
+  'topknot',
   'cap',
   'beanie',
   'bandana',
@@ -527,6 +530,34 @@ export const ROSTER: FighterDef[] = [
     winLines: ['Même pas une série complète.', 'Je retourne à la salle.', 'Repos entre deux séries, et toi au tapis.'],
     superLines: ['Place le ballon… LE M6 !', 'Lucarne garantie… BBL MAX !', 'Tirs au but, mon pote !'],
     voice: { lang: 'fr-FR', pitch: 0.95, rate: 1.08 },
+  },
+  {
+    id: 'aroa',
+    name: 'AROA',
+    archetype: 'balanced',
+    page: 2,
+    title: 'Enchaînements à volonté',
+    face: 'faces/aroa.jpg',
+    // light-brown messy bun on top (dark roots, lighter ends), loose strands; brown eyes, big smile
+    hair: { style: 'topknot', color: '#9a7350' },
+    outfit: {
+      top: 'tank',
+      topColor: '#e8457a',
+      trimColor: '#ffffff',
+      pantsColor: '#1d1d26',
+      shoesColor: '#f2f2f2',
+      // boxing hand wraps
+      wristColor: '#f4f0ea',
+    },
+    // young woman, medium-small, slim and sporty
+    height: 0.96,
+    build: 0.98,
+    body: 'fine',
+    headScale: 1.18,
+    introLines: ['Je vais te tuer… gentiment.', 'Un coup ? Non. Cinquante.', 'Garde haute, sourire aux lèvres.'],
+    winLines: ['Et un, et deux, et… j’ai perdu le compte.', 'Trop d’enchaînements pour toi ?', 'Bisous, la garde !'],
+    superLines: ['Peek-a-boo… BBL MAX !', 'Coucou… c’est moi !', 'Garde haute… et ça enchaîne !'],
+    voice: { lang: 'fr-FR', pitch: 1.18, rate: 1.08 },
   },
 ];
 

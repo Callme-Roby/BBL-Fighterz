@@ -412,7 +412,9 @@ export class FightWorld {
         } else {
           // heavy hits get the big burst on top (hitFeel): smaller core spark so they don't blow out
           const layered = !cine && !ev.self && ev.strength === 'heavy';
-          this.effects.hit(ev.x, ev.y, ev.strength, ev.counter, cine ? 0.45 : layered ? 0.72 : 1, cine ? 0.05 : 0.35);
+          // (a cinematic may stand one fighter beside the other: the spark sits between them in depth)
+          const dz = cine ? (this.cine.shown(0).root.position.z + this.cine.shown(1).root.position.z) / 2 : 0;
+          this.effects.hit(ev.x, ev.y, ev.strength, ev.counter, cine ? 0.45 : layered ? 0.72 : 1, cine ? 0.05 + dz : 0.35);
           this.sfx(ev.strength === 'heavy' ? 'hitHeavy' : ev.strength === 'medium' ? 'hitMedium' : 'hitLight', ev.x);
           target.hitFlash(ev.counter ? 0xff3030 : 0xffffff, ev.strength === 'heavy' ? 0.85 : 0.6);
           this.shake = Math.max(this.shake, ev.strength === 'heavy' ? 0.09 : ev.strength === 'medium' ? 0.04 : 0.015);

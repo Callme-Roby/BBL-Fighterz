@@ -248,6 +248,7 @@ export class LabScreen implements Screen {
             ['ssj', 'SUPER SAYAN'],
             ['ponytail', 'QUEUE'],
             ['bun', 'CHIGNON'],
+            ['topknot', 'CHIGNON FLOU'],
             ['cap', 'CASQUETTE'],
             ['beanie', 'BONNET'],
             ['bandana', 'BANDANA'],

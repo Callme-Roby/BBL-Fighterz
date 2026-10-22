@@ -24,6 +24,7 @@ export const ASSISTS: Record<string, AssistDef> = {
   thomas: { kind: 'rush', name: 'COUP EN TRAÎTRE', line: 'Coucou, derrière toi !' },
   rayan: { kind: 'rush', name: 'CROCHET PACIFISTE', line: 'Désolé, c’est pour la paix.' },
   matteo: { kind: 'rush', name: 'FRAPPE DU M6', line: 'Lucarne !' },
+  aroa: { kind: 'rush', name: 'RAFALE PEEK-A-BOO', line: 'Coucou, c’est moi !' },
   isis: { kind: 'launcher', name: 'UPPERCUT MUSCLÉ', line: 'Envole-toi !' },
   elies: { kind: 'launcher', name: 'RETOUR À L’ENVOYEUR', line: 'Hop, en l’air !' },
   mihai: { kind: 'launcher', name: 'COUP DE PIED SAYAN', line: 'Trop facile.' },

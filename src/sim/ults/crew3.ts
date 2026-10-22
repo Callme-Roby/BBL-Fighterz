@@ -41,6 +41,7 @@ function stretchScript(u: UltimateScript, k: number): UltimateScript {
       fade: keys(c.fade),
       light: keys(c.light),
       backdrop: c.backdrop?.map((b) => ({ ...b, from: F(b.from), to: F(b.to) })),
+      place: c.place?.map((p) => ({ ...p, z: keys(p.z), hidden: p.hidden?.map(range) })),
       events: c.events?.map((e) => {
         const o = { ...e, f: F(e.f) } as CineEvent & { dur?: number };
         if (o.dur !== undefined) o.dur = F(o.dur);
