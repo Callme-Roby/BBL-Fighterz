@@ -9,6 +9,10 @@ export interface Settings {
   lines: number;
   dither: boolean;
   touch: 'auto' | 'on' | 'off';
+  /** lower the resolution by itself when the device can't keep 60 images / s */
+  autoQuality?: boolean;
+  /** frame-rate counter in a corner of the screen */
+  showFps?: boolean;
   /** version of the stored settings (see loadSettings) */
   v?: number;
 }

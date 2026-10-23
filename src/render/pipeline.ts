@@ -187,10 +187,16 @@ export class RetroPipeline {
     };
   }
 
+  /**
+   * @param w, h size of the canvas on screen (only its shape matters): the post pass works
+   * on whole low-res pixels, so the canvas itself is rendered at the low resolution and the
+   * browser enlarges it (CSS `image-rendering: pixelated`) — same picture, a fraction of the
+   * pixels to shade on big / high-density screens.
+   */
   setSize(w: number, h: number) {
-    this.renderer.setSize(w, h, false);
     const lowH = this.lines;
     const lowW = Math.max(160, Math.round((lowH * w) / Math.max(1, h)));
+    this.renderer.setSize(lowW, lowH, false);
     if (lowW !== this.lowW || lowH !== this.lowH) {
       this.lowW = lowW;
       this.lowH = lowH;

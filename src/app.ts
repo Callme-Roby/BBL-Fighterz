@@ -28,6 +28,11 @@ export class App {
   /** while a screen change is in progress the layout is computed once at the end */
   private holdLayout = false;
   private pixelW = 0;
+  /** automatic quality: highest resolution allowed on this device (lowered when it struggles) */
+  private autoCap = 9999;
+  private perfFrames: number[] = [];
+  private perfLast = 0;
+  private fpsEl: HTMLElement | null = null;
   private pixelH = 0;
   /** size of the 3D view (CSS px): the whole window, or the top of it in a portrait fight */
   width = 1;
@@ -70,7 +75,8 @@ export class App {
   }
 
   applySettings() {
-    this.pipeline.lines = settings.lines;
+    this.pipeline.lines = settings.autoQuality === false ? settings.lines : Math.min(settings.lines, this.autoCap);
+    this.updateFpsCounter();
     this.pipeline.dither = settings.dither;
     this.resize(true);
   }
@@ -121,9 +127,50 @@ export class App {
     }
   }
 
+  private updateFpsCounter() {
+    if (settings.showFps && !this.fpsEl) {
+      this.fpsEl = document.createElement('div');
+      this.fpsEl.style.cssText =
+        'position:fixed;top:max(4px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:50;pointer-events:none;' +
+        'font:10px "Press Start 2P",monospace;color:#7ef0a0;background:rgba(0,0,0,.55);padding:3px 6px;border-radius:3px';
+      document.body.append(this.fpsEl);
+    } else if (!settings.showFps && this.fpsEl) {
+      this.fpsEl.remove();
+      this.fpsEl = null;
+    }
+  }
+
+  /**
+   * Frame-rate watch: shows the counter and, if the device stays well under 60 images / s
+   * for a few seconds, lowers the internal resolution one step (480 → 360 → 270; this
+   * session only, the saved setting is kept).
+   */
+  private watchPerf(t: number, rawDt: number) {
+    // tab switches, loading screens: not a measure of the device
+    if (rawDt > 250 || document.visibilityState !== 'visible') {
+      this.perfFrames.length = 0;
+      return;
+    }
+    this.perfFrames.push(rawDt);
+    if (t - this.perfLast < 3000) return;
+    this.perfLast = t;
+    const n = this.perfFrames.length;
+    const fps = n ? (1000 * n) / this.perfFrames.reduce((a, b) => a + b, 0) : 60;
+    this.perfFrames.length = 0;
+    const lines = this.pipeline.lines;
+    if (settings.autoQuality !== false && n > 30 && fps < 45 && lines > 270) {
+      this.autoCap = lines > 360 ? 360 : 270;
+      console.info(`[qualité auto] ${fps.toFixed(0)} images/s : résolution ${this.autoCap}p`);
+      this.applySettings();
+    }
+    if (this.fpsEl) this.fpsEl.textContent = `${fps.toFixed(0)} IPS · ${this.pipeline.lines}p`;
+  }
+
   private loop(t: number) {
-    const dt = Math.min(0.1, (t - this.last) / 1000);
+    const rawDt = t - this.last;
+    const dt = Math.min(0.1, rawDt / 1000);
     this.last = t;
+    this.watchPerf(t, rawDt);
     input.poll();
     try {
       this.screen?.frame(dt);

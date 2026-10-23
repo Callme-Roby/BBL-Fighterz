@@ -103,6 +103,13 @@ export class OptionsScreen implements Screen {
         'RÉSOLUTION (PLUS BAS = PLUS RÉTRO)',
         chips([[240, '240p PS1'], [270, '270p'], [360, '360p'], [480, '480p'], [720, '720p']], () => settings.lines, (v) => ((settings.lines = v), apply())),
       ),
+      h(
+        'div',
+        { class: 'field' },
+        'QUALITÉ AUTO (BAISSE LA RÉSOLUTION SI ÇA RAME)',
+        chips([[1, 'OUI'], [0, 'NON']], () => (settings.autoQuality === false ? 0 : 1), (v) => ((settings.autoQuality = v === 1), apply())),
+      ),
+      h('div', { class: 'field' }, 'AFFICHER LES IMAGES / SECONDE', chips([[1, 'OUI'], [0, 'NON']], () => (settings.showFps ? 1 : 0), (v) => ((settings.showFps = v === 1), apply()))),
       h('div', { class: 'field' }, 'TRAMAGE 15 BITS', chips([[1, 'OUI'], [0, 'NON']], () => (settings.dither ? 1 : 0), (v) => ((settings.dither = v === 1), apply()))),
       h('div', { class: 'field' }, 'COMMANDES TACTILES', chips([['auto', 'AUTO'], ['on', 'TOUJOURS'], ['off', 'JAMAIS']], () => settings.touch, (v) => ((settings.touch = v), apply()))),
     ];
